@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -229,6 +229,9 @@ jobs:
     needs: [detect-changes, validate, test]
     if: needs.detect-changes.outputs.has_changes == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:
@@ -272,6 +275,7 @@ jobs:
           image_name: ${{ env.IMAGE_NAME }}
           generate_attestation: 'false'
           save_image_info: 'true'
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
   # Summary job to report status
   build-summary:

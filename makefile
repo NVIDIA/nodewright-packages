@@ -2,6 +2,14 @@
 help: ## Display this help.
 	@awk 'BEGIN {FS = ":.*##"; printf "\n\033[1;31mUsage:\033[0m\n  make \033[3;1;36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1;31m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
+##@ Labels
+
+.PHONY: labels
+labels: ## Sync GitHub labels from .github/labels.yml (requires gh CLI with repo write access)
+	python3 scripts/sync_labels.py
+
+##@ Development
+
 .PHONY: license-fmt
 license-fmt: ## adds license header to code.
 	python3 ./scripts/format_license.py --root-dir . --license-file ./LICENSE
@@ -42,6 +50,32 @@ test-package: test-deps ## Run tests for a specific package. Usage: make test-pa
 		./venv/bin/pytest $$TEST_DIR -n auto -v --durations=10 --durations-min=10.0; \
 	fi
 
+
+##@ Changelog
+
+.PHONY: changelog
+changelog: ## Generate/update CHANGELOG.md for a package. Usage: make changelog PACKAGE=nvidia-setup
+	@if [ -z "$(PACKAGE)" ]; then \
+		echo "ERROR: PACKAGE is required. Usage: make changelog PACKAGE=nvidia-setup"; \
+		exit 1; \
+	fi
+	git cliff \
+		--include-path "$(PACKAGE)/**" \
+		--tag-pattern "$(PACKAGE)/.*" \
+		-o $(PACKAGE)/CHANGELOG.md
+	@echo "Updated $(PACKAGE)/CHANGELOG.md"
+
+.PHONY: changelog-preview
+changelog-preview: ## Preview unreleased changes for a package. Usage: make changelog-preview PACKAGE=nvidia-setup
+	@if [ -z "$(PACKAGE)" ]; then \
+		echo "ERROR: PACKAGE is required. Usage: make changelog-preview PACKAGE=nvidia-setup"; \
+		exit 1; \
+	fi
+	git cliff \
+		--include-path "$(PACKAGE)/**" \
+		--tag-pattern "$(PACKAGE)/.*" \
+		--unreleased \
+		--strip header
 
 ##@ Validation
 
