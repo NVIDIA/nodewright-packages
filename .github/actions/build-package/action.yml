@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 #
@@ -43,6 +43,9 @@ inputs:
     required: false
     default: 'false'
     description: 'Whether to save image tags to an artifact (for PR builds)'
+  github_token:
+    required: true
+    description: 'GitHub token for registry authentication (pass secrets.GITHUB_TOKEN from the calling workflow)'
   skyhook_agent_image:
     required: false
     default: 'ghcr.io/nvidia/skyhook/agent:latest'
@@ -64,7 +67,7 @@ runs:
       with:
         registry: ${{ inputs.registry }}
         username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
+        password: ${{ inputs.github_token }}
 
     - name: Generate package version map
       id: package-versions
