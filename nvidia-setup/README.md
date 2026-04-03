@@ -1,6 +1,6 @@
 # NVIDIA Setup Package
 
-A Skyhook package that applies node setup steps for selected (service, accelerator) combinations. It runs **after** the machine is up (Skyhook on a live node). **Currently** it controls **kernel** (optional install or version check) and **EFA driver install** only; Lustre, chrony, and local disk setup are present in the codebase but commented out in `apply.sh`.
+A NodeWright package that applies node setup steps for selected (service, accelerator) combinations. It runs **after** the machine is up (NodeWright on a live node). **Currently** it controls **kernel** (optional install or version check) and **EFA driver install** only; Lustre, chrony, and local disk setup are present in the codebase but commented out in `apply.sh`.
 
 ## Overview
 
@@ -32,7 +32,7 @@ Defaults are defined in `skyhook_dir/defaults/eks-h100.conf` and `eks-gb200.conf
 
 **Environment variables (optional overrides):**
 
-Set these on the package spec in the Skyhook Custom Resource (`spec.packages.<name>.env`):
+Set these on the package spec in the NodeWright Custom Resource (`spec.packages.<name>.env`):
 
 - `NVIDIA_SETUP_INSTALL_KERNEL` – `true` or `false` (default: `false`). If `true`, apply **only** installs the exact kernel from the defaults file (via `downgrade_kernel.sh`) and then exits; a reboot is required. After reboot, the **post-interrupt-check** verifies the running kernel matches the expected version. If `false`, apply verifies the current kernel meets the requirement (see `NVIDIA_SETUP_KERNEL_ALLOW_NEWER`) and errors otherwise, then continues with the full apply.
 - `NVIDIA_SETUP_KERNEL_ALLOW_NEWER` – `true` or `false` (default: `false`). When `NVIDIA_SETUP_INSTALL_KERNEL=false`, this controls the kernel check: if `false`, the running kernel must match the required upstream version exactly; if `true`, the running kernel may be newer (current >= required).
@@ -69,7 +69,7 @@ When you need to install the exact default kernel and then run the rest of the s
 
 Both packages use the same `service` and `accelerator` configMap; only the first sets `NVIDIA_SETUP_INSTALL_KERNEL=true`. The first package must declare an interrupt (e.g. reboot) so the node reboots into the new kernel before the second package runs.
 
-Example (adjust `dependsOn` / interrupt keys to match your Skyhook API):
+Example (adjust `dependsOn` / interrupt keys to match your NodeWright API):
 
 ```yaml
 apiVersion: skyhook.nvidia.com/v1alpha1

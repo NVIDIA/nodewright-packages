@@ -1,6 +1,6 @@
 # Kdump Package
 
-This Skyhook Package provides automated installation and configuration of kdump for crash dump collection on Linux systems. It supports multiple distributions and handles the complete lifecycle from installation to post-interrupt validations.
+This NodeWright Package provides automated installation and configuration of kdump for crash dump collection on Linux systems. It supports multiple distributions and handles the complete lifecycle from installation to post-interrupt validations.
 
 ## Overview
 
@@ -67,9 +67,9 @@ core_collector makedumpfile -l --message-level 1 -d 31
 - Removes installed kdump packages
 - Cleans up configuration files
 
-**NOTE**: The crashkernel will be removed from the GRUB config, but a reboot will be needed in order for that to take effect. This isn't handled by the kdump skyhook package.
+**NOTE**: The crashkernel will be removed from the GRUB config, but a reboot will be needed in order for that to take effect. This isn't handled by the kdump NodeWright package.
 
-## Example Skyhook Custom Resource
+## Example NodeWright Custom Resource
 
 ### Basic kdump setup with 256MB crash kernel:
 ```yaml
@@ -235,7 +235,7 @@ spec:
 - **Initial Setup**: A reboot is required after applying the package for the crashkernel parameter to take effect
 - **Configuration Changes**: Changing the crashkernel value requires a reboot
 - **Service Changes**: Modifying kdump.conf may require service restart but not a full reboot
-- **Uninstallation**: The crashkernel will be removed from the GRUB config after an uninstallation, but a reboot will be needed in order for that to take effect. This isn't handled by the kdump skyhook package.
+- **Uninstallation**: The crashkernel will be removed from the GRUB config after an uninstallation, but a reboot will be needed in order for that to take effect. This isn't handled by the kdump NodeWright package.
 
 ### Memory Considerations
 - The crashkernel parameter reserves memory that is not available to the main system

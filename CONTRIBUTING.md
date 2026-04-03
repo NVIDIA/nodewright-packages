@@ -5,7 +5,7 @@
 
 # Contributing
 
-Want to contribute to Skyhook-Packages?
+Want to contribute to NodeWright-Packages?
 
 The sign-off is a simple line at the end of the explanation for the patch. Your
 signature certifies that you wrote the patch or otherwise have the right to pass

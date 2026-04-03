@@ -1,4 +1,4 @@
-# Python dependencies for skyhook-packages testing
+# Python dependencies for NodeWright packages testing
 docker>=7.0.0
 pytest>=7.4.0
 pytest-timeout>=2.1.0

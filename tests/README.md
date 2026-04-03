@@ -1,10 +1,10 @@
-# Skyhook Packages Testing Framework
+# NodeWright Packages Testing Framework
 
-This directory contains the testing framework for skyhook-packages. All tests run in isolated Docker containers to protect the development OS.
+This directory contains the testing framework for NodeWright packages. All tests run in isolated Docker containers to protect the development OS.
 
 ## Overview
 
-The testing framework uses Python with pytest for test orchestration and the Docker Python SDK for container management. Tests execute skyhook package scripts directly in isolated Ubuntu containers, allowing real system commands to run safely without modifying the host system.
+The testing framework uses Python with pytest for test orchestration and the Docker Python SDK for container management. Tests execute NodeWright package scripts directly in isolated Ubuntu containers, allowing real system commands to run safely without modifying the host system.
 
 ## Package Structure Understanding
 

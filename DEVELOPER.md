@@ -1,6 +1,6 @@
 # Developer Guide
 
-This guide provides information for developers working on skyhook-packages, including validation steps to run before committing changes.
+This guide provides information for developers working on NodeWright packages, including validation steps to run before committing changes.
 
 ## Pre-Commit Validations
 
@@ -199,4 +199,4 @@ Either:
 - [Package Lifecycle Documentation](./PACKAGE_LIFECYCLE.md) - Comprehensive guide to package lifecycle stages
 - [Contributing Guide](./CONTRIBUTING.md) - General contribution guidelines
 - [Main README](./README.md) - Repository overview and package documentation
-- [Skyhook Agent Schemas](https://github.com/NVIDIA/skyhook/tree/main/agent/skyhook-agent/src/skyhook_agent/schemas/v1) - Official schema documentation
+- [NodeWright Agent Schemas](https://github.com/NVIDIA/skyhook/tree/main/agent/skyhook-agent/src/skyhook_agent/schemas/v1) - Official schema documentation

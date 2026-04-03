@@ -32,7 +32,7 @@ If you use `service_containerd.conf` or `service_crio.conf` post-interrupt check
 It will use ulimit to check that the expected value is actually set. Note: for `LimitSTACK` and `LimitMEMLOCK` it compares against expected_value/1024 due to formatting output of the ulimit call.
 
 
-# Example Skyhook Custom Resource
+# Example NodeWright Custom Resource
 Update grub and sysctl. 
 Use main reboot interrupt for the first apply.
 Specify different interrupts for the configmap interrupts to apply a more limited one depending on which one changes.

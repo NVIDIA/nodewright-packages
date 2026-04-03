@@ -1,4 +1,4 @@
-This Skyhook Package allows you to run arbitrary bash scripts defined in your Skyhook Custom Resource.
+This NodeWright Package allows you to run arbitrary bash scripts defined in your NodeWright Custom Resource.
 
 # Example package configuration
 ```
