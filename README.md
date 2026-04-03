@@ -1,17 +1,21 @@
-# Skyhook Packages
+# NodeWright Packages
 
-This repository contains pre-built packages for the [NVIDIA Skyhook Operator](https://github.com/NVIDIA/skyhook), a Kubernetes-aware package manager for cluster administrators to safely modify and maintain underlying hosts declaratively at scale.
+*Formerly known as Skyhook Packages*
+
+This repository contains pre-built packages for the [NVIDIA NodeWright Operator](https://github.com/NVIDIA/skyhook), a Kubernetes-aware package manager for cluster administrators to safely modify and maintain underlying hosts declaratively at scale.
+
+> **Note:** NodeWright is being renamed from Skyhook. Code, CRDs, Helm charts, and CLI commands still use `skyhook` for now. The rename will roll out incrementally to avoid breaking changes.
 
 ## Overview
 
-Skyhook packages follow a well-defined lifecycle with multiple stages (apply, config, interrupt, post-interrupt, upgrade, uninstall) that ensure proper installation, configuration, and management of node-level changes. Each package in this repository implements these lifecycle stages according to its specific purpose.
+NodeWright packages follow a well-defined lifecycle with multiple stages (apply, config, interrupt, post-interrupt, upgrade, uninstall) that ensure proper installation, configuration, and management of node-level changes. Each package in this repository implements these lifecycle stages according to its specific purpose.
 
 For detailed information about package lifecycle stages, see [PACKAGE_LIFECYCLE.md](./PACKAGE_LIFECYCLE.md).
 
 ## Available Packages
 
 ### 1. Shellscript Package (`shellscript/`)
-A versatile package that allows you to run arbitrary bash scripts defined in your Skyhook Custom Resource configMaps.
+A versatile package that allows you to run arbitrary bash scripts defined in your NodeWright Custom Resource configMaps.
 
 **Capabilities:**
 - Execute custom bash scripts during any lifecycle stage
@@ -79,7 +83,7 @@ A package for automated installation and configuration of kdump crash dump colle
 - Complete lifecycle management (install, configure, validate, uninstall)
 
 ### 5. NVIDIA Setup Package (`nvidia-setup/`)
-A package that applies the same node setup steps as the dgxcloud_aws_eks VMI for selected (service, accelerator) combinations. Runs after the machine is up (Skyhook on a live node).
+A package that applies the same node setup steps as the dgxcloud_aws_eks VMI for selected (service, accelerator) combinations. Runs after the machine is up (NodeWright on a live node).
 
 **Capabilities:**
 - Opinionated defaults per (service, accelerator) with optional env overrides (EIDOS_KERNEL, EIDOS_EFA, EIDOS_LUSTRE)
@@ -105,7 +109,7 @@ Extends the **tuning** package with baked-in H100 and GB200 configs for GKE Cont
 
 ## Package Structure
 
-Each package follows the standard skyhook package structure:
+Each package follows the standard NodeWright package structure:
 
 ```
 [package name]
@@ -128,7 +132,7 @@ Each package follows the standard skyhook package structure:
 - **`Dockerfile`**: Copies package components to `/skyhook-package` in the container
   - Everything in `/skyhook-package` in the container ends up at `${SKYHOOK_DIR}` on the host file system
 
-### Available metadata for scripts when being executed as a part of the skyhook package
+### Available metadata for scripts when being executed as a part of the NodeWright package
 - **`STEP_ROOT`**: An environment variable, the directory where the `skyhook_dir/` folder is copied to
 - **`SKYHOOK_DIR`**: An environment variable, the directory where `/skyhook-package` is copied to
 - **`${SKYHOOK_DIR}/configmaps`**: Directory where all the configmaps for the package will be
@@ -164,7 +168,7 @@ docker buildx build -t ghcr.io/nvidia/skyhook-packages/shellscript:1.1.1 \
 
 ## Using Packages
 
-Packages are used by creating Skyhook Custom Resources (SCRs) that reference the package images. Here's a basic example:
+Packages are used by creating NodeWright Custom Resources that reference the package images. Here's a basic example:
 
 ```yaml
 apiVersion: skyhook.nvidia.com/v1alpha1
@@ -192,7 +196,7 @@ For detailed usage examples, see the README files in each package directory.
 
 ## Package Lifecycle
 
-All packages in this repository implement the skyhook lifecycle stages:
+All packages in this repository implement the NodeWright lifecycle stages:
 
 1. **Apply** - Initial installation and setup
 2. **Config** - Handle configuration changes
@@ -247,8 +251,8 @@ This validation step is crucial as the agent uses JSON schema validation to ensu
    - `tuned` for automated performance tuning with the tuned daemon
    - `kdump` for kernel crash dump collection and debugging
 2. **Review the package README** for specific usage instructions and examples
-3. **Create a Skyhook Custom Resource** referencing the package
-4. **Apply the SCR** to your cluster and monitor the package deployment
+3. **Create a NodeWright Custom Resource** referencing the package
+4. **Apply the resource** to your cluster and monitor the package deployment
 5. **Verify the package status** using `kubectl describe skyhooks`
 
 ## Documentation
@@ -259,7 +263,7 @@ This validation step is crucial as the agent uses JSON schema validation to ensu
 - [Tuned Package](./tuned/README.md) - Usage guide for the tuned package
 - [Kdump Package](./kdump/README.md) - Usage guide for the kdump package
 - [NVIDIA Setup Package](./nvidia-setup/README.md) - Node setup (EFA, Lustre, chrony, local disks) per service/accelerator
-- [NVIDIA Skyhook Documentation](https://github.com/NVIDIA/skyhook) - Main skyhook operator documentation
+- [NVIDIA NodeWright Documentation](https://github.com/NVIDIA/skyhook) - Main NodeWright operator documentation
 
 ## Contributing
 

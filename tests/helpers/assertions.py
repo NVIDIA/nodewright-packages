@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Assertion utilities for skyhook package tests.
+Assertion utilities for NodeWright package tests.
 
 This module provides assertion functions for validating test results.
 """

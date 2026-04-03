@@ -1,10 +1,10 @@
 # Package Lifecycle Documentation
 
-This document describes the lifecycle stages of skyhook packages and how they are executed by the [Skyhook Operator](https://github.com/NVIDIA/skyhook).
+This document describes the lifecycle stages of NodeWright packages and how they are executed by the [NodeWright Operator](https://github.com/NVIDIA/skyhook).
 
 ## Overview
 
-Skyhook packages follow a well-defined lifecycle with multiple stages that ensure proper installation, configuration, and management of node-level changes. Each stage serves a specific purpose and is executed at the appropriate time based on package state changes.
+NodeWright packages follow a well-defined lifecycle with multiple stages that ensure proper installation, configuration, and management of node-level changes. Each stage serves a specific purpose and is executed at the appropriate time based on package state changes.
 
 ## Lifecycle Stages
 
@@ -145,7 +145,7 @@ Focuses on system configuration and tuning parameters.
 3. **Idempotence issues**: Test that scripts can run multiple times safely, or use default auto idempotence.
 4. **Configuration conflicts**: Handle cases where multiple packages modify the same settings. Using drop in files for config make it easy to avoid this, and also handle uninstall.
 
-All package `config.json` files must comply with the official JSON schemas defined in the [NVIDIA Skyhook Agent Schemas](https://github.com/NVIDIA/skyhook/tree/main/agent/skyhook-agent/src/skyhook_agent/schemas/v1). The skyhook-agent includes a built-in validation tool that should be used to test packages before publishing.
+All package `config.json` files must comply with the official JSON schemas defined in the [NVIDIA NodeWright Agent Schemas](https://github.com/NVIDIA/skyhook/tree/main/agent/skyhook-agent/src/skyhook_agent/schemas/v1). The skyhook-agent includes a built-in validation tool that should be used to test packages before publishing.
 
 ### Validating Your Package
 
@@ -159,7 +159,7 @@ skyhook-agent validate /path/to/your/config.json
 
 ## References
 
-- [NVIDIA Skyhook Documentation](https://github.com/NVIDIA/skyhook)
-- [Skyhook Agent Schemas v1](https://github.com/NVIDIA/skyhook/tree/main/agent/skyhook-agent/src/skyhook_agent/schemas/v1)
-- [Skyhook Stages Documentation](https://github.com/NVIDIA/skyhook/blob/main/README.md#stages)
+- [NVIDIA NodeWright Documentation](https://github.com/NVIDIA/skyhook)
+- [NodeWright Agent Schemas v1](https://github.com/NVIDIA/skyhook/tree/main/agent/skyhook-agent/src/skyhook_agent/schemas/v1)
+- [NodeWright Stages Documentation](https://github.com/NVIDIA/skyhook/blob/main/README.md#stages)
 - [Kubernetes Operator Pattern](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/) 

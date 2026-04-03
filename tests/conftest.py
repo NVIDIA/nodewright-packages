@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Pytest configuration and fixtures for skyhook-packages tests.
+Pytest configuration and fixtures for NodeWright packages tests.
 """
 
 import pytest

@@ -1,6 +1,6 @@
 # Tuned Package
 
-A Skyhook package for managing the `tuned` system tuning daemon on Linux systems. This package provides automated installation, configuration, and management of tuned profiles for system performance optimization.
+A NodeWright package for managing the `tuned` system tuning daemon on Linux systems. This package provides automated installation, configuration, and management of tuned profiles for system performance optimization.
 
 ## Overview
 
@@ -19,7 +19,7 @@ A Skyhook package for managing the `tuned` system tuning daemon on Linux systems
 
 ```
 tuned/
-├── config.json                           # Skyhook package configuration
+├── config.json                           # NodeWright package configuration
 ├── README.md                            # This file
 ├── Dockerfile                           # Container build file
 └── skyhook_dir/
@@ -230,9 +230,9 @@ Deploy the package with apply mode to install tuned with default settings.
 2. Create a `tuned_profile` configmap specifying which profile to activate
 3. Deploy the package with config mode to apply the custom configuration
 
-### Complete Skyhook Configuration Example
+### Complete NodeWright Configuration Example
 
-Here's a complete example of using the tuned package with Skyhook to deploy custom AI/ML performance profiles:
+Here's a complete example of using the tuned package with NodeWright to deploy custom AI/ML performance profiles:
 
 ```yaml
 apiVersion: skyhook.nvidia.com/v1alpha1

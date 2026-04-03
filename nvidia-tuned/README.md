@@ -1,6 +1,6 @@
 # NVIDIA Tuned Package
 
-A Skyhook package that extends the base `tuned` package with NVIDIA-specific performance profiles for GPU and DGX systems.
+A NodeWright package that extends the base `tuned` package with NVIDIA-specific performance profiles for GPU and DGX systems.
 
 ## Overview
 

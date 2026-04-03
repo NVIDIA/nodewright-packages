@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Docker test runner for skyhook packages.
+Docker test runner for NodeWright packages.
 
 This module provides a DockerTestRunner class that manages Docker containers
-for testing skyhook package scripts in isolated environments.
+for testing NodeWright package scripts in isolated environments.
 """
 
 import os
@@ -26,7 +26,7 @@ class TestResult:
 
 
 class DockerTestRunner:
-    """Manages Docker containers for testing skyhook packages."""
+    """Manages Docker containers for testing NodeWright packages."""
     
     def __init__(self, package: str, base_image: str = "ubuntu:24.04"):
         """

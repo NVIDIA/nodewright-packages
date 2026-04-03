@@ -17,7 +17,7 @@
 # limitations under the License.
 
 """
-Validation Script for Skyhook Packages
+Validation Script for NodeWright Packages
 
 This script validates a config.json file against the skyhook-agent schema
 and verifies that all referenced step files exist.

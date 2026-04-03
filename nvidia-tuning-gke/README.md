@@ -1,6 +1,6 @@
 # NVIDIA Tuning GKE Package
 
-A Skyhook package that extends the base **tuning** package with baked-in H100 and GB200 tuning configs for GKE. It mirrors the sysctl (and optional containerd drop-in) from the [nvidia-tuned](../nvidia-tuned/). **GRUB/kernel cmdline is not used**—GKE nodes do not use grub, so only sysctl and service drop-ins are applied. This package is required instead of the nvidia-tuned because Container Optimized OS does not include tuned and it cannot be installed.
+A NodeWright package that extends the base **tuning** package with baked-in H100 and GB200 tuning configs for GKE. It mirrors the sysctl (and optional containerd drop-in) from the [nvidia-tuned](../nvidia-tuned/). **GRUB/kernel cmdline is not used**—GKE nodes do not use grub, so only sysctl and service drop-ins are applied. This package is required instead of the nvidia-tuned because Container Optimized OS does not include tuned and it cannot be installed.
 
 ## Overview
 
@@ -18,7 +18,7 @@ Profiles are selected by the pair `{accelerator}/{intent}` and live under `profi
 
 ## Interrupts
 
-Use specific service restarts in order to get the values applied. For current configurations you can use the interrupt below to get the sysctl settings loaded; DO NOT USE reboot interrupt as skyhook has to re-apply all changes every reboot and this will cause an infinite loop. Example:
+Use specific service restarts in order to get the values applied. For current configurations you can use the interrupt below to get the sysctl settings loaded; DO NOT USE reboot interrupt as NodeWright has to re-apply all changes every reboot and this will cause an infinite loop. Example:
 
 ```yaml
 packages:
