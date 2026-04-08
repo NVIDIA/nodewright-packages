@@ -1,0 +1,5 @@
+[main]
+summary=NVIDIA Oracle OKE profile (select network hardware with NVIDIA_TUNED_OKE_NETWORK)
+
+[script]
+script=${i:PROFILE_DIR}/script.sh

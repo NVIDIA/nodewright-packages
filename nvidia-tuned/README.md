@@ -8,7 +8,7 @@ This package inherits from the base `tuned` package and adds pre-configured tune
 
 - **Common base profiles**: Foundational settings deployed to `/usr/lib/tuned/`
 - **OS-specific workload profiles**: Profiles that may vary by OS version
-- **Service profiles**: Service-specific settings (eks, GCP, etc.)
+- **Service profiles**: Service-specific settings (EKS, OKE, etc.)
 
 The configmap uses an **intent-based** model where you specify **what** you want (intent + accelerator) rather than a specific profile name. The profile name `nvidia-{accelerator}-{intent}` is constructed automatically.
 
@@ -56,9 +56,18 @@ profiles/
 │   └── rhel/
 │       └── 9/              # Symlinks to os/common/ (override when needed)
 └── service/
-    └── eks/
-        ├── tuned.conf.template  # Service template (include= added dynamically)
-        └── script.sh
+    ├── eks/
+    │   ├── tuned.conf.template  # Service template (include= added dynamically)
+    │   └── script.sh
+    └── oke/
+        ├── tuned.conf.template
+        ├── script.sh              # Ubuntu GRUB + optional cx8 pci=config_acs
+        ├── bootloader.sh        # Ubuntu: merge tuned bootcmdline into GRUB
+        ├── cx8-pci-config-acs.grub
+        └── hardware/
+            ├── bootloader-cx7.conf
+            ├── bootloader-cx8.conf
+            └── bootloader-infiniband.conf
 ```
 
 Note: Profiles are stored in `profiles/` (not `root_dir/`) to avoid polluting the host filesystem during package extraction. The prepare scripts explicitly copy profiles to the appropriate tuned directories.
@@ -72,6 +81,7 @@ Note: Profiles are stored in `profiles/` (not `root_dir/`) to avoid polluting th
    - Detects OS from `/etc/os-release`
    - Copies the appropriate OS-specific workload profiles to `/etc/tuned/`
    - If a `service` is specified, creates service profile with dynamic `include=` pointing to the workload profile
+   - For `service: oke`, also appends a hardware-specific `[bootloader]` fragment based on **`NVIDIA_TUNED_OKE_NETWORK`** (see below)
 
 2. **Config stage**: The inherited `tuned` package applies the configured profile
 
@@ -163,7 +173,38 @@ spec:
 
 | Service | Description |
 |---------|-------------|
-| `eks` | eks-specific settings (MAC address policy for CNI) |
+| `eks` | EKS-specific settings (MAC address policy for CNI) |
+| `oke` | Oracle OKE: kernel cmdline extras for ConnectX-7 / ConnectX-8 / InfiniBand-style naming; Ubuntu GRUB wiring for tuned bootcmdline |
+
+### OKE: `NVIDIA_TUNED_OKE_NETWORK`
+
+When `service: oke`, set this **environment variable** on the package (same value for prepare and runtime). It selects the hardware fragment merged at **prepare** time and drives **cx8** GRUB behavior at **script** start.
+
+| Value | Effect |
+|-------|--------|
+| `cx7` | Default. No extra `[bootloader]` keys; use workload + NVIDIA profiles only. |
+| `cx8` | Adds Oracle HPC-style cx8 cmdline (`iommu=on`, C-states, etc.). On **Ubuntu**, also installs `/etc/default/grub.d/99-nvidia-tuned-oke-cx8-acs.cfg` from `cx8-pci-config-acs.grub` (shape-specific BDF map; replace or skip if wrong for your fleet). |
+| `infiniband` | Adds `oci_hpc.rdma_device_names_mode=2` and `oci_hpc.vnic_device_names_mode=1` (same idea as oci-hpc-images `networkdevicenames`). |
+
+Optional:
+
+- **`NVIDIA_TUNED_OKE_SKIP_PCI_CONFIG_ACS`**: set to `true` or `1` to skip installing the cx8 `pci=config_acs` grub fragment on Ubuntu (still applies tuned `[bootloader]` keys for cx8).
+
+**Ubuntu vs RHEL:** `bootloader.sh` runs only on Ubuntu (`update-grub` + GRUB drop-in). On RHEL and similar, tuned applies `[bootloader]` entries without that helper. The cx8 **pci=config_acs** drop-in is **Ubuntu-only**; on RHEL, supply equivalent boot parameters with your image tooling if required.
+
+### OKE usage example
+
+```yaml
+packages:
+  nvidia-tuned:
+    env:
+      - name: NVIDIA_TUNED_OKE_NETWORK
+        value: "cx8"
+    configMap:
+      intent: inference
+      accelerator: h100
+      service: oke
+```
 
 ## Adding OS-Specific Overrides
 
@@ -201,7 +242,7 @@ See the [tuned package README](../tuned/README.md) for complete documentation on
 
 ## Version
 
-- **Package Version**: 0.2.0
+- **Package Version**: 0.2.4
 - **Base Package**: tuned (latest via preprocess.sh)
 - **Schema Version**: v1
 

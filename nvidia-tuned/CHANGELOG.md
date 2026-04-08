@@ -2,6 +2,12 @@
 
 All notable changes to this package will be documented in this file.
 
+## [0.2.4] - 2026-04-08
+
+### New Features
+
+- **OKE service profile** for Oracle Kubernetes Engine: `NVIDIA_TUNED_OKE_NETWORK` selects `cx7`, `cx8`, or `infiniband` hardware fragments; Ubuntu GRUB integration and optional cx8 `pci=config_acs` drop-in.
+
 ## [0.2.3] - 2026-03-09
 
 ### Bug Fixes

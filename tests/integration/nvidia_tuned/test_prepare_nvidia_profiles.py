@@ -26,11 +26,13 @@ Tests verify:
   - intent (performance, inference, multiNodeTraining)
   - service (eks, none)
 - For AWS service, verifies grub config file is created correctly
+- For OKE on Ubuntu 24.04, verifies NVIDIA_TUNED_OKE_NETWORK and optional skip flags
 """
+
+from __future__ import annotations
 
 import pytest
 import re
-
 from tests.helpers.assertions import (
     assert_exit_code,
     assert_output_contains,
@@ -175,8 +177,16 @@ def create_container_for_testing(runner: DockerTestRunner, configmaps: dict):
     time.sleep(1)
 
 
-def run_script_in_container(runner: DockerTestRunner, script: str, configmaps: dict):
-    """Run a script in an existing container with given configmaps."""
+def run_script_in_container(
+    runner: DockerTestRunner,
+    script: str,
+    configmaps: dict,
+    extra_env: dict[str, str] | None = None,
+):
+    """Run a script in an existing container with given configmaps.
+
+    extra_env: optional variables merged into the exec environment (e.g. OKE flags).
+    """
     if runner.container is None:
         raise RuntimeError("Container must exist before running script")
     
@@ -199,6 +209,8 @@ def run_script_in_container(runner: DockerTestRunner, script: str, configmaps: d
         "STEP_ROOT": "/skyhook-package/skyhook_dir",
         "SKIP_SYSTEM_OPERATIONS": "true",
     }
+    if extra_env:
+        container_env.update(extra_env)
     
     cmd = f"bash {script_path} 2>&1"
     exec_result = runner.container.exec_run(
@@ -536,5 +548,299 @@ def test_prepare_nvidia_profiles_common_profiles_deployed(base_image):
         nvidia_acs_disable_exists = runner.file_exists("/usr/lib/tuned/nvidia-acs-disable/tuned.conf")
         assert nvidia_acs_disable_exists, "nvidia-acs-disable profile was not deployed to /usr/lib/tuned/"
         
+    finally:
+        runner.cleanup()
+
+
+# OKE tests: fixed Ubuntu 24.04 only (no base_image param => not matrix-parametrized).
+UBUNTU_2404 = "ubuntu:24.04"
+
+
+@pytest.mark.parametrize(
+    "oke_network,expect_substrings",
+    [
+        ("cx7", []),
+        ("CX7", []),
+        (
+            "cx8",
+            [
+                "cmdline_oke_cx8_iommu=iommu=on",
+                "processor.max_cstate=1",
+                "numa_balancing=disable",
+            ],
+        ),
+        ("CX8", ["cmdline_oke_cx8_iommu=iommu=on"]),
+        (
+            "infiniband",
+            [
+                "cmdline_oke_ib_rdma=oci_hpc.rdma_device_names_mode=2",
+                "cmdline_oke_ib_vnic=oci_hpc.vnic_device_names_mode=1",
+            ],
+        ),
+    ],
+)
+def test_prepare_nvidia_profiles_oke_network_modes_ubuntu2404(oke_network, expect_substrings):
+    """OKE: prepare merges hardware fragment and marker for each NVIDIA_TUNED_OKE_NETWORK value."""
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=UBUNTU_2404)
+    try:
+        configmaps = {
+            "accelerator": "h100",
+            "intent": "performance",
+            "service": "oke",
+        }
+        create_container_for_testing(runner, configmaps)
+        install_tuned_in_container(runner, UBUNTU_2404)
+
+        extra_env = {"NVIDIA_TUNED_OKE_NETWORK": oke_network}
+        result = run_script_in_container(
+            runner, "prepare_nvidia_profiles.sh", configmaps, extra_env=extra_env
+        )
+        assert_exit_code(result, 0)
+
+        expected = oke_network.lower()
+        final_profile = "oke-h100-performance"
+        conf_path = f"/etc/tuned/{final_profile}/tuned.conf"
+        assert runner.file_exists(conf_path), f"missing {conf_path}"
+        content = runner.get_file_contents(conf_path)
+        assert f"# nvidia-tuned-oke-network: {expected}" in content
+        assert "include=nvidia-h100-performance" in content
+        for sub in expect_substrings:
+            assert sub in content, f"expected {sub!r} in tuned.conf"
+        if expected == "cx7":
+            assert "cmdline_oke_cx8" not in content
+            assert "oci_hpc.rdma_device_names_mode" not in content
+    finally:
+        runner.cleanup()
+
+
+def test_prepare_nvidia_profiles_oke_default_network_is_cx7_ubuntu2404():
+    """OKE: omitting NVIDIA_TUNED_OKE_NETWORK defaults to cx7 marker."""
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=UBUNTU_2404)
+    try:
+        configmaps = {
+            "accelerator": "gb200",
+            "intent": "inference",
+            "service": "oke",
+        }
+        create_container_for_testing(runner, configmaps)
+        install_tuned_in_container(runner, UBUNTU_2404)
+
+        result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
+        assert_exit_code(result, 0)
+        content = runner.get_file_contents("/etc/tuned/oke-gb200-inference/tuned.conf")
+        assert "# nvidia-tuned-oke-network: cx7" in content
+    finally:
+        runner.cleanup()
+
+
+def test_prepare_nvidia_profiles_oke_invalid_network_env_fails_ubuntu2404():
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=UBUNTU_2404)
+    try:
+        configmaps = {
+            "accelerator": "h100",
+            "intent": "performance",
+            "service": "oke",
+        }
+        create_container_for_testing(runner, configmaps)
+        install_tuned_in_container(runner, UBUNTU_2404)
+
+        result = run_script_in_container(
+            runner,
+            "prepare_nvidia_profiles.sh",
+            configmaps,
+            extra_env={"NVIDIA_TUNED_OKE_NETWORK": "invalid-mode"},
+        )
+        assert_exit_code(result, 1)
+        assert_output_contains(result.stdout, "NVIDIA_TUNED_OKE_NETWORK must be cx7, cx8, or infiniband")
+    finally:
+        runner.cleanup()
+
+
+@pytest.mark.parametrize("oke_network", ["cx7", "cx8", "infiniband"])
+def test_prepare_nvidia_profiles_check_oke_matches_env_ubuntu2404(oke_network):
+    """prepare-check passes when env matches baked OKE marker."""
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=UBUNTU_2404)
+    try:
+        configmaps = {
+            "accelerator": "h100",
+            "intent": "multiNodeTraining",
+            "service": "oke",
+        }
+        create_container_for_testing(runner, configmaps)
+        install_tuned_in_container(runner, UBUNTU_2404)
+
+        extra_env = {"NVIDIA_TUNED_OKE_NETWORK": oke_network}
+        prep = run_script_in_container(
+            runner, "prepare_nvidia_profiles.sh", configmaps, extra_env=extra_env
+        )
+        assert_exit_code(prep, 0)
+
+        check = run_script_in_container(
+            runner, "prepare_nvidia_profiles_check.sh", configmaps, extra_env=extra_env
+        )
+        assert_exit_code(check, 0)
+        assert_output_contains(check.stdout, "Profile verification complete")
+    finally:
+        runner.cleanup()
+
+
+def test_prepare_nvidia_profiles_check_oke_env_mismatch_fails_ubuntu2404():
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=UBUNTU_2404)
+    try:
+        configmaps = {
+            "accelerator": "h100",
+            "intent": "performance",
+            "service": "oke",
+        }
+        create_container_for_testing(runner, configmaps)
+        install_tuned_in_container(runner, UBUNTU_2404)
+
+        prep = run_script_in_container(
+            runner,
+            "prepare_nvidia_profiles.sh",
+            configmaps,
+            extra_env={"NVIDIA_TUNED_OKE_NETWORK": "cx8"},
+        )
+        assert_exit_code(prep, 0)
+
+        check = run_script_in_container(
+            runner,
+            "prepare_nvidia_profiles_check.sh",
+            configmaps,
+            extra_env={"NVIDIA_TUNED_OKE_NETWORK": "infiniband"},
+        )
+        assert_exit_code(check, 1)
+        assert_output_contains(check.stdout, "nvidia-tuned-oke-network")
+    finally:
+        runner.cleanup()
+
+
+@pytest.mark.parametrize(
+    "skip_acs,expect_acs_file",
+    [
+        (None, True),
+        ("1", False),
+        ("true", False),
+    ],
+)
+def test_oke_script_start_cx8_acs_grub_ubuntu2404(skip_acs, expect_acs_file):
+    """OKE script.sh start installs cx8 pci=config_acs grub drop-in unless skipped."""
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=UBUNTU_2404)
+    acs_path = "/etc/default/grub.d/99-nvidia-tuned-oke-cx8-acs.cfg"
+    try:
+        configmaps = {
+            "accelerator": "h100",
+            "intent": "performance",
+            "service": "oke",
+        }
+        create_container_for_testing(runner, configmaps)
+        install_tuned_in_container(runner, UBUNTU_2404)
+        runner.container.exec_run(
+            ["apt-get", "install", "-y", "grub-common"],
+            workdir="/",
+        )
+
+        extra_env: dict[str, str] = {"NVIDIA_TUNED_OKE_NETWORK": "cx8"}
+        if skip_acs is not None:
+            extra_env["NVIDIA_TUNED_OKE_SKIP_PCI_CONFIG_ACS"] = skip_acs
+
+        prep = run_script_in_container(
+            runner, "prepare_nvidia_profiles.sh", configmaps, extra_env=extra_env
+        )
+        assert_exit_code(prep, 0)
+
+        # Ensure clean slate for ACS file
+        runner.container.exec_run(["rm", "-f", acs_path], workdir="/")
+
+        start_env = {
+            "SKYHOOK_DIR": "/skyhook-package",
+            "STEP_ROOT": "/skyhook-package/skyhook_dir",
+            **extra_env,
+        }
+        exec_result = runner.container.exec_run(
+            [
+                "/bin/bash",
+                "-c",
+                "/etc/tuned/oke-h100-performance/script.sh start 2>&1",
+            ],
+            workdir="/",
+            environment=start_env,
+        )
+        out = exec_result.output.decode("utf-8", errors="replace")
+        assert exec_result.exit_code == 0, f"script.sh start failed: {out}"
+
+        exists = runner.file_exists(acs_path)
+        assert exists == expect_acs_file, (
+            f"ACS grub file exists={exists}, expected {expect_acs_file}. Output: {out}"
+        )
+        if expect_acs_file:
+            acs_content = runner.get_file_contents(acs_path)
+            assert "pci=config_acs" in acs_content
+    finally:
+        runner.cleanup()
+
+
+def test_oke_script_start_cx7_does_not_install_acs_grub_ubuntu2404():
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=UBUNTU_2404)
+    acs_path = "/etc/default/grub.d/99-nvidia-tuned-oke-cx8-acs.cfg"
+    try:
+        configmaps = {
+            "accelerator": "h100",
+            "intent": "performance",
+            "service": "oke",
+        }
+        create_container_for_testing(runner, configmaps)
+        install_tuned_in_container(runner, UBUNTU_2404)
+        runner.container.exec_run(
+            ["apt-get", "install", "-y", "grub-common"],
+            workdir="/",
+        )
+
+        prep = run_script_in_container(
+            runner,
+            "prepare_nvidia_profiles.sh",
+            configmaps,
+            extra_env={"NVIDIA_TUNED_OKE_NETWORK": "cx7"},
+        )
+        assert_exit_code(prep, 0)
+
+        start_env = {
+            "SKYHOOK_DIR": "/skyhook-package",
+            "STEP_ROOT": "/skyhook-package/skyhook_dir",
+            "NVIDIA_TUNED_OKE_NETWORK": "cx7",
+        }
+        exec_result = runner.container.exec_run(
+            ["/bin/bash", "-c", "/etc/tuned/oke-h100-performance/script.sh start 2>&1"],
+            workdir="/",
+            environment=start_env,
+        )
+        assert exec_result.exit_code == 0
+        assert not runner.file_exists(acs_path)
+    finally:
+        runner.cleanup()
+
+
+def test_oke_deploys_service_artifacts_ubuntu2404():
+    """OKE profile directory contains script, bootloader, and cx8 template."""
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=UBUNTU_2404)
+    try:
+        configmaps = {
+            "accelerator": "h100",
+            "intent": "performance",
+            "service": "oke",
+        }
+        create_container_for_testing(runner, configmaps)
+        install_tuned_in_container(runner, UBUNTU_2404)
+
+        result = run_script_in_container(
+            runner,
+            "prepare_nvidia_profiles.sh",
+            configmaps,
+            extra_env={"NVIDIA_TUNED_OKE_NETWORK": "infiniband"},
+        )
+        assert_exit_code(result, 0)
+        base = "/etc/tuned/oke-h100-performance"
+        for name in ("script.sh", "bootloader.sh", "cx8-pci-config-acs.grub"):
+            assert runner.file_exists(f"{base}/{name}"), f"missing {name}"
     finally:
         runner.cleanup()

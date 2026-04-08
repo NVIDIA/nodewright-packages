@@ -148,6 +148,36 @@ build_final_profile_name() {
     fi
 }
 
+# Append OKE hardware [bootloader] fragment (NVIDIA_TUNED_OKE_NETWORK: cx7 | cx8 | infiniband)
+append_oke_network_bootloader() {
+    local service_dir=$1
+    local dest_conf=$2
+    local net="${NVIDIA_TUNED_OKE_NETWORK:-cx7}"
+    net=$(echo "$net" | tr '[:upper:]' '[:lower:]')
+    case "$net" in
+        cx7|cx8|infiniband) ;;
+        *)
+            echo "ERROR: NVIDIA_TUNED_OKE_NETWORK must be cx7, cx8, or infiniband; got: $net"
+            exit 1
+            ;;
+    esac
+    local frag="$service_dir/hardware/bootloader-${net}.conf"
+    if [ ! -f "$frag" ]; then
+        echo "ERROR: OKE hardware fragment missing: $frag"
+        exit 1
+    fi
+    {
+        echo ""
+        echo "# nvidia-tuned-oke-network: ${net}"
+    } >> "$dest_conf"
+    if grep -q '^\[bootloader\]' "$frag" 2>/dev/null; then
+        cat "$frag" >> "$dest_conf"
+        echo "Appended OKE [bootloader] fragment: hardware/bootloader-${net}.conf"
+    else
+        echo "OKE network mode ${net}: no extra [bootloader] keys (fragment is comments only)"
+    fi
+}
+
 # Deploy service profile with dynamic include (into directory named {service}-{accelerator}-{intent})
 deploy_service_profile() {
     local service=$1
@@ -185,6 +215,9 @@ deploy_service_profile() {
         # Insert include= line after [main]
         sed "s/^\[main\]/[main]\ninclude=$profile_to_include/" "$template" | tee "$TUNED_USER_DIR/$final_profile_name/tuned.conf" > /dev/null
         echo "Created service profile: $final_profile_name with include=$profile_to_include"
+        if [ "$service" = "oke" ]; then
+            append_oke_network_bootloader "$service_dir" "$TUNED_USER_DIR/$final_profile_name/tuned.conf"
+        fi
     else
         echo "ERROR: Service template not found: $template"
         exit 1

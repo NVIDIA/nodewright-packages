@@ -161,6 +161,24 @@ verify_service_profile() {
         exit 1
     fi
 
+    # OKE: hardware mode marker must match NVIDIA_TUNED_OKE_NETWORK (default cx7)
+    if [ "${SERVICE:-}" = "oke" ]; then
+        local net="${NVIDIA_TUNED_OKE_NETWORK:-cx7}"
+        net=$(echo "$net" | tr '[:upper:]' '[:lower:]')
+        case "$net" in
+            cx7|cx8|infiniband) ;;
+            *)
+                echo "ERROR: NVIDIA_TUNED_OKE_NETWORK must be cx7, cx8, or infiniband; got: $net"
+                exit 1
+                ;;
+        esac
+        if ! grep -q "^# nvidia-tuned-oke-network: ${net}" "$service_conf"; then
+            echo "ERROR: OKE tuned.conf missing marker '# nvidia-tuned-oke-network: ${net}'"
+            cat "$service_conf"
+            exit 1
+        fi
+    fi
+
     echo "Verified service profile: $final_profile_name includes $expected_workload_profile"
 }
 
@@ -219,6 +237,8 @@ main() {
         SERVICE=$(cat "$SERVICE_FILE" | xargs)
         if [ -n "$SERVICE" ]; then
             FINAL_PROFILE=$(build_final_profile_name "$SERVICE" "$ACCELERATOR" "$INTENT")
+            # verify_service_profile reads SERVICE for OKE marker checks
+            export SERVICE
             # Verify service profile (final name = {service}-{accelerator}-{intent})
             verify_service_profile "$FINAL_PROFILE" "$PROFILE"
             verify_tuned_profile_file "$FINAL_PROFILE"

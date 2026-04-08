@@ -1,0 +1,4 @@
+# Appended to GRUB_CMDLINE_LINUX on Ubuntu when NVIDIA_TUNED_OKE_NETWORK=cx8 (unless skipped).
+# Shape-specific: replace this file or set NVIDIA_TUNED_OKE_SKIP_PCI_CONFIG_ACS=true if not needed.
+# Source: oci-hpc-images ansible/roles/kernel_parameters (cx8 + Ubuntu).
+GRUB_CMDLINE_LINUX="$GRUB_CMDLINE_LINUX pci=config_acs=\"xx111x0@0008:00:00.0;xx110x1@0008:02:00.0;xx101x1@0008:02:03.0;xx111x0@0009:00:00.0;xx110x1@0009:02:00.0;xx101x1@0009:02:01.0;xx111x0@0018:00:00.0;xx110x1@0018:02:00.0;xx101x1@0018:02:03.0;xx111x0@0019:00:00.0;xx110x1@0019:02:00.0;xx101x1@0019:02:01.0\""
