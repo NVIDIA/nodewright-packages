@@ -735,12 +735,12 @@ def test_oke_script_start_cx8_acs_grub_ubuntu2404(skip_acs, expect_acs_file):
         }
         create_container_for_testing(runner, configmaps)
         install_tuned_in_container(runner, UBUNTU_2404)
-        runner.container.exec_run(
-            ["apt-get", "install", "-y", "grub-common"],
-            workdir="/",
-        )
 
-        extra_env: dict[str, str] = {"NVIDIA_TUNED_OKE_NETWORK": "cx8"}
+        extra_env: dict[str, str] = {
+            "NVIDIA_TUNED_OKE_NETWORK": "cx8",
+            # Minimal images lack update-grub; match Skyhook test mode.
+            "SKIP_SYSTEM_OPERATIONS": "true",
+        }
         if skip_acs is not None:
             extra_env["NVIDIA_TUNED_OKE_SKIP_PCI_CONFIG_ACS"] = skip_acs
 
@@ -791,10 +791,6 @@ def test_oke_script_start_cx7_does_not_install_acs_grub_ubuntu2404():
         }
         create_container_for_testing(runner, configmaps)
         install_tuned_in_container(runner, UBUNTU_2404)
-        runner.container.exec_run(
-            ["apt-get", "install", "-y", "grub-common"],
-            workdir="/",
-        )
 
         prep = run_script_in_container(
             runner,
@@ -808,6 +804,7 @@ def test_oke_script_start_cx7_does_not_install_acs_grub_ubuntu2404():
             "SKYHOOK_DIR": "/skyhook-package",
             "STEP_ROOT": "/skyhook-package/skyhook_dir",
             "NVIDIA_TUNED_OKE_NETWORK": "cx7",
+            "SKIP_SYSTEM_OPERATIONS": "true",
         }
         exec_result = runner.container.exec_run(
             ["/bin/bash", "-c", "/etc/tuned/oke-h100-performance/script.sh start 2>&1"],

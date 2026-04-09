@@ -51,15 +51,29 @@ apply_cx8_acs_grub() {
 	mkdir -p "$(dirname "$CX8_ACS_GRUB")"
 	cp -f "$src" "$CX8_ACS_GRUB"
 	chmod 0644 "$CX8_ACS_GRUB"
-	if command -v update-grub >/dev/null 2>&1; then
+	if [ -n "${SKIP_SYSTEM_OPERATIONS:-}" ]; then
+		echo "apply_cx8_acs_grub: SKIP_SYSTEM_OPERATIONS set; skipping update-grub"
+	else
+		if ! command -v update-grub >/dev/null 2>&1; then
+			echo "apply_cx8_acs_grub: update-grub not found in PATH" >&2
+			exit 1
+		fi
 		update-grub
 	fi
 }
 
 remove_cx8_acs_grub() {
 	rm -f "$CX8_ACS_GRUB"
-	if is_ubuntu && command -v update-grub >/dev/null 2>&1; then
-		update-grub
+	if is_ubuntu; then
+		if [ -n "${SKIP_SYSTEM_OPERATIONS:-}" ]; then
+			:
+		else
+			if ! command -v update-grub >/dev/null 2>&1; then
+				echo "remove_cx8_acs_grub: update-grub not found in PATH" >&2
+				exit 1
+			fi
+			update-grub
+		fi
 	fi
 }
 

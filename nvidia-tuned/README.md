@@ -190,6 +190,8 @@ Optional:
 
 - **`NVIDIA_TUNED_OKE_SKIP_PCI_CONFIG_ACS`**: set to `true` or `1` to skip installing the cx8 `pci=config_acs` grub fragment on Ubuntu (still applies tuned `[bootloader]` keys for cx8).
 
+- **`SKIP_SYSTEM_OPERATIONS`**: when set (any non-empty value, as in Skyhook test/verify flows), OKE Ubuntu scripts skip `update-grub` after writing GRUB drop-ins. If unset, `update-grub` must be on `PATH` (e.g. install `grub-pc` or `grub-efi-amd64` on Ubuntu); otherwise the script fails.
+
 **Ubuntu vs RHEL:** `bootloader.sh` runs only on Ubuntu (`update-grub` + GRUB drop-in). On RHEL and similar, tuned applies `[bootloader]` entries without that helper. The cx8 **pci=config_acs** drop-in is **Ubuntu-only**; on RHEL, supply equivalent boot parameters with your image tooling if required.
 
 ### OKE usage example

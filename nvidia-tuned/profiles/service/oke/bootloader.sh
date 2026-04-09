@@ -34,6 +34,15 @@ fi
 EOF
 
 chmod a+x "$GRUB_CONFIG_FILE"
-update-grub
+
+if [ -n "${SKIP_SYSTEM_OPERATIONS:-}" ]; then
+	echo "bootloader.sh: SKIP_SYSTEM_OPERATIONS set; skipping update-grub"
+else
+	if ! command -v update-grub >/dev/null 2>&1; then
+		echo "bootloader.sh: update-grub not found in PATH (install grub-pc or grub-efi-amd64)" >&2
+		exit 1
+	fi
+	update-grub
+fi
 
 echo "Created $GRUB_CONFIG_FILE (sources $BOOTCMDLINE_FILE)"
