@@ -2,6 +2,18 @@
 
 All notable changes to this package will be documented in this file.
 
+## [0.2.4] - 2026-04-09
+
+### New Features
+
+- *(nvidia-tuned)* Add `nvidia-generic` profile as a self-contained baseline for any NVIDIA GPU
+- *(nvidia-tuned)* Support `accelerator=generic` to select `nvidia-generic` profile, ignoring intent and service
+- *(nvidia-tuned)* `nvidia-generic` provides safe, universally applicable tuning: performance CPU governor, IOMMU passthrough, PCI BAR protection, low swappiness, BBR congestion control
+
+### Tests
+
+- Add tests for `accelerator=generic`: basic selection, intent ignored, service ignored, profile content validation, check script verification
+
 ## [0.2.3] - 2026-03-09
 
 ### Bug Fixes
