@@ -580,17 +580,13 @@ def test_prepare_nvidia_profiles_generic_profile_content(base_image):
         assert "include=" not in profile_content, \
             "nvidia-generic should be self-contained with no include"
         
+        # No bootloader section (ineffective in virtualized environments)
+        assert "[bootloader]" not in profile_content, \
+            "nvidia-generic should not have a bootloader section"
+        
         # CPU governor
         assert "governor=performance" in profile_content, \
             "nvidia-generic should set CPU governor to performance"
-        
-        # Bootloader params
-        assert "init_on_alloc=0" in profile_content, \
-            "nvidia-generic should disable init_on_alloc"
-        assert "iommu=pt" in profile_content, \
-            "nvidia-generic should set IOMMU passthrough"
-        assert "pci=realloc=off" in profile_content, \
-            "nvidia-generic should disable PCI realloc"
         
         # Sysctl
         assert "vm.swappiness=1" in profile_content, \
