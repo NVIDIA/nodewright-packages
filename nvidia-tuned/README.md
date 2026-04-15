@@ -10,7 +10,7 @@ This package inherits from the base `tuned` package and adds pre-configured tune
 - **OS-specific workload profiles**: Profiles that may vary by OS version
 - **Service profiles**: Service-specific settings (eks, GCP, etc.)
 
-The configmap uses an **intent-based** model where you specify **what** you want (intent + accelerator) rather than a specific profile name. The profile name `nvidia-{accelerator}-{intent}` is constructed automatically.
+The configmap uses an **intent-based** model where you specify **what** you want (intent + accelerator) rather than a specific profile name. The profile name `nvidia-{accelerator}-{intent}` is constructed automatically. When `accelerator=generic`, the self-contained `nvidia-generic` profile is used instead, providing safe baseline tuning for any NVIDIA GPU without requiring accelerator-specific or intent-specific configuration.
 
 ## Supported Operating Systems
 
@@ -41,6 +41,7 @@ profiles/
 │   └── nvidia-acs-disable/
 ├── os/
 │   ├── common/              # Default workload profiles (fallback for untested OS)
+│   │   ├── nvidia-generic/             # Self-contained baseline (accelerator=generic)
 │   │   ├── nvidia-h100-performance/
 │   │   ├── nvidia-h100-inference/
 │   │   ├── nvidia-h100-multiNodeTraining/
@@ -86,12 +87,15 @@ nvidia-{accelerator}-{intent}
 Examples:
 | `accelerator` | `intent` | Constructed Profile |
 |---------------|----------|---------------------|
+| `generic` | *(ignored)* | `nvidia-generic` |
 | `h100` | `performance` | `nvidia-h100-performance` |
 | `h100` | `inference` | `nvidia-h100-inference` |
 | `h100` | `multiNodeTraining` | `nvidia-h100-multiNodeTraining` |
 | `gb200` | `performance` | `nvidia-gb200-performance` |
 | `gb200` | `inference` | `nvidia-gb200-inference` |
 | `gb200` | `multiNodeTraining` | `nvidia-gb200-multiNodeTraining` |
+
+When `accelerator=generic`, the `nvidia-generic` profile is selected directly. The `intent` and `service` fields are ignored. This profile is self-contained (no include chain) and provides universally safe GPU tuning suitable for any NVIDIA GPU.
 
 ### Inheritance Chain
 
@@ -107,6 +111,32 @@ eks (active profile)
 
 ## Usage
 
+**Generic tuning** (any NVIDIA GPU, no accelerator-specific or intent-specific config):
+
+```yaml
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  name: nvidia-tuned-generic
+spec:
+  nodeSelectors:
+    matchLabels:
+      nvidia.com/gpu.present: "true"
+  packages:
+    nvidia-tuned:
+      image: ghcr.io/nvidia/skyhook-packages/nvidia-tuned
+      version: 0.2.4
+      interrupt:
+        type: reboot
+      env:
+        - name: INTERRUPT
+          value: "true"
+      configMap:
+        accelerator: generic
+```
+
+**Accelerator-specific tuning** (with intent and service):
+
 ```yaml
 apiVersion: skyhook.nvidia.com/v1alpha1
 kind: Skyhook
@@ -119,7 +149,7 @@ spec:
   packages:
     nvidia-tuned:
       image: ghcr.io/nvidia/skyhook-packages/nvidia-tuned
-      version: 0.1.0
+      version: 0.2.4
       interrupt:
         type: reboot
       configInterrupts:
@@ -138,9 +168,9 @@ spec:
 
 | Field | Required | Default | Description |
 |-------|----------|---------|-------------|
-| `accelerator` | Yes | — | GPU/accelerator type (e.g., `h100`) |
-| `intent` | No | `performance` | Workload intent (e.g., `inference`, `performance`, `multiNodeTraining`) |
-| `service` | No | — | Service name (e.g., `eks`). If specified, service profile wraps the workload profile |
+| `accelerator` | Yes | — | GPU/accelerator type (e.g., `h100`, `gb200`, `generic`). When set to `generic`, intent and service are ignored |
+| `intent` | No | `performance` | Workload intent (e.g., `inference`, `performance`, `multiNodeTraining`). Ignored when `accelerator=generic` |
+| `service` | No | — | Service name (e.g., `eks`). If specified, service profile wraps the workload profile. Ignored when `accelerator=generic` |
 
 ## Available Profiles
 
@@ -156,6 +186,7 @@ spec:
 
 | Accelerator | Description |
 |-------------|-------------|
+| `generic` | Baseline tuning for any NVIDIA GPU (self-contained, no intent/service required) |
 | `h100` | NVIDIA H100 GPU |
 | `gb200` | NVIDIA GB200 GPU |
 
@@ -201,7 +232,7 @@ See the [tuned package README](../tuned/README.md) for complete documentation on
 
 ## Version
 
-- **Package Version**: 0.2.0
+- **Package Version**: 0.2.4
 - **Base Package**: tuned (latest via preprocess.sh)
 - **Schema Version**: v1
 

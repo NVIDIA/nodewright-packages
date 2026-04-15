@@ -244,10 +244,6 @@ main() {
     fi
     ACCELERATOR=$(cat "$ACCELERATOR_FILE" | xargs)
 
-    # Build profile name from components
-    PROFILE=$(build_profile_name "$INTENT" "$ACCELERATOR")
-    echo "Constructed profile: $PROFILE (intent=$INTENT, accelerator=$ACCELERATOR)"
-
     # Detect OS
     detect_os
 
@@ -257,24 +253,36 @@ main() {
     # Deploy ALL OS-specific profiles to /etc/tuned/
     deploy_os_profiles
 
+    # When accelerator=generic, use nvidia-generic profile directly
+    if [ "$ACCELERATOR" = "generic" ]; then
+        PROFILE="nvidia-generic"
+        echo "Accelerator is generic, using profile: $PROFILE"
+        validate_profile "$PROFILE"
+        write_tuned_profile "$PROFILE"
+        set_reapply_sysctl_off
+        echo "Profile preparation complete"
+        return
+    fi
+
+    # Build profile name from components
+    PROFILE=$(build_profile_name "$INTENT" "$ACCELERATOR")
+    echo "Constructed profile: $PROFILE (intent=$INTENT, accelerator=$ACCELERATOR)"
+
     # Validate the constructed profile exists
     validate_profile "$PROFILE"
 
     # Check if service is specified (optional)
     if [ -f "$SERVICE_FILE" ]; then
         SERVICE=$(cat "$SERVICE_FILE" | xargs)
-        if [ -n "$SERVICE" ]; then
-            echo "Requested service: $SERVICE"
-            FINAL_PROFILE=$(build_final_profile_name "$SERVICE" "$ACCELERATOR" "$INTENT")
-            echo "Final profile name: $FINAL_PROFILE (service=$SERVICE, accelerator=$ACCELERATOR, intent=$INTENT)"
-            deploy_service_profile "$SERVICE" "$PROFILE" "$FINAL_PROFILE"
-            write_tuned_profile "$FINAL_PROFILE"
-        else
-            # No service, use workload profile directly
-            write_tuned_profile "$PROFILE"
-        fi
+    fi
+    if [ -n "${SERVICE:-}" ]; then
+        echo "Requested service: $SERVICE"
+        FINAL_PROFILE=$(build_final_profile_name "$SERVICE" "$ACCELERATOR" "$INTENT")
+        echo "Final profile name: $FINAL_PROFILE (service=$SERVICE, accelerator=$ACCELERATOR, intent=$INTENT)"
+        deploy_service_profile "$SERVICE" "$PROFILE" "$FINAL_PROFILE"
+        write_tuned_profile "$FINAL_PROFILE"
     else
-        # No service file, use workload profile directly
+        # No service, use workload profile directly
         write_tuned_profile "$PROFILE"
     fi
 

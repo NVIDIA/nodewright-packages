@@ -22,9 +22,10 @@ Tests for nvidia-tuned prepare_nvidia_profiles.sh script.
 Tests verify:
 - Tuned version meets OS-specific requirements (>= 2.15 for Ubuntu 22.04/Debian 11, >= 2.19 for others)
 - prepare_nvidia_profiles does the right thing for all combinations of:
-  - accelerator (h100, gb200)
+  - accelerator (h100, gb200, generic)
   - intent (performance, inference, multiNodeTraining)
   - service (eks, none)
+- accelerator=generic uses self-contained nvidia-generic profile, ignoring intent and service
 - For AWS service, verifies grub config file is created correctly
 """
 
@@ -455,6 +456,176 @@ def test_prepare_nvidia_profiles_missing_accelerator(base_image):
         
         assert_exit_code(result, 1)
         assert_output_contains(result.stdout, "accelerator configmap not found")
+        
+    finally:
+        runner.cleanup()
+
+
+def test_prepare_nvidia_profiles_generic_accelerator(base_image):
+    """Test that accelerator=generic uses nvidia-generic profile."""
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        configmaps = {
+            "accelerator": "generic",
+        }
+        
+        # Create container directly
+        create_container_for_testing(runner, configmaps)
+        
+        # Install tuned in the container
+        install_tuned_in_container(runner, base_image)
+        
+        # Run the script in the same container
+        result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
+        
+        assert_exit_code(result, 0)
+        assert_output_contains(result.stdout, "Accelerator is generic, using profile: nvidia-generic")
+        
+        # Verify nvidia-generic profile was written to configmap
+        tuned_profile_content = runner.get_file_contents(
+            "/skyhook-package/configmaps/tuned_profile"
+        )
+        assert "nvidia-generic" in tuned_profile_content, \
+            "Expected nvidia-generic in tuned_profile file"
+        
+        # Verify nvidia-generic profile directory exists in /etc/tuned
+        profile_exists = runner.file_exists("/etc/tuned/nvidia-generic/tuned.conf")
+        assert profile_exists, \
+            "nvidia-generic profile was not deployed to /etc/tuned/"
+        
+    finally:
+        runner.cleanup()
+
+
+def test_prepare_nvidia_profiles_generic_ignores_intent(base_image):
+    """Test that accelerator=generic ignores intent and still uses nvidia-generic."""
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        configmaps = {
+            "accelerator": "generic",
+            "intent": "inference",
+        }
+        
+        create_container_for_testing(runner, configmaps)
+        install_tuned_in_container(runner, base_image)
+        
+        result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
+        
+        assert_exit_code(result, 0)
+        assert_output_contains(result.stdout, "Accelerator is generic, using profile: nvidia-generic")
+        
+        tuned_profile_content = runner.get_file_contents(
+            "/skyhook-package/configmaps/tuned_profile"
+        )
+        assert tuned_profile_content.strip() == "nvidia-generic", \
+            f"Expected nvidia-generic, got: {tuned_profile_content!r}"
+        
+    finally:
+        runner.cleanup()
+
+
+def test_prepare_nvidia_profiles_generic_ignores_service(base_image):
+    """Test that accelerator=generic ignores service and still uses nvidia-generic."""
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        configmaps = {
+            "accelerator": "generic",
+            "intent": "multiNodeTraining",
+            "service": "eks",
+        }
+        
+        create_container_for_testing(runner, configmaps)
+        install_tuned_in_container(runner, base_image)
+        
+        result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
+        
+        assert_exit_code(result, 0)
+        assert_output_contains(result.stdout, "Accelerator is generic, using profile: nvidia-generic")
+        
+        # Should NOT create a service-wrapped profile
+        tuned_profile_content = runner.get_file_contents(
+            "/skyhook-package/configmaps/tuned_profile"
+        )
+        assert tuned_profile_content.strip() == "nvidia-generic", \
+            f"Expected nvidia-generic (no service wrapping), got: {tuned_profile_content!r}"
+        
+        # Service profile directory should NOT exist
+        service_profile_exists = runner.file_exists("/etc/tuned/eks-generic-multiNodeTraining/tuned.conf")
+        assert not service_profile_exists, \
+            "Service profile should not be created when accelerator=generic"
+        
+    finally:
+        runner.cleanup()
+
+
+def test_prepare_nvidia_profiles_generic_profile_content(base_image):
+    """Test that nvidia-generic profile contains expected self-contained settings."""
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        configmaps = {
+            "accelerator": "generic",
+        }
+        
+        create_container_for_testing(runner, configmaps)
+        install_tuned_in_container(runner, base_image)
+        
+        result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
+        assert_exit_code(result, 0)
+        
+        profile_content = runner.get_file_contents(
+            "/etc/tuned/nvidia-generic/tuned.conf"
+        )
+        
+        # Self-contained: no include directive
+        assert "include=" not in profile_content, \
+            "nvidia-generic should be self-contained with no include"
+        
+        # No bootloader section (ineffective in virtualized environments)
+        assert "[bootloader]" not in profile_content, \
+            "nvidia-generic should not have a bootloader section"
+        
+        # CPU governor
+        assert "governor=performance" in profile_content, \
+            "nvidia-generic should set CPU governor to performance"
+        
+        # Sysctl
+        assert "vm.swappiness=1" in profile_content, \
+            "nvidia-generic should set vm.swappiness=1"
+        assert "tcp_congestion_control=bbr" in profile_content, \
+            "nvidia-generic should set BBR congestion control"
+        assert "default_qdisc=fq" in profile_content, \
+            "nvidia-generic should set fq qdisc"
+        
+    finally:
+        runner.cleanup()
+
+
+def test_prepare_nvidia_profiles_generic_check_script(base_image):
+    """Test that the check script verifies nvidia-generic correctly."""
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        configmaps = {
+            "accelerator": "generic",
+        }
+        
+        create_container_for_testing(runner, configmaps)
+        install_tuned_in_container(runner, base_image)
+        
+        # Run prepare first
+        prepare_result = run_script_in_container(
+            runner, "prepare_nvidia_profiles.sh", configmaps
+        )
+        assert_exit_code(prepare_result, 0)
+        
+        # Run check
+        check_result = run_script_in_container(
+            runner, "prepare_nvidia_profiles_check.sh", configmaps
+        )
+        assert_exit_code(check_result, 0)
+        assert_output_contains(
+            check_result.stdout,
+            "Accelerator is generic, verifying profile: nvidia-generic"
+        )
         
     finally:
         runner.cleanup()

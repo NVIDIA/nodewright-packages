@@ -201,15 +201,25 @@ main() {
     fi
     ACCELERATOR=$(cat "$ACCELERATOR_FILE" | xargs)
 
-    # Build profile name from components
-    PROFILE=$(build_profile_name "$INTENT" "$ACCELERATOR")
-    echo "Verifying constructed profile: $PROFILE (intent=$INTENT, accelerator=$ACCELERATOR)"
-
     # Verify common profiles are deployed to /usr/lib/tuned/
     verify_common_profiles
 
     # Verify ALL OS profiles are deployed to /etc/tuned/
     verify_os_profiles
+
+    # When accelerator=generic, expect nvidia-generic
+    if [ "$ACCELERATOR" = "generic" ]; then
+        PROFILE="nvidia-generic"
+        echo "Accelerator is generic, verifying profile: $PROFILE"
+        verify_constructed_profile "$PROFILE"
+        verify_tuned_profile_file "$PROFILE"
+        echo "Profile verification complete"
+        return
+    fi
+
+    # Build profile name from components
+    PROFILE=$(build_profile_name "$INTENT" "$ACCELERATOR")
+    echo "Verifying constructed profile: $PROFILE (intent=$INTENT, accelerator=$ACCELERATOR)"
 
     # Verify the constructed profile exists
     verify_constructed_profile "$PROFILE"
@@ -217,17 +227,13 @@ main() {
     # Check if service is specified
     if [ -f "$SERVICE_FILE" ]; then
         SERVICE=$(cat "$SERVICE_FILE" | xargs)
-        if [ -n "$SERVICE" ]; then
-            FINAL_PROFILE=$(build_final_profile_name "$SERVICE" "$ACCELERATOR" "$INTENT")
-            # Verify service profile (final name = {service}-{accelerator}-{intent})
-            verify_service_profile "$FINAL_PROFILE" "$PROFILE"
-            verify_tuned_profile_file "$FINAL_PROFILE"
-        else
-            # No service, active profile is the workload profile
-            verify_tuned_profile_file "$PROFILE"
-        fi
+    fi
+    if [ -n "${SERVICE:-}" ]; then
+        FINAL_PROFILE=$(build_final_profile_name "$SERVICE" "$ACCELERATOR" "$INTENT")
+        verify_service_profile "$FINAL_PROFILE" "$PROFILE"
+        verify_tuned_profile_file "$FINAL_PROFILE"
     else
-        # No service file, active profile is the workload profile
+        # No service, active profile is the workload profile
         verify_tuned_profile_file "$PROFILE"
     fi
 
