@@ -1,20 +1,20 @@
 # Global catch-all
-* @lockwobr @mskalka @ayuskauskas @riceriley59
+* @lockwobr @mskalka @ayuskauskas @rice-riley
 
 # Package directories
-kdump/             @lockwobr @mskalka @ayuskauskas @riceriley59
-nvidia-setup/      @lockwobr @mskalka @ayuskauskas @riceriley59
-nvidia-tuned/      @lockwobr @mskalka @ayuskauskas @riceriley59
-nvidia-tuning-gke/ @lockwobr @mskalka @ayuskauskas @riceriley59
-tuned/             @lockwobr @mskalka @ayuskauskas @riceriley59
-tuning/            @lockwobr @mskalka @ayuskauskas @riceriley59
-shellscript/       @lockwobr @mskalka @ayuskauskas @riceriley59
-installer/         @lockwobr @mskalka @ayuskauskas @riceriley59
+kdump/             @lockwobr @mskalka @ayuskauskas @rice-riley
+nvidia-setup/      @lockwobr @mskalka @ayuskauskas @rice-riley
+nvidia-tuned/      @lockwobr @mskalka @ayuskauskas @rice-riley
+nvidia-tuning-gke/ @lockwobr @mskalka @ayuskauskas @rice-riley
+tuned/             @lockwobr @mskalka @ayuskauskas @rice-riley
+tuning/            @lockwobr @mskalka @ayuskauskas @rice-riley
+shellscript/       @lockwobr @mskalka @ayuskauskas @rice-riley
+installer/         @lockwobr @mskalka @ayuskauskas @rice-riley
 
 # Build/ops
-.github/           @lockwobr @mskalka @ayuskauskas @riceriley59
-scripts/           @lockwobr @mskalka @ayuskauskas @riceriley59
-makefile           @lockwobr @mskalka @ayuskauskas @riceriley59
+.github/           @lockwobr @mskalka @ayuskauskas @rice-riley
+scripts/           @lockwobr @mskalka @ayuskauskas @rice-riley
+makefile           @lockwobr @mskalka @ayuskauskas @rice-riley
 
 # Tests
-tests/             @lockwobr @mskalka @ayuskauskas @riceriley59
+tests/             @lockwobr @mskalka @ayuskauskas @rice-riley
