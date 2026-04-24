@@ -776,6 +776,35 @@ def test_prepare_nvidia_profiles_aks_service_specific_profile(base_image):
         runner.cleanup()
 
 
+def test_prepare_nvidia_profiles_common_service_rejected(base_image):
+    """'common' is a reserved service name used for shared helpers; reject it explicitly."""
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        configmaps = {
+            "accelerator": "h100",
+            "intent": "performance",
+            "service": "common",
+        }
+
+        create_container_for_testing(runner, configmaps)
+        install_tuned_in_container(runner, base_image)
+
+        result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
+
+        # Must fail with a clear message mentioning the reserved name
+        assert result.exit_code != 0, \
+            f"Expected prepare script to exit non-zero for service=common, got {result.exit_code}"
+        assert "reserved service name" in result.stdout, \
+            f"Expected stdout to mention 'reserved service name', got: {result.stdout!r}"
+
+        # No common-* final profile dir should have been created
+        assert not runner.file_exists("/etc/tuned/common-h100-performance/tuned.conf"), \
+            "common-h100-performance should NOT have been created"
+
+    finally:
+        runner.cleanup()
+
+
 def test_prepare_nvidia_profiles_common_profiles_deployed(base_image):
     """Test that common base profiles are deployed to /usr/lib/tuned/."""
     runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
@@ -784,24 +813,24 @@ def test_prepare_nvidia_profiles_common_profiles_deployed(base_image):
             "accelerator": "h100",
             "intent": "performance",
         }
-        
+
         # Create container directly
         create_container_for_testing(runner, configmaps)
-        
+
         # Install tuned in the container
         install_tuned_in_container(runner, base_image)
-        
+
         # Run the script in the same container
         result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
-        
+
         assert_exit_code(result, 0)
-        
+
         # Verify common profiles are deployed
         nvidia_base_exists = runner.file_exists("/usr/lib/tuned/nvidia-base/tuned.conf")
         assert nvidia_base_exists, "nvidia-base profile was not deployed to /usr/lib/tuned/"
-        
+
         nvidia_acs_disable_exists = runner.file_exists("/usr/lib/tuned/nvidia-acs-disable/tuned.conf")
         assert nvidia_acs_disable_exists, "nvidia-acs-disable profile was not deployed to /usr/lib/tuned/"
-        
+
     finally:
         runner.cleanup()
