@@ -1,0 +1,5 @@
+[main]
+summary=NVIDIA AKS profile with MAC address policy configuration
+
+[script]
+script=${i:PROFILE_DIR}/script.sh
