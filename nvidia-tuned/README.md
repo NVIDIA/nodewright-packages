@@ -57,9 +57,18 @@ profiles/
 │   └── rhel/
 │       └── 9/              # Symlinks to os/common/ (override when needed)
 └── service/
-    └── eks/
-        ├── tuned.conf.template  # Service template (include= added dynamically)
-        └── script.sh
+    ├── common/                  # Shared helpers copied into every service's final profile dir
+    │   ├── mac-address-policy.sh
+    │   └── bootloader.sh
+    ├── eks/
+    │   ├── tuned.conf.template  # Service template (include= added dynamically)
+    │   ├── script.sh            # Sources common/mac-address-policy.sh, invokes common/bootloader.sh
+    │   ├── nvidia-h100-inference.conf   # AWS-compatible inference override
+    │   └── nvidia-gb200-inference.conf
+    └── aks/
+        ├── tuned.conf.template
+        ├── script.sh            # Sources common/mac-address-policy.sh, invokes common/bootloader.sh
+        └── nvidia-h100-inference.conf   # AKS-compatible inference override (drops kernel-6.8 EEVDF sysctls)
 ```
 
 Note: Profiles are stored in `profiles/` (not `root_dir/`) to avoid polluting the host filesystem during package extraction. The prepare scripts explicitly copy profiles to the appropriate tuned directories.
