@@ -735,6 +735,47 @@ def test_prepare_nvidia_profiles_eks_service_specific_profile(base_image):
         runner.cleanup()
 
 
+def test_prepare_nvidia_profiles_aks_service_specific_profile(base_image):
+    """Test that AKS service-specific inference profile drops EEVDF-removed sysctls."""
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        configmaps = {
+            "accelerator": "h100",
+            "intent": "inference",
+            "service": "aks",
+        }
+
+        create_container_for_testing(runner, configmaps)
+        install_tuned_in_container(runner, base_image)
+
+        result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
+        assert_exit_code(result, 0)
+
+        # AKS-specific inference profile should have overwritten the OS profile
+        # at /etc/tuned/nvidia-h100-inference/tuned.conf
+        inference_profile_content = runner.get_file_contents(
+            "/etc/tuned/nvidia-h100-inference/tuned.conf"
+        )
+
+        import re
+        # No uncommented kernel.sched_latency_ns= or kernel.sched_min_granularity_ns=
+        latency_pattern = r'^\s*kernel\.sched_latency_ns\s*='
+        assert not re.search(latency_pattern, inference_profile_content, re.MULTILINE), \
+            "AKS-specific inference profile should not contain uncommented kernel.sched_latency_ns"
+        granularity_pattern = r'^\s*kernel\.sched_min_granularity_ns\s*='
+        assert not re.search(granularity_pattern, inference_profile_content, re.MULTILINE), \
+            "AKS-specific inference profile should not contain uncommented kernel.sched_min_granularity_ns"
+
+        # Core tunings retained
+        assert "vm.swappiness=1" in inference_profile_content, \
+            "AKS-specific inference profile should contain vm.swappiness=1"
+        assert "AKS-compatible" in inference_profile_content, \
+            "AKS-specific inference profile summary should identify it as AKS-compatible"
+
+    finally:
+        runner.cleanup()
+
+
 def test_prepare_nvidia_profiles_common_profiles_deployed(base_image):
     """Test that common base profiles are deployed to /usr/lib/tuned/."""
     runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
