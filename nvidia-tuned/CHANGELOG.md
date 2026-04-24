@@ -2,6 +2,13 @@
 
 All notable changes to this package will be documented in this file.
 
+## [Unreleased]
+
+### New Features
+
+- *(nvidia-tuned)* Add aks service profile for H100 on AKS
+- *(nvidia-tuned)* Add AKS H100 inference override for kernel 6.8
+
 ## [0.2.4] - 2026-04-09
 
 ### New Features
