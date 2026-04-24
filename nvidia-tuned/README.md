@@ -125,7 +125,7 @@ spec:
   packages:
     nvidia-tuned:
       image: ghcr.io/nvidia/skyhook-packages/nvidia-tuned
-      version: 0.2.4
+      version: 0.3.0
       interrupt:
         type: reboot
       env:
@@ -149,7 +149,7 @@ spec:
   packages:
     nvidia-tuned:
       image: ghcr.io/nvidia/skyhook-packages/nvidia-tuned
-      version: 0.2.4
+      version: 0.3.0
       interrupt:
         type: reboot
       configInterrupts:
@@ -162,6 +162,35 @@ spec:
         intent: inference
         accelerator: h100
         service: eks
+```
+
+**AKS tuning** (H100 on Azure Kubernetes Service, Ubuntu 24.04):
+
+```yaml
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  name: nvidia-tuned-aks
+spec:
+  nodeSelectors:
+    matchLabels:
+      nvidia.com/gpu.present: "true"
+  packages:
+    nvidia-tuned:
+      image: ghcr.io/nvidia/skyhook-packages/nvidia-tuned
+      version: 0.3.0
+      interrupt:
+        type: reboot
+      configInterrupts:
+        intent:
+          type: reboot
+      env:
+        - name: INTERRUPT
+          value: "true"
+      configMap:
+        intent: inference
+        accelerator: h100
+        service: aks
 ```
 
 ### ConfigMap Fields
@@ -195,6 +224,7 @@ spec:
 | Service | Description |
 |---------|-------------|
 | `eks` | eks-specific settings (MAC address policy for CNI) |
+| `aks` | aks-specific settings (MAC address policy, grub.d bootloader workaround for Ubuntu) |
 
 ## Adding OS-Specific Overrides
 
@@ -232,7 +262,7 @@ See the [tuned package README](../tuned/README.md) for complete documentation on
 
 ## Version
 
-- **Package Version**: 0.2.4
+- **Package Version**: 0.3.0
 - **Base Package**: tuned (latest via preprocess.sh)
 - **Schema Version**: v1
 
