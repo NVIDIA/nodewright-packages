@@ -351,6 +351,61 @@ def test_prepare_nvidia_profiles_with_eks_service(base_image, accelerator, inten
         runner.cleanup()
 
 
+@pytest.mark.parametrize("intent", ["performance", "inference", "multiNodeTraining"])
+def test_prepare_nvidia_profiles_with_aks_service(base_image, intent):
+    """Test prepare_nvidia_profiles with AKS service for H100 across all intents."""
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        configmaps = {
+            "accelerator": "h100",
+            "intent": intent,
+            "service": "aks",
+        }
+
+        # Create container directly
+        create_container_for_testing(runner, configmaps)
+
+        # Install tuned in the existing container
+        install_tuned_in_container(runner, base_image)
+
+        # Run the script in the same container
+        result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
+
+        assert_exit_code(result, 0)
+
+        expected_workload_profile = f"nvidia-h100-{intent}"
+        expected_final_profile = f"aks-h100-{intent}"
+        assert_output_contains(result.stdout, "Requested service: aks")
+        assert_output_contains(result.stdout, f"include={expected_workload_profile}")
+        assert_output_contains(result.stdout, f"Final profile name: {expected_final_profile}")
+
+        # Final profile directory exists with tuned.conf
+        assert runner.file_exists(f"/etc/tuned/{expected_final_profile}/tuned.conf"), \
+            f"AKS service profile {expected_final_profile} was not deployed"
+
+        # tuned.conf includes the workload profile
+        service_profile_content = runner.get_file_contents(
+            f"/etc/tuned/{expected_final_profile}/tuned.conf"
+        )
+        assert f"include={expected_workload_profile}" in service_profile_content, \
+            f"AKS profile does not include {expected_workload_profile}"
+
+        # tuned_profile configmap points at the final profile name
+        tuned_profile_content = runner.get_file_contents(
+            "/skyhook-package/configmaps/tuned_profile"
+        )
+        assert tuned_profile_content.strip() == expected_final_profile, \
+            f"tuned_profile should be '{expected_final_profile}', got: {tuned_profile_content!r}"
+
+        # Per-service script plus shared helpers are all present and executable
+        for helper in ("script.sh", "mac-address-policy.sh", "bootloader.sh"):
+            path = f"/etc/tuned/{expected_final_profile}/{helper}"
+            assert runner.file_exists(path), f"{helper} was not deployed to {path}"
+
+    finally:
+        runner.cleanup()
+
+
 def test_prepare_nvidia_profiles_eks_grub_config(base_image):
     """Test that EKS service creates the correct grub config file."""
     runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
