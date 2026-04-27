@@ -8,7 +8,7 @@
 
 set -e
 
-# Profile dir (script is in e.g. /etc/tuned/eks-{accelerator}-{intent}/)
+# Profile dir (script is in e.g. /etc/tuned/aks-{accelerator}-{intent}/)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # shellcheck source=/dev/null

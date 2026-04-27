@@ -179,6 +179,20 @@ deploy_service_profile() {
     rm -rf "$TUNED_USER_DIR/$final_profile_name"
     mkdir -p "$TUNED_USER_DIR/$final_profile_name"
 
+    # Copy shared helper scripts from profiles/service/common/ into the final profile dir.
+    # Each service's script.sh sources these helpers from its own profile dir ($SCRIPT_DIR).
+    local common_dir="$PROFILES_DIR/service/common"
+    if [ -d "$common_dir" ]; then
+        for helper in "$common_dir"/*.sh; do
+            [ -f "$helper" ] || continue
+            local helper_name
+            helper_name=$(basename "$helper")
+            cp "$helper" "$TUNED_USER_DIR/$final_profile_name/$helper_name"
+            chmod +x "$TUNED_USER_DIR/$final_profile_name/$helper_name"
+            echo "Copied shared helper: $helper_name"
+        done
+    fi
+
     # Copy template and inject include line
     local template="$service_dir/tuned.conf.template"
     if [ -f "$template" ]; then
@@ -276,6 +290,10 @@ main() {
         SERVICE=$(cat "$SERVICE_FILE" | xargs)
     fi
     if [ -n "${SERVICE:-}" ]; then
+        if [ "$SERVICE" = "common" ]; then
+            echo "ERROR: 'common' is a reserved service name (used for shared helpers under profiles/service/common/)"
+            exit 1
+        fi
         echo "Requested service: $SERVICE"
         FINAL_PROFILE=$(build_final_profile_name "$SERVICE" "$ACCELERATOR" "$INTENT")
         echo "Final profile name: $FINAL_PROFILE (service=$SERVICE, accelerator=$ACCELERATOR, intent=$INTENT)"

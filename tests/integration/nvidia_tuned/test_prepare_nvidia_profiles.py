@@ -351,6 +351,61 @@ def test_prepare_nvidia_profiles_with_eks_service(base_image, accelerator, inten
         runner.cleanup()
 
 
+@pytest.mark.parametrize("intent", ["performance", "inference", "multiNodeTraining"])
+def test_prepare_nvidia_profiles_with_aks_service(base_image, intent):
+    """Test prepare_nvidia_profiles with AKS service for H100 across all intents."""
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        configmaps = {
+            "accelerator": "h100",
+            "intent": intent,
+            "service": "aks",
+        }
+
+        # Create container directly
+        create_container_for_testing(runner, configmaps)
+
+        # Install tuned in the existing container
+        install_tuned_in_container(runner, base_image)
+
+        # Run the script in the same container
+        result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
+
+        assert_exit_code(result, 0)
+
+        expected_workload_profile = f"nvidia-h100-{intent}"
+        expected_final_profile = f"aks-h100-{intent}"
+        assert_output_contains(result.stdout, "Requested service: aks")
+        assert_output_contains(result.stdout, f"include={expected_workload_profile}")
+        assert_output_contains(result.stdout, f"Final profile name: {expected_final_profile}")
+
+        # Final profile directory exists with tuned.conf
+        assert runner.file_exists(f"/etc/tuned/{expected_final_profile}/tuned.conf"), \
+            f"AKS service profile {expected_final_profile} was not deployed"
+
+        # tuned.conf includes the workload profile
+        service_profile_content = runner.get_file_contents(
+            f"/etc/tuned/{expected_final_profile}/tuned.conf"
+        )
+        assert f"include={expected_workload_profile}" in service_profile_content, \
+            f"AKS profile does not include {expected_workload_profile}"
+
+        # tuned_profile configmap points at the final profile name
+        tuned_profile_content = runner.get_file_contents(
+            "/skyhook-package/configmaps/tuned_profile"
+        )
+        assert tuned_profile_content.strip() == expected_final_profile, \
+            f"tuned_profile should be '{expected_final_profile}', got: {tuned_profile_content!r}"
+
+        # Per-service script plus shared helpers are all present and executable
+        for helper in ("script.sh", "mac-address-policy.sh", "bootloader.sh"):
+            path = f"/etc/tuned/{expected_final_profile}/{helper}"
+            assert runner.file_exists(path), f"{helper} was not deployed to {path}"
+
+    finally:
+        runner.cleanup()
+
+
 def test_prepare_nvidia_profiles_eks_grub_config(base_image):
     """Test that EKS service creates the correct grub config file."""
     runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
@@ -680,6 +735,76 @@ def test_prepare_nvidia_profiles_eks_service_specific_profile(base_image):
         runner.cleanup()
 
 
+def test_prepare_nvidia_profiles_aks_service_specific_profile(base_image):
+    """Test that AKS service-specific inference profile drops EEVDF-removed sysctls."""
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        configmaps = {
+            "accelerator": "h100",
+            "intent": "inference",
+            "service": "aks",
+        }
+
+        create_container_for_testing(runner, configmaps)
+        install_tuned_in_container(runner, base_image)
+
+        result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
+        assert_exit_code(result, 0)
+
+        # AKS-specific inference profile should have overwritten the OS profile
+        # at /etc/tuned/nvidia-h100-inference/tuned.conf
+        inference_profile_content = runner.get_file_contents(
+            "/etc/tuned/nvidia-h100-inference/tuned.conf"
+        )
+
+        import re
+        # No uncommented kernel.sched_latency_ns= or kernel.sched_min_granularity_ns=
+        latency_pattern = r'^\s*kernel\.sched_latency_ns\s*='
+        assert not re.search(latency_pattern, inference_profile_content, re.MULTILINE), \
+            "AKS-specific inference profile should not contain uncommented kernel.sched_latency_ns"
+        granularity_pattern = r'^\s*kernel\.sched_min_granularity_ns\s*='
+        assert not re.search(granularity_pattern, inference_profile_content, re.MULTILINE), \
+            "AKS-specific inference profile should not contain uncommented kernel.sched_min_granularity_ns"
+
+        # Core tunings retained
+        assert "vm.swappiness=1" in inference_profile_content, \
+            "AKS-specific inference profile should contain vm.swappiness=1"
+        assert "AKS-compatible" in inference_profile_content, \
+            "AKS-specific inference profile summary should identify it as AKS-compatible"
+
+    finally:
+        runner.cleanup()
+
+
+def test_prepare_nvidia_profiles_common_service_rejected(base_image):
+    """'common' is a reserved service name used for shared helpers; reject it explicitly."""
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        configmaps = {
+            "accelerator": "h100",
+            "intent": "performance",
+            "service": "common",
+        }
+
+        create_container_for_testing(runner, configmaps)
+        install_tuned_in_container(runner, base_image)
+
+        result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
+
+        # Must fail with a clear message mentioning the reserved name
+        assert result.exit_code != 0, \
+            f"Expected prepare script to exit non-zero for service=common, got {result.exit_code}"
+        assert "reserved service name" in result.stdout, \
+            f"Expected stdout to mention 'reserved service name', got: {result.stdout!r}"
+
+        # No common-* final profile dir should have been created
+        assert not runner.file_exists("/etc/tuned/common-h100-performance/tuned.conf"), \
+            "common-h100-performance should NOT have been created"
+
+    finally:
+        runner.cleanup()
+
+
 def test_prepare_nvidia_profiles_common_profiles_deployed(base_image):
     """Test that common base profiles are deployed to /usr/lib/tuned/."""
     runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
@@ -688,24 +813,24 @@ def test_prepare_nvidia_profiles_common_profiles_deployed(base_image):
             "accelerator": "h100",
             "intent": "performance",
         }
-        
+
         # Create container directly
         create_container_for_testing(runner, configmaps)
-        
+
         # Install tuned in the container
         install_tuned_in_container(runner, base_image)
-        
+
         # Run the script in the same container
         result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
-        
+
         assert_exit_code(result, 0)
-        
+
         # Verify common profiles are deployed
         nvidia_base_exists = runner.file_exists("/usr/lib/tuned/nvidia-base/tuned.conf")
         assert nvidia_base_exists, "nvidia-base profile was not deployed to /usr/lib/tuned/"
-        
+
         nvidia_acs_disable_exists = runner.file_exists("/usr/lib/tuned/nvidia-acs-disable/tuned.conf")
         assert nvidia_acs_disable_exists, "nvidia-acs-disable profile was not deployed to /usr/lib/tuned/"
-        
+
     finally:
         runner.cleanup()
