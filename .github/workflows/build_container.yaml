@@ -61,6 +61,7 @@ jobs:
           image_name: ${{ env.IMAGE_NAME }}
           generate_attestation: 'true'
           save_image_info: 'false'
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Get manifest information
         id: manifest
