@@ -18,10 +18,15 @@
 
 set -e
 export DEBIAN_FRONTEND=noninteractive
+# Preserve local /etc/* edits and never prompt on conffile diffs during unattended upgrades.
+APT_OPTS=(
+  -o Dpkg::Options::=--force-confdef
+  -o Dpkg::Options::=--force-confold
+)
 apt-get update
 if [ -z "${SKIP_SYSTEM_OPERATIONS:-}" ]; then
-  apt-get upgrade -y
+  apt-get "${APT_OPTS[@]}" upgrade -y
 else
   echo "Skipping system upgrade for test environment"
 fi
-apt-get install -y curl git wget gpg
+apt-get "${APT_OPTS[@]}" install -y curl git wget gpg
