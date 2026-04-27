@@ -23,9 +23,7 @@ set -e
 
 DROPIN_DIR=/etc/systemd/system/containerd.service.d
 DROPIN_FILE=containerd.conf
-EXPECTED_CONTENT='[Service]
-LimitSTACK=67108864
-'
+EXPECTED_LINE='LimitSTACK=67108864'
 
 apply_dropin() {
 	mkdir -p "$DROPIN_DIR"
@@ -51,7 +49,7 @@ verify_dropin() {
 	if [ ! -f "$DROPIN_DIR/$DROPIN_FILE" ]; then
 		$ignore_missing && exit 0 || exit 1
 	fi
-	if [ "$(cat "$DROPIN_DIR/$DROPIN_FILE")" != "$EXPECTED_CONTENT" ]; then
+	if [ "$(grep -c -F -x "$EXPECTED_LINE" "$DROPIN_DIR/$DROPIN_FILE")" -lt 1 ]; then
 		exit 1
 	fi
 	exit 0
