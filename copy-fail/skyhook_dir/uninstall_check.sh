@@ -1,4 +1,5 @@
 #!/bin/bash
+
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -15,9 +16,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set -e
+# Verify the modprobe blacklist file is gone.
 
-# Uninstall check script for copy-fail package
-# Verifies that the algif_aead blacklist has been removed
+set -euo pipefail
 
-exit 0
+MODPROBE_FILE="/etc/modprobe.d/disable-algif.conf"
+
+if [[ -f "${MODPROBE_FILE}" ]]; then
+    echo "ERROR: ${MODPROBE_FILE} still exists; uninstall did not complete"
+    exit 1
+fi
+
+echo "OK: ${MODPROBE_FILE} is absent"

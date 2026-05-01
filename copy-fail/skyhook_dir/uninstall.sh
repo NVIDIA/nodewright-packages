@@ -1,4 +1,5 @@
 #!/bin/bash
+
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -15,9 +16,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set -e
+# Revert the CVE-2026-31431 mitigation by removing the modprobe blacklist
+# file. We deliberately do NOT proactively `modprobe algif_aead`: the
+# kernel will autoload it on demand if anything needs it.
 
-# Uninstall script for copy-fail package
-# Removes the algif_aead blacklist configuration
+set -euo pipefail
 
-exit 0
+MODPROBE_FILE="/etc/modprobe.d/disable-algif.conf"
+
+if [[ -f "${MODPROBE_FILE}" ]]; then
+    rm -f "${MODPROBE_FILE}"
+    echo "removed ${MODPROBE_FILE}"
+else
+    echo "${MODPROBE_FILE} not present; nothing to remove"
+fi
