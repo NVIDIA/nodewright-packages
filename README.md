@@ -107,6 +107,20 @@ Extends the **tuning** package with baked-in H100 and GB200 configs for GKE Cont
 - No manual sysctl.conf authoring; profile content is fixed in the image
 - See [nvidia-tuning-gke README](./nvidia-tuning-gke/README.md)
 
+### 7. Copy-Fail Package (`copy-fail/`)
+A temporary mitigation package for **CVE-2026-31431 ("Copy Fail")** that disables the vulnerable `algif_aead` kernel module.
+
+**Capabilities:**
+- Writes `/etc/modprobe.d/disable-algif.conf` to prevent `algif_aead` from loading at boot
+- Best-effort `rmmod algif_aead` for the running kernel (tolerates the module being in use)
+- Strict `config-check` that loudly fails when `algif_aead` is still loaded; opt-out via `ALLOW_LOADED_MODULE=true`
+- Clean uninstall that removes the modprobe blacklist file
+
+**Key features:**
+- Distro-agnostic (works anywhere `kmod`/`modprobe` is honored)
+- No reboot, no configmap, no interrupts — minimal surface area
+- Designed to be retired once distros ship a fixed kernel
+
 ## Package Structure
 
 Each package follows the standard NodeWright package structure:
@@ -263,6 +277,7 @@ This validation step is crucial as the agent uses JSON schema validation to ensu
 - [Tuned Package](./tuned/README.md) - Usage guide for the tuned package
 - [Kdump Package](./kdump/README.md) - Usage guide for the kdump package
 - [NVIDIA Setup Package](./nvidia-setup/README.md) - Node setup (EFA, Lustre, chrony, local disks) per service/accelerator
+- [Copy-Fail Package](./copy-fail/README.md) - CVE-2026-31431 modprobe-blacklist mitigation
 - [NVIDIA NodeWright Documentation](https://github.com/NVIDIA/skyhook) - Main NodeWright operator documentation
 
 ## Contributing

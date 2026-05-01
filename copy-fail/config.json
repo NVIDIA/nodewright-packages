@@ -1,0 +1,66 @@
+{
+    "schema_version": "v1",
+    "package_name": "copy-fail",
+    "package_version": "1.0.0",
+    "expected_config_files": [],
+    "modes": {
+        "config": [
+            {
+                "name": "config",
+                "path": "config.sh",
+                "arguments": [],
+                "returncodes": [
+                    0
+                ],
+                "on_host": true,
+                "env": {},
+                "idempotence": true,
+                "upgrade_step": false
+            }
+        ],
+        "config-check": [
+            {
+                "name": "config-check",
+                "path": "config_check.sh",
+                "arguments": [],
+                "returncodes": [
+                    0
+                ],
+                "on_host": true,
+                "env": {
+                    "ALLOW_LOADED_MODULE": "false"
+                },
+                "idempotence": true,
+                "upgrade_step": false
+            }
+        ],
+        "uninstall": [
+            {
+                "name": "uninstall",
+                "path": "uninstall.sh",
+                "arguments": [],
+                "returncodes": [
+                    0
+                ],
+                "on_host": true,
+                "env": {},
+                "idempotence": true,
+                "upgrade_step": false
+            }
+        ],
+        "uninstall-check": [
+            {
+                "name": "uninstall-check",
+                "path": "uninstall_check.sh",
+                "arguments": [],
+                "returncodes": [
+                    0
+                ],
+                "on_host": true,
+                "env": {},
+                "idempotence": true,
+                "upgrade_step": false
+            }
+        ]
+    }
+}
