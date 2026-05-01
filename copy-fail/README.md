@@ -27,7 +27,7 @@ Override per-node via the SCR's `env` map on the `config-check` mode.
 
 The advisory's secondary recommendation — blocking `AF_ALG` socket creation via seccomp on containerised workloads — is **not** handled by this package. That control belongs in workload manifests / runtime configuration. This package only addresses the host-level modprobe blacklist.
 
-## Example NodeWright Custom Resource
+## Example NodeWright Custom Resource, run on all nodes
 
 ```yaml
 apiVersion: skyhook.nvidia.com/v1alpha1
@@ -35,9 +35,6 @@ kind: Skyhook
 metadata:
   name: copy-fail-mitigation
 spec:
-  nodeSelectors:
-    matchLabels:
-      skyhook.nvidia.com/node-type: worker
   packages:
     copy-fail:
       version: 1.0.0
@@ -51,9 +48,20 @@ To silence the strict check on a node where the module is still loaded:
       version: 1.0.0
       image: ghcr.io/nvidia/skyhook-packages/copy-fail:1.0.0
       env:
-        config-check:
-          ALLOW_LOADED_MODULE: "true"
+        ALLOW_LOADED_MODULE: "true"
 ```
+
+### GKE ContainerOptimizedOS (or other read only filesystems)
+
+1. Install [Nodewright](https://github.com/NVIDIA/nodewright) with the following values file:
+```yaml
+controllerManager:
+  manager:
+    env:
+      copyDirRoot: /var/lib/google/nodewright # Set this to a write-able and executable directory. Does NOT need to be persistent 
+      reapplyOnReboot: "true"
+```
+
 
 ## Files written and removed
 
