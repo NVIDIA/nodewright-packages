@@ -38,7 +38,7 @@ spec:
   packages:
     copy-fail:
       version: 1.0.0
-      image: ghcr.io/nvidia/skyhook-packages/copy-fail:1.0.0
+      image: ghcr.io/nvidia/nodewright-packages/copy-fail
 ```
 
 To silence the strict check on a node where the module is still loaded:
@@ -46,7 +46,7 @@ To silence the strict check on a node where the module is still loaded:
 ```yaml
     copy-fail:
       version: 1.0.0
-      image: ghcr.io/nvidia/skyhook-packages/copy-fail:1.0.0
+      image: ghcr.io/nvidia/nodewright-packages/copy-fail
       env:
         ALLOW_LOADED_MODULE: "true"
 ```
