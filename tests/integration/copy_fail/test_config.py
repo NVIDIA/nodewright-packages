@@ -55,7 +55,7 @@ def test_config_rmmod_skipped_when_module_not_loaded(base_image):
         result = runner.run_script(script="config.sh")
 
         assert_exit_code(result, 0)
-        assert_output_contains(result.stdout, "rmmod algif_aead")
+        assert_output_contains(result.stdout, "rmmod algif_aead: skipped")
     finally:
         runner.cleanup()
 
