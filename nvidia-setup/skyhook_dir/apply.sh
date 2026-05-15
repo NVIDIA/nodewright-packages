@@ -59,9 +59,14 @@ run_eks_gb200() {
   "${STEPS_DIR}/setup_local_disks.sh" raid0
 }
 
+run_aks_h100() {
+  "${STEPS_DIR}/configure_ib_rdma.sh"
+}
+
 case "${COMBINATION}" in
   eks-h100)  run_eks_h100 ;;
   eks-gb200) run_eks_gb200 ;;
+  aks-h100)  run_aks_h100 ;;
   *)
     echo "Unsupported combination: ${COMBINATION}" >&2
     echo "Supported: $(find "${DEFAULTS_DIR}" -maxdepth 1 -name '*.conf' -exec basename {} .conf \; 2>/dev/null | tr '\n' ' ')" >&2
