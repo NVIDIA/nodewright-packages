@@ -23,7 +23,8 @@ STEPS_DIR="${SKYHOOK_DIR}/skyhook_dir/steps"
 . "${SKYHOOK_DIR}/skyhook_dir/load_defaults.sh"
 
 NVIDIA_SETUP_INSTALL_KERNEL="${NVIDIA_SETUP_INSTALL_KERNEL:-false}"
-export NVIDIA_SETUP_INSTALL_KERNEL SKYHOOK_DIR
+SETUP_LUSTRE="${SETUP_LUSTRE:-false}"
+export NVIDIA_SETUP_INSTALL_KERNEL SETUP_LUSTRE SKYHOOK_DIR
 
 # If only installing kernel: run ensure_kernel (which installs and may reboot) and exit
 if [ "${NVIDIA_SETUP_INSTALL_KERNEL}" = "true" ]; then
@@ -38,8 +39,12 @@ run_eks_h100() {
   "${STEPS_DIR}/upgrade.sh"
   "${STEPS_DIR}/install-efa-driver.sh" "${EFA}"
   "${STEPS_DIR}/install_ofi.sh"
-  # "${STEPS_DIR}/install-lustre.sh" "${KERNEL}" "${LUSTRE}"
+  if [ "${SETUP_LUSTRE}" = "true" ]; then
+    "${STEPS_DIR}/install-lustre.sh" "${KERNEL}" "${LUSTRE}"
+  fi
   "${STEPS_DIR}/configure-chrony.sh"
+  "${STEPS_DIR}/system_node_settings.sh"
+  "${STEPS_DIR}/cloud_init_cfg.sh"
   "${STEPS_DIR}/setup_local_disks.sh" raid0
 }
 
@@ -47,8 +52,12 @@ run_eks_gb200() {
   "${STEPS_DIR}/upgrade.sh"
   "${STEPS_DIR}/install-efa-driver.sh" "${EFA}"
   "${STEPS_DIR}/install_ofi.sh"
-  # "${STEPS_DIR}/install-lustre.sh" "${KERNEL}" "${LUSTRE}"
+  if [ "${SETUP_LUSTRE}" = "true" ]; then
+    "${STEPS_DIR}/install-lustre.sh" "${KERNEL}" "${LUSTRE}"
+  fi
   "${STEPS_DIR}/configure-chrony.sh"
+  "${STEPS_DIR}/system_node_settings.sh"
+  "${STEPS_DIR}/cloud_init_cfg.sh"
   "${STEPS_DIR}/setup_local_disks.sh" raid0
 }
 

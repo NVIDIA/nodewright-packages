@@ -27,12 +27,18 @@ if [ "${NVIDIA_SETUP_INSTALL_KERNEL}" = "true" ]; then
   exit 0
 fi
 
+SETUP_LUSTRE="${SETUP_LUSTRE:-false}"
+
 check_eks_h100() {
   "${STEPS_CHECK_DIR}/upgrade_check.sh"
   "${STEPS_CHECK_DIR}/install_efa_driver_check.sh"
   "${STEPS_CHECK_DIR}/install_ofi_check.sh"
-  # "${STEPS_CHECK_DIR}/install_lustre_check.sh" "${KERNEL}"
+  if [ "${SETUP_LUSTRE}" = "true" ]; then
+    "${STEPS_CHECK_DIR}/install_lustre_check.sh" "${KERNEL}"
+  fi
   "${STEPS_CHECK_DIR}/configure_chrony_check.sh"
+  "${STEPS_CHECK_DIR}/system_node_settings_check.sh"
+  "${STEPS_CHECK_DIR}/cloud_init_cfg_check.sh"
   "${STEPS_CHECK_DIR}/setup_local_disks_check.sh"
 }
 
@@ -40,8 +46,12 @@ check_eks_gb200() {
   "${STEPS_CHECK_DIR}/upgrade_check.sh"
   "${STEPS_CHECK_DIR}/install_efa_driver_check.sh"
   "${STEPS_CHECK_DIR}/install_ofi_check.sh"
-  # "${STEPS_CHECK_DIR}/install_lustre_check.sh" "${KERNEL}"
+  if [ "${SETUP_LUSTRE}" = "true" ]; then
+    "${STEPS_CHECK_DIR}/install_lustre_check.sh" "${KERNEL}"
+  fi
   "${STEPS_CHECK_DIR}/configure_chrony_check.sh"
+  "${STEPS_CHECK_DIR}/system_node_settings_check.sh"
+  "${STEPS_CHECK_DIR}/cloud_init_cfg_check.sh"
   "${STEPS_CHECK_DIR}/setup_local_disks_check.sh"
 }
 
