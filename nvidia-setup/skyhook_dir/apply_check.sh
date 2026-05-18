@@ -51,9 +51,14 @@ check_eks_gb200() {
   "${STEPS_CHECK_DIR}/setup_local_disks_check.sh"
 }
 
+check_aks_h100() {
+  "${STEPS_CHECK_DIR}/check_ib_rdma.sh"
+}
+
 case "${COMBINATION}" in
   eks-h100)  check_eks_h100 ;;
   eks-gb200) check_eks_gb200 ;;
+  aks-h100)  check_aks_h100 ;;
   *)
     echo "Unsupported combination: ${COMBINATION}" >&2
     echo "Supported: $(find "${DEFAULTS_DIR}" -maxdepth 1 -name '*.conf' -exec basename {} .conf \; 2>/dev/null | tr '\n' ' ')" >&2

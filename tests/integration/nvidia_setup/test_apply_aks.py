@@ -62,3 +62,52 @@ def test_apply_aks_h100_writes_files(base_image):
                 )
     finally:
         runner.cleanup()
+
+
+def test_apply_check_aks_h100_passes_after_apply(base_image):
+    """apply_check.sh on aks-h100 must pass once configure_ib_rdma has written the files."""
+    runner = DockerTestRunner(package="nvidia-setup", base_image=base_image)
+    try:
+        # First run apply.sh to write the files.
+        apply_result = runner.run_script(
+            script="apply.sh",
+            configmaps=AKS_CONFIGMAPS,
+            skip_system_operations=True,
+        )
+        assert_exit_code(apply_result, 0)
+
+        # Reuse the same container for apply_check.sh so /etc files persist
+        container = runner.container
+        check_cmd = "/skyhook-package/skyhook_dir/apply_check.sh 2>&1"
+        exec_result = container.exec_run(
+            ["/bin/bash", "-c", check_cmd],
+            workdir="/skyhook-package",
+            environment={
+                "SKYHOOK_DIR": "/skyhook-package",
+                "STEP_ROOT": "/skyhook-package/skyhook_dir",
+                "SKIP_SYSTEM_OPERATIONS": "true",
+            }
+        )
+        check_output = exec_result.output.decode('utf-8', errors='replace')
+        assert exec_result.exit_code == 0, (
+            f"apply_check.sh failed with exit code {exec_result.exit_code}\n"
+            f"output: {check_output}"
+        )
+    finally:
+        runner.cleanup()
+
+
+def test_apply_check_aks_h100_fails_when_files_missing(base_image):
+    """apply_check.sh on aks-h100 must fail when configure_ib_rdma has not run."""
+    runner = DockerTestRunner(package="nvidia-setup", base_image=base_image)
+    try:
+        # Skip apply.sh; run apply_check.sh directly.
+        check_result = runner.run_script(
+            script="apply_check.sh",
+            configmaps=AKS_CONFIGMAPS,
+            skip_system_operations=True,
+        )
+        assert_exit_code(check_result, 1)
+        assert_output_contains(check_result.stdout, "missing")
+    finally:
+        runner.cleanup()
