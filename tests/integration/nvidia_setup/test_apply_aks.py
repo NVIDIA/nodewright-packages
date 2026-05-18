@@ -157,15 +157,13 @@ def test_apply_aks_h100_idempotent(base_image):
 
         # Re-execute apply.sh inside the same container so state from the first
         # run (/etc/... files) persists.
-        env_args = [
-            f"SKYHOOK_DIR=/skyhook-package",
-            f"STEP_ROOT=/skyhook-package/skyhook_dir",
-            f"SKIP_SYSTEM_OPERATIONS=true",
-        ]
-        cmd = " ".join(env_args) + " /skyhook-package/skyhook_dir/apply.sh 2>&1"
         exec_result = runner.container.exec_run(
-            ["/bin/bash", "-c", cmd],
+            ["/bin/bash", "-c", "/skyhook-package/skyhook_dir/apply.sh 2>&1"],
             workdir="/skyhook-package",
+            environment={
+                "SKYHOOK_DIR": "/skyhook-package",
+                "SKIP_SYSTEM_OPERATIONS": "true",
+            }
         )
         output = exec_result.output.decode("utf-8", errors="replace")
         assert exec_result.exit_code == 0, f"second run failed: {output}"
