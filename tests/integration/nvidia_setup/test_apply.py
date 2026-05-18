@@ -25,7 +25,6 @@ import pytest
 from tests.helpers.assertions import (
     assert_exit_code,
     assert_output_contains,
-    assert_output_not_contains,
 )
 from tests.helpers.docker_test import DockerTestRunner
 
