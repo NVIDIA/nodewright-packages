@@ -111,3 +111,34 @@ def test_apply_check_aks_h100_fails_when_files_missing(base_image):
         assert_output_contains(check_result.stdout, "missing")
     finally:
         runner.cleanup()
+
+
+def test_post_interrupt_check_aks_h100_skips_under_skip_system_ops(base_image):
+    """post_interrupt_check.sh on aks-h100 should exit 0 under SKIP_SYSTEM_OPERATIONS,
+    since systemctl/LimitMEMLOCK cannot be checked inside the test container."""
+    runner = DockerTestRunner(package="nvidia-setup", base_image=base_image)
+    try:
+        result = runner.run_script(
+            script="post_interrupt_check.sh",
+            configmaps=AKS_CONFIGMAPS,
+            skip_system_operations=True,
+        )
+        assert_exit_code(result, 0)
+        assert_output_contains(result.stdout, "skipping memlock check")
+    finally:
+        runner.cleanup()
+
+
+def test_post_interrupt_check_eks_h100_still_runs_kernel_check(base_image):
+    """Regression: EKS combos must still route to kernel_install_check.sh.
+    Without NVIDIA_SETUP_INSTALL_KERNEL=true, that check no-ops (exit 0)."""
+    runner = DockerTestRunner(package="nvidia-setup", base_image=base_image)
+    try:
+        result = runner.run_script(
+            script="post_interrupt_check.sh",
+            configmaps={"service": "eks", "accelerator": "h100"},
+            skip_system_operations=True,
+        )
+        assert_exit_code(result, 0)
+    finally:
+        runner.cleanup()
