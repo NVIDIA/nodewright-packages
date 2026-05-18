@@ -20,10 +20,11 @@ See [VERSION_OVERVIEW.md](VERSION_OVERVIEW.md) for more information about what i
 |---------|-------------|---------------------|--------------|
 | eks     | h100        | 6.17.0-1019-aws     |  1.48.0      |
 | eks     | gb200       | 6.17.0-1019-aws     |  1.48.0      |
+| aks     | h100        | (AKS-managed)       |  n/a         |
 | bcm     | h100        | n/a                 |  n/a         |
 | bcm     | gb200       | n/a                 |  n/a         |
 
-Defaults are defined in `skyhook_dir/defaults/eks-h100.conf` and `eks-gb200.conf`. The `bcm-*` defaults files are intentionally empty: the `bcm` service only runs the kernel-headers alias and does not bake in any kernel/EFA/lustre versions. Keep this table in sync when adding or changing defaults.
+Defaults are defined in `skyhook_dir/defaults/eks-h100.conf`, `eks-gb200.conf`, and `aks-h100.conf`. The `bcm-*` defaults files are intentionally empty: the `bcm` service only runs the kernel-headers alias and does not bake in any kernel/EFA/lustre versions. Keep this table in sync when adding or changing defaults.
 
 ## Configuration
 
@@ -79,6 +80,14 @@ For `service=eks` the apply step currently runs, in order:
 The following steps exist in the codebase but are **commented out** in `apply.sh` for now: **install-lustre** Re-enable them in `apply.sh` when needed.
 
 OFI, hardening, and system-node-settings are **not** included.
+
+## Apply Steps (AKS)
+
+For `service=aks` the apply step currently runs:
+
+1. **configure_ib_rdma** – writes IB module-load config (`/etc/modules-load.d/ib-umad.conf`), memlock limits (`/etc/security/limits.d/99-ib-memlock.conf`), and containerd/kubelet systemd drop-ins setting `LimitMEMLOCK=infinity`. Loads the `ib_umad` kernel module (and best-effort `rdma_ucm`, `ib_ucm`). Does **not** run `systemctl daemon-reload` or restart any services — see the AKS usage example below for how Skyhook handles that via a service interrupt.
+
+Kernel install/upgrade, EFA, Lustre, chrony, and local disks do not apply to AKS today (AKS ships its own Ubuntu kernel; IB/RDMA is handled by the step above).
 
 ## Apply-Check
 
@@ -172,6 +181,44 @@ spec:
         - name: NVIDIA_EFA
           value: "1.31.0"
 ```
+
+## AKS Usage Example
+
+On AKS, containerd and kubelet need `LimitMEMLOCK=infinity` for IB/RDMA workloads. The package writes the drop-in files; Skyhook restarts the services via a `service` interrupt.
+
+```yaml
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  name: nvidia-setup-aks
+spec:
+  nodeSelectors:
+    matchLabels:
+      # Only run on IB-capable nodes (label set by NFD's network rule on AKS ND-series).
+      feature.node.kubernetes.io/pci-15b3.present: "true"
+  packages:
+    nvidia-setup:
+      image: ghcr.io/nvidia/skyhook-packages/nvidia-setup
+      version: 0.2.3
+      resources:
+        cpuLimit: 1000m
+        cpuRequest: 500m
+        memoryLimit: 1024Mi
+        memoryRequest: 512Mi
+      configMap:
+        service: aks
+        accelerator: h100
+      # Skyhook runs `systemctl daemon-reload` then restarts containerd and kubelet
+      # after the apply step completes. The package script does not perform the
+      # restart itself.
+      interrupt:
+        type: service
+        services:
+          - containerd
+          - kubelet
+```
+
+This replaces the equivalent privileged DaemonSet (`ib-node-config-aks.yaml`) that aicr currently ships under `recipes/components/network-operator/manifests/`.
 
 ## Adding a New (service, accelerator)
 
