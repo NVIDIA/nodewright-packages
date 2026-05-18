@@ -35,6 +35,18 @@ KUBELET_DROPIN_DIR="/etc/systemd/system/kubelet.service.d"
 CONTAINERD_DROPIN_FILE="${CONTAINERD_DROPIN_DIR}/memlock.conf"
 KUBELET_DROPIN_FILE="${KUBELET_DROPIN_DIR}/memlock.conf"
 
+# Short-circuit: if all four files exist and ib_umad is loaded (or system
+# operations are skipped in test mode), nothing to do.
+if [ -f "${MODULES_LOAD_FILE}" ] \
+   && [ -f "${MEMLOCK_LIMITS_FILE}" ] \
+   && [ -f "${CONTAINERD_DROPIN_FILE}" ] \
+   && [ -f "${KUBELET_DROPIN_FILE}" ]; then
+  if [ -n "${SKIP_SYSTEM_OPERATIONS:-}" ] || lsmod | grep -q '^ib_umad'; then
+    echo "configure_ib_rdma: already configured, skipping"
+    exit 0
+  fi
+fi
+
 echo "=== configure_ib_rdma: load kernel modules ==="
 if [ -z "${SKIP_SYSTEM_OPERATIONS:-}" ]; then
   modprobe ib_umad

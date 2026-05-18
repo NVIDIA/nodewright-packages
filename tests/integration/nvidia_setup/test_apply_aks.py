@@ -142,3 +142,33 @@ def test_post_interrupt_check_eks_h100_still_runs_kernel_check(base_image):
         assert_exit_code(result, 0)
     finally:
         runner.cleanup()
+
+
+def test_apply_aks_h100_idempotent(base_image):
+    """Two consecutive apply.sh runs in the same container short-circuit on the second."""
+    runner = DockerTestRunner(package="nvidia-setup", base_image=base_image)
+    try:
+        first = runner.run_script(
+            script="apply.sh",
+            configmaps=AKS_CONFIGMAPS,
+            skip_system_operations=True,
+        )
+        assert_exit_code(first, 0)
+
+        # Re-execute apply.sh inside the same container so state from the first
+        # run (/etc/... files) persists.
+        env_args = [
+            f"SKYHOOK_DIR=/skyhook-package",
+            f"STEP_ROOT=/skyhook-package/skyhook_dir",
+            f"SKIP_SYSTEM_OPERATIONS=true",
+        ]
+        cmd = " ".join(env_args) + " /skyhook-package/skyhook_dir/apply.sh 2>&1"
+        exec_result = runner.container.exec_run(
+            ["/bin/bash", "-c", cmd],
+            workdir="/skyhook-package",
+        )
+        output = exec_result.output.decode("utf-8", errors="replace")
+        assert exec_result.exit_code == 0, f"second run failed: {output}"
+        assert "already configured" in output, f"missing short-circuit message:\n{output}"
+    finally:
+        runner.cleanup()
