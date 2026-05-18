@@ -58,7 +58,7 @@ For `service=eks` the apply step currently runs, in order:
 
 ## Apply-Check
 
-When `NVIDIA_SETUP_INSTALL_KERNEL=true` is set, apply-check (and **post-interrupt-check**) only verify that the running kernel matches the expected version from defaults/env. When the env var is false or unset, apply-check runs upgrade (apt update ok) and EFA present; Lustre are commented out in `apply_check.sh` to match `apply.sh`. Re-enable them in both when adding those steps back.
+When `NVIDIA_SETUP_INSTALL_KERNEL=true` is set, apply-check (and **post-interrupt-check**) only verify that the running kernel matches the expected version from defaults/env. When the env var is false or unset, apply-check runs the check counterparts for each step listed in [Apply Steps (EKS)](#apply-steps-eks) — in the same order, and with `install_lustre_check.sh` gated on `SETUP_LUSTRE=true` to match `apply.sh`.
 
 ## Post-Interrupt-Check
 
@@ -66,10 +66,10 @@ When `NVIDIA_SETUP_INSTALL_KERNEL=true` is set, the kernel install step may trig
 
 ## Kernel install with interrupt reboot + full setup (two packages)
 
-When you need to install the exact default kernel and then run the rest of the setup (EFA, and when re-enabled: Lustre), use two nvidia-setup packages:
+When you need to install the exact default kernel and then run the rest of the setup (EFA, OFI, chrony, host tuning, cloud-init drop-ins, local disks, and optionally Lustre via `SETUP_LUSTRE=true`), use two nvidia-setup packages:
 
 1. **First package** – kernel only, with **interrupt: reboot**. Apply runs only the kernel install (and may reboot); after reboot, post-interrupt-check verifies the kernel.
-2. **Second package** – full setup, with **dependsOn** the first. Apply runs the normal steps (upgrade, EFA, and when uncommented: Lustre) and will see the correct running kernel (no kernel install, just the “current kernel >= required” check).
+2. **Second package** – full setup, with **dependsOn** the first. Apply runs the normal steps (upgrade, EFA, OFI, chrony, `system_node_settings`, `cloud_init_cfg`, `setup_local_disks`, plus Lustre when `SETUP_LUSTRE=true`) and will see the correct running kernel (no kernel install, just the “current kernel >= required” check).
 
 Both packages use the same `service` and `accelerator` configMap; only the first sets `NVIDIA_SETUP_INSTALL_KERNEL=true`. The first package must declare an interrupt (e.g. reboot) so the node reboots into the new kernel before the second package runs.
 
@@ -118,7 +118,7 @@ spec:
         nvidia-setup-kernel: 0.1.0
 ```
 
-Flow: apply `nvidia-setup-kernel` → kernel install → reboot (interrupt) → post-interrupt-check verifies kernel → apply `nvidia-setup-full` (kernel check passes, then upgrade, EFA, and when uncommented: Lustre, chrony, local disks).
+Flow: apply `nvidia-setup-kernel` → kernel install → reboot (interrupt) → post-interrupt-check verifies kernel → apply `nvidia-setup-full` (kernel check passes, then upgrade, EFA, OFI, chrony, `system_node_settings`, `cloud_init_cfg`, `setup_local_disks`, and Lustre when `SETUP_LUSTRE=true`).
 
 ## Usage Example
 
