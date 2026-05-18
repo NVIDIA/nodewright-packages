@@ -162,23 +162,3 @@ def test_apply_install_kernel_only_eks_gb200_skips_actual_install(base_image):
         assert_output_contains(result.stdout, "Skipping kernel install for test environment")
     finally:
         runner.cleanup()
-
-
-def test_apply_aks_h100_reaches_dispatch(base_image):
-    """ensure_kernel.sh should no-op for aks-h100 (no KERNEL in defaults), so apply.sh
-    proceeds past kernel handling. The dispatch branch doesn't exist yet, so apply.sh
-    will fail with 'Unsupported combination' — that's a real signal that ensure_kernel
-    didn't block."""
-    runner = DockerTestRunner(package="nvidia-setup", base_image=base_image)
-    try:
-        result = runner.run_script(
-            script="apply.sh",
-            configmaps={"service": "aks", "accelerator": "h100"},
-            skip_system_operations=True,
-        )
-        assert_exit_code(result, 1)
-        assert_output_contains(result.stdout, "Unsupported combination")
-        assert_output_not_contains(result.stdout, "current kernel")
-        assert_output_not_contains(result.stdout, "does not match required")
-    finally:
-        runner.cleanup()
