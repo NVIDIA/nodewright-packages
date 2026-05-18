@@ -1,6 +1,6 @@
 # NVIDIA Setup Package
 
-A NodeWright package that applies node setup steps for selected (service, accelerator) combinations. It runs **after** the machine is up (NodeWright on a live node). **Currently** it controls **kernel** (optional install or version check) and **EFA driver install** only; Lustre, chrony, and local disk setup are present in the codebase but commented out in `apply.sh`.
+A NodeWright package that applies node setup steps for selected (service, accelerator) combinations. It runs **after** the machine is up (NodeWright on a live node). **Currently** it controls kernel (optional install or version check), package upgrade, EFA driver install, OFI configuration, chrony, host sysctl/UFW tuning (`system_node_settings`), cloud-init / EC2 IMDS drop-ins (`cloud_init_cfg`), and local disk setup. Lustre client install is supported as an opt-in step (see `SETUP_LUSTRE` below).
 
 ## Overview
 
@@ -39,6 +39,8 @@ Set these on the package spec in the NodeWright Custom Resource (`spec.packages.
 - `NVIDIA_PIN_KERNEL` - `true` or `false` (defaults: `false`). If `true`, pin the kernel to the exact version in the package so that it will not upgrade in future.
 - `NVIDIA_KERNEL` – kernel version (overrides default from defaults file)
 - `NVIDIA_EFA` – EFA installer version
+- `NVIDIA_LUSTRE` – Lustre source: either `aws` (use the AWS FSx Lustre apt repo) or a git ref to build from source. Only meaningful when `SETUP_LUSTRE=true`.
+- `SETUP_LUSTRE` – `true` or `false` (default: `false`). Opt-in: when `true`, the apply step installs the Lustre client modules for the running kernel on `eks-h100` / `eks-gb200`. Default off; the Lustre install is heavy (apt repo + kernel-version-matched package), so leave off unless the deployment uses FSx for Lustre.
 
 ## Apply Steps (EKS)
 
@@ -46,11 +48,13 @@ For `service=eks` the apply step currently runs, in order:
 
 1. **ensure_kernel** – if `NVIDIA_SETUP_INSTALL_KERNEL=false`: verify running kernel meets requirement (exact match by default; allow newer if `NVIDIA_SETUP_KERNEL_ALLOW_NEWER=true`); if `true`: install exact kernel only (then exit; reboot required).
 2. **upgrade** – `apt-get update && apt-get upgrade -y`
-3. **install-efa-driver** – download and run AWS EFA installer
-
-The following steps exist in the codebase but are **commented out** in `apply.sh` for now: **install-lustre** Re-enable them in `apply.sh` when needed.
-
-OFI, hardening, and system-node-settings are **not** included.
+3. **install-efa-driver** – download and run the AWS EFA installer for the version in `NVIDIA_EFA`.
+4. **install_ofi** – install the OFI (libfabric) plugin for the EFA driver.
+5. **install-lustre** *(only when `SETUP_LUSTRE=true`)* – install the Lustre client kernel modules for the running kernel using the source specified by `NVIDIA_LUSTRE`.
+6. **configure-chrony** – configure the chrony NTP client for the AWS time sync service.
+7. **system_node_settings** – write `/etc/sysctl.d/999-nvidia-tuning.conf` with inotify limits and mask UFW.
+8. **cloud_init_cfg** – write the EC2 IMDS datasource config and the cloud-init wait-for-net-device systemd + udev drop-ins.
+9. **setup_local_disks raid0** – configure local NVMe disks as a RAID-0 array.
 
 ## Apply-Check
 

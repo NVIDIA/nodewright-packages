@@ -2,6 +2,14 @@
 
 All notable changes to this package will be documented in this file.
 
+## [Unreleased]
+
+### New Features
+
+- *(nvidia-setup)* Add `system_node_settings` step + check for `eks-h100` and `eks-gb200`: writes `/etc/sysctl.d/999-nvidia-tuning.conf` with inotify limits and masks UFW.
+- *(nvidia-setup)* Add `cloud_init_cfg` step + check for `eks-h100` and `eks-gb200`: writes the EC2 IMDS datasource config and the cloud-init wait-for-net-device systemd + udev drop-ins.
+- *(nvidia-setup)* Add `SETUP_LUSTRE=true` opt-in env var that enables `install-lustre` (and its apply-check) on `eks-h100` and `eks-gb200`. Defaults off so the standard apply path stays lean.
+
 ## [0.2.2] - 2026-04-27
 
 ### Bug Fixes
