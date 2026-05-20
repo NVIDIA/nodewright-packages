@@ -51,9 +51,22 @@ jobs:
           PACKAGE_NAME=$(echo "${{ github.ref_name }}" | cut -f 1 -d /)
           echo "package_name=${PACKAGE_NAME}" >> $GITHUB_OUTPUT
 
+      # git-cliff release assets are versioned in the filename
+      # (e.g. git-cliff-2.13.1-x86_64-unknown-linux-gnu.tar.gz), so we resolve the
+      # latest tag via the API and build the versioned URL. The API call is authed
+      # with GITHUB_TOKEN to avoid the 60/hr anonymous rate limit shared across
+      # Actions runner IPs. curl uses -f so a 404 fails fast instead of piping an
+      # error page into tar.
       - name: Install git-cliff
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          curl -sSL "https://github.com/orhun/git-cliff/releases/latest/download/git-cliff-x86_64-unknown-linux-gnu.tar.gz" \
+          VERSION=$(curl -fsSL \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/orhun/git-cliff/releases/latest \
+            | jq -r .tag_name | sed 's/^v//')
+          curl -fsSL "https://github.com/orhun/git-cliff/releases/download/v${VERSION}/git-cliff-${VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
             | tar xz --wildcards "*/git-cliff" --strip-components=1
           sudo mv git-cliff /usr/local/bin/
 
