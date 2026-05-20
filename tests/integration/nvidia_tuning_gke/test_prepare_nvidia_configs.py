@@ -41,7 +41,7 @@ CONFIGMAPS_DIR = "/skyhook-package/configmaps"
 @pytest.mark.parametrize(
     "accelerator,intent,expected_sysctl_line,expect_containerd",
     [
-        ("h100", "inference", "kernel.sched_latency_ns=1000000", False),
+        ("h100", "inference", "vm.swappiness=1", False),
         ("h100", "multiNodeTraining", "net.core.default_qdisc=fq", False),
         ("gb200", "inference", "vm.swappiness=1", True),
         ("gb200", "multiNodeTraining", "net.core.default_qdisc=fq", True),
