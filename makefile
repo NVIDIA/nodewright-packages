@@ -108,8 +108,8 @@ validate-inherited: ## Validate an inherited package (inherits from skyhook-pack
 		echo "ERROR: Dockerfile not found for package $(PACKAGE)"; \
 		exit 1; \
 	fi
-	@if ! grep -q "^FROM.*skyhook-packages" "$(PACKAGE)/Dockerfile"; then \
-		echo "ERROR: Package $(PACKAGE) does not inherit from skyhook-packages. Use 'make validate-standalone' instead."; \
+	@if ! grep -Eq "^FROM.*(skyhook|nodewright)-packages" "$(PACKAGE)/Dockerfile"; then \
+		echo "ERROR: Package $(PACKAGE) does not inherit from skyhook-packages or nodewright-packages. Use 'make validate-standalone' instead."; \
 		exit 1; \
 	fi
 	@echo "Building container for validation: $(PACKAGE)"

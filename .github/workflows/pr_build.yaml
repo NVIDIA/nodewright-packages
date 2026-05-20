@@ -106,8 +106,9 @@ jobs:
           if [ ! -f "$CONFIG_FILE" ]; then
             # Check if Dockerfile exists and has a FROM that references a skyhook-packages image
             if [ -f "$DOCKERFILE" ]; then
-              # Check if FROM line contains "skyhook-packages" (indicating it inherits from another package)
-              if grep -q "^FROM.*skyhook-packages" "$DOCKERFILE"; then
+              # Check if FROM line contains "skyhook-packages" or "nodewright-packages"
+              # (indicating it inherits from another package in this repo's published image set).
+              if grep -Eq "^FROM.*(skyhook|nodewright)-packages" "$DOCKERFILE"; then
                 echo "config_exists=false" >> $GITHUB_OUTPUT
                 echo "config_changed=false" >> $GITHUB_OUTPUT
                 echo "No config.json found, but Dockerfile inherits from skyhook-packages image - validation skipped"
@@ -152,7 +153,7 @@ jobs:
         run: |
           DOCKERFILE="${{ matrix.package }}/Dockerfile"
           
-          if [ -f "$DOCKERFILE" ] && grep -q "^FROM.*skyhook-packages" "$DOCKERFILE"; then
+          if [ -f "$DOCKERFILE" ] && grep -Eq "^FROM.*(skyhook|nodewright)-packages" "$DOCKERFILE"; then
             echo "inherits_from_skyhook_packages=true" >> $GITHUB_OUTPUT
             echo "Package inherits from skyhook-packages image - will use validate-inherited target"
           else
