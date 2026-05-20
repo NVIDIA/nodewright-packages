@@ -22,7 +22,7 @@
 #              then update_settings.sh (base tuning apply).
 
 ARG TUNING_VERSION=1.1.5
-FROM ghcr.io/nvidia/skyhook-packages/tuning:${TUNING_VERSION}
+FROM ghcr.io/nvidia/nodewright-packages/tuning:${TUNING_VERSION}
 
 COPY profiles/ /skyhook-package/profiles/
 COPY skyhook_dir/prepare_nvidia_configs.sh /skyhook-package/skyhook_dir/
