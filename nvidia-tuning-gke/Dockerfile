@@ -21,7 +21,7 @@
 # Config step: prepare_nvidia_configs.sh (populate configmaps from profile)
 #              then update_settings.sh (base tuning apply).
 
-ARG TUNING_VERSION=1.1.4
+ARG TUNING_VERSION=1.1.5
 FROM ghcr.io/nvidia/skyhook-packages/tuning:${TUNING_VERSION}
 
 COPY profiles/ /skyhook-package/profiles/
