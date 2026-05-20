@@ -2,11 +2,17 @@
 
 All notable changes to this package will be documented in this file.
 
+## [1.1.6] - 2026-05-20
+
+### Bug Fixes
+
+- *(tuning)* Skip comments and use grep -F in update_settings_check.sh
+
 ## [1.1.5] - 2026-05-20
 
 ### Bug Fixes
 
-- *(tuning)* Tolerate unmatched systemd drop-in glob during uninstall
+- *(tuning)* Tolerate unmatched systemd drop-in glob during uninstall by [@ayuskauskas](https://github.com/ayuskauskas)
 
 ### New Features
 
@@ -19,6 +25,10 @@ All notable changes to this package will be documented in this file.
 
 feat: add package validation for local and ci and developer docs by [@ayuskauskas](https://github.com/ayuskauskas)
 - Update project to follow the template by [@lockwobr](https://github.com/lockwobr)
+- *(tuning)* Bump changelog and version for release by [@ayuskauskas](https://github.com/ayuskauskas)
+- Merge pull request #45 from NVIDIA/fix/tuning-uninstall-glob-no-match
+
+fix(tuning): tolerate unmatched systemd drop-in glob during uninstall + release 1.1.5 by [@ayuskauskas](https://github.com/ayuskauskas)
 
 ## [1.1.4] - 2025-06-03
 
