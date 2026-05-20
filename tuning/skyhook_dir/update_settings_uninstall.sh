@@ -37,7 +37,9 @@ if [ -f /etc/security/limits.d/999-${package_name}-tuning.conf ]; then
 fi
 
 # remove any service drop in files that may have been created
-rm /etc/systemd/system/*.d/999-${package_name}-tuning.conf
+# Use -f so a literal/unmatched glob (no .d/ directories or no matching file)
+# does not trip `set -e` during uninstall on a clean node.
+rm -f /etc/systemd/system/*.d/999-${package_name}-tuning.conf
 
 if [ -f /etc/default/grub.d/999-${package_name}-tuning.cfg ]; then
     rm /etc/default/grub.d/999-${package_name}-tuning.cfg
