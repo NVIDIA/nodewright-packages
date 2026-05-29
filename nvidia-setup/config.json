@@ -1,7 +1,7 @@
 {
   "schema_version": "v1",
   "package_name": "nvidia_setup",
-  "package_version": "0.2.2",
+  "package_version": "0.3.0",
   "expected_config_files": ["service", "accelerator"],
   "modes": {
     "apply": [

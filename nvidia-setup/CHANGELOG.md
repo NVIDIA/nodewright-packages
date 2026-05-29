@@ -2,6 +2,12 @@
 
 All notable changes to this package will be documented in this file.
 
+## [Unreleased]
+
+### New Features
+
+- *(nvidia-setup)* Add `bcm` service that aliases `/usr/src/linux-$(uname -r)` to Ubuntu's `linux-headers-$(uname -r)` tree so `aicr validate` finds `.config` ([AICR #1093](https://github.com/NVIDIA/aicr/issues/1093)) by [@ayuskauskas](https://github.com/ayuskauskas)
+
 ## [0.2.2] - 2026-04-27
 
 ### Bug Fixes
