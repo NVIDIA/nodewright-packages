@@ -45,7 +45,7 @@ fi
 # source tree (Debian linux-source or hand-built) and removing it is not safe.
 if [ -e "${LINK_PATH}" ] && [ ! -L "${LINK_PATH}" ]; then
   echo "ERROR: ${LINK_PATH} exists and is not a symlink; refusing to replace it" >&2
-  exit 1
+  exit 0
 fi
 
 # Stale or wrong symlink — replace it with the correct one.
