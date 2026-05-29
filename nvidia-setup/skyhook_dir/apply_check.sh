@@ -22,6 +22,12 @@ STEPS_CHECK_DIR="${SKYHOOK_DIR}/skyhook_dir/steps_check"
 # shellcheck source=load_defaults.sh
 . "${SKYHOOK_DIR}/skyhook_dir/load_defaults.sh"
 
+# service=bcm's only job is to alias the kernel-headers tree (AICR #1093).
+if [ "${SERVICE}" = "bcm" ]; then
+  "${STEPS_CHECK_DIR}/setup_bcm_kernel_headers_check.sh"
+  exit 0
+fi
+
 # Skip checks if only installing kernel as we need to reboot before any check would work
 if [ "${NVIDIA_SETUP_INSTALL_KERNEL}" = "true" ]; then
   exit 0

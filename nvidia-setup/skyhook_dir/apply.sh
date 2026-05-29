@@ -25,6 +25,13 @@ STEPS_DIR="${SKYHOOK_DIR}/skyhook_dir/steps"
 NVIDIA_SETUP_INSTALL_KERNEL="${NVIDIA_SETUP_INSTALL_KERNEL:-false}"
 export NVIDIA_SETUP_INSTALL_KERNEL SKYHOOK_DIR
 
+# service=bcm's only job is to alias the kernel-headers tree (AICR #1093).
+# Skip the kernel/EFA pipeline entirely.
+if [ "${SERVICE}" = "bcm" ]; then
+  "${STEPS_DIR}/setup_bcm_kernel_headers.sh"
+  exit 0
+fi
+
 # If only installing kernel: run ensure_kernel (which installs and may reboot) and exit
 if [ "${NVIDIA_SETUP_INSTALL_KERNEL}" = "true" ]; then
   "${STEPS_DIR}/ensure_kernel.sh"
