@@ -44,7 +44,7 @@ fi
 # Refuse to clobber a real directory at LINK_PATH — that would be a real kernel
 # source tree (Debian linux-source or hand-built) and removing it is not safe.
 if [ -e "${LINK_PATH}" ] && [ ! -L "${LINK_PATH}" ]; then
-  echo "ERROR: ${LINK_PATH} exists and is not a symlink; refusing to replace it" >&2
+  echo "WARNING: ${LINK_PATH} exists and is not a symlink; refusing to replace it" >&2
   exit 0
 fi
 
