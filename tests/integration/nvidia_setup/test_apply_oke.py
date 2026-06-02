@@ -97,3 +97,17 @@ def test_oke_install_doca_skips_system_ops(base_image):
         assert_output_contains(result.stdout, "Skipping DOCA install")
     finally:
         runner.cleanup()
+
+
+def test_oke_install_oci_hpc_packages_skips(base_image):
+    runner = DockerTestRunner(package="nvidia-setup", base_image=base_image)
+    try:
+        result = runner.run_script(
+            script="steps/install_oci_hpc_packages.sh",
+            configmaps={"service": "oke", "accelerator": "h100"},
+            skip_system_operations=True,
+        )
+        assert_exit_code(result, 0)
+        assert_output_contains(result.stdout, "Skipping OCI HPC package install")
+    finally:
+        runner.cleanup()
