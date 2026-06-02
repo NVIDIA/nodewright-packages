@@ -16,12 +16,16 @@ A NodeWright package that applies node setup steps for selected (service, accele
 
 See [VERSION_OVERVIEW.md](VERSION_OVERVIEW.md) for more information about what is set in each version of the package.
 
-| service | accelerator | default kernel      |  default efa |
-|---------|-------------|---------------------|--------------|
-| eks     | h100        | 6.14.0-1018-aws     |  1.47.0      |
-| eks     | gb200       | 6.14.0-1018-aws     |  1.47.0      |
+| service | accelerator | default kernel          |  default efa |
+|---------|-------------|-------------------------|--------------|
+| eks     | h100        | 6.14.0-1018-aws         |  1.47.0      |
+| eks     | gb200       | 6.14.0-1018-aws         |  1.47.0      |
+| oke     | h100        | 6.8.0-1041-oracle       |  n/a (OCI)   |
+| oke     | gb200       | linux-nvidia-64k (meta) |  n/a (OCI)   |
 
-Defaults are defined in `skyhook_dir/defaults/eks-h100.conf` and `eks-gb200.conf`. Keep this table in sync when adding or changing defaults.
+Defaults are defined in `skyhook_dir/defaults/eks-h100.conf`, `eks-gb200.conf`, `oke-h100.conf`, and `oke-gb200.conf`. Keep this table in sync when adding or changing defaults.
+
+> The `oke` (Oracle OKE / OCI) flavor reproduces only the **NV-specific** layer of an OKE GPU/HPC worker. The base OKE worker bootstrap (oke-init, kubelet, cri-o, VNIC config) stays in the OKE base image. EFA/OFI are AWS-only and are intentionally not part of `oke`.
 
 ## Configuration
 
@@ -51,6 +55,20 @@ For `service=eks` the apply step currently runs, in order:
 The following steps exist in the codebase but are **commented out** in `apply.sh` for now: **install-lustre** Re-enable them in `apply.sh` when needed.
 
 OFI, hardening, and system-node-settings are **not** included.
+
+## Apply Steps (OKE)
+
+For `service=oke` the apply step runs, in order (after the same `ensure_kernel` kernel verify/install logic; the oke kernel is `6.8.0-1041-oracle` on x86 or the `linux-nvidia-64k` vendor meta-kernel on Grace/arm64):
+
+1. **upgrade** – `apt-get update && apt-get upgrade -y`
+2. **install_doca** – Mellanox DOCA/OFED + `mstflint` from the DOCA repo (idempotent; fixes OFED symlinks)
+3. **install_oci_hpc_packages** – downloads + installs the OCI HPC `network-device-names` and `nvidia-gpu-configure` debs (matches Oracle's modern `use_plugins` set)
+4. **configure_hpc_networking** – drops the OCI RDMA udev rules, SR-IOV VF helpers, and the OCA `rdma_network.json`
+5. **install_lustre_oke** – downloads the Lustre client debs, pre-builds the DKMS modules for the running kernel, and installs the metadata-gated `lustre-modules-setup` loader + systemd unit (includes the temporary `LUSTRE_LNET_BOOT_WORKAROUND`)
+6. **configure_limits** – HPC ulimits (`memlock=unlimited`, etc.) for RDMA / GPUDirect
+7. **configure-chrony** – chrony pointed at the OCI IMDS NTP server (`169.254.169.254`)
+
+`apply_check.sh` runs the matching `*_check.sh` for each step. The Lustre client debs are downloaded at runtime from `LUSTRE_ARTIFACTS_URL` (set this in `defaults/oke-*.conf`).
 
 ## Apply-Check
 
