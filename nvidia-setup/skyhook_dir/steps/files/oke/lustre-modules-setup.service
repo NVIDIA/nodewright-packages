@@ -1,0 +1,12 @@
+[Unit]
+Description=Build and load Lustre client kernel modules when lustre-config is enabled
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+ExecStart=/usr/bin/lustre-modules-setup
+
+[Install]
+WantedBy=multi-user.target

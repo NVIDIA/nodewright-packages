@@ -132,3 +132,20 @@ def test_oke_configure_hpc_networking_drops_files(base_image):
             assert runner.file_exists(path), f"missing {path}"
     finally:
         runner.cleanup()
+
+
+def test_oke_install_lustre_skips_and_installs_loader(base_image):
+    runner = DockerTestRunner(package="nvidia-setup", base_image=base_image)
+    try:
+        result = runner.run_script(
+            script="steps/install_lustre_oke.sh",
+            configmaps={"service": "oke", "accelerator": "h100"},
+            skip_system_operations=True,
+        )
+        assert_exit_code(result, 0)
+        assert_output_contains(result.stdout, "Skipping Lustre package install")
+        # The loader script + unit are file installs and run even under SKIP
+        assert runner.file_exists("/usr/bin/lustre-modules-setup")
+        assert runner.file_exists("/etc/systemd/system/lustre-modules-setup.service")
+    finally:
+        runner.cleanup()

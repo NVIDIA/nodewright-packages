@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# Build and load Lustre client kernel modules when instance metadata lustre-config=true.
+# Ported from oke-node-images roles/lustre/templates/lustre-modules-setup.j2.
+# LUSTRE_LNET_BOOT_WORKAROUND: temporary boot-time lnetctl configure/net add for Oracle CSI.
+set -euo pipefail
+
+readonly DKMS_MODULE="${LUSTRE_DKMS_NAME:-lustre-client-modules}"
+readonly DKMS_VERSION="${LUSTRE_DKMS_VERSION:-2.15.90-v35817661}"
+readonly CONFIGURE_LNET_AT_BOOT="${LUSTRE_CONFIGURE_LNET_AT_BOOT:-true}"
+readonly IMDS_BASE="http://169.254.169.254/opc/v2"
+
+get_imds() {
+  curl -sf --connect-timeout 5 --max-time 10 -H "Authorization: Bearer Oracle" "${IMDS_BASE}/${1}"
+}
+
+is_lustre_node() {
+  local metadata lustre_config
+  if ! metadata=$(get_imds "instance"); then
+    echo "Could not read instance metadata; skipping Lustre module setup"; return 1
+  fi
+  lustre_config=$(echo "${metadata}" | jq -rcM '.metadata."lustre-config" // empty')
+  [[ "${lustre_config}" == "true" ]]
+}
+
+lustre_modules_present() { find "/lib/modules/$(uname -r)" -name 'lnet.ko*' 2>/dev/null | grep -q .; }
+
+ensure_lustre_dkms() {
+  local kernel; kernel=$(uname -r)
+  if lustre_modules_present; then echo "Lustre modules already present for ${kernel}"; return 0; fi
+  echo "Building Lustre DKMS modules for ${kernel}"
+  if dkms install "${DKMS_MODULE}/${DKMS_VERSION}" -k "${kernel}"; then return 0; fi
+  local rc=$?; [[ ${rc} -eq 3 ]] || { echo "ERROR: dkms install failed (${rc})" >&2; exit "${rc}"; }
+}
+
+load_lustre_modules() { modprobe lnet; echo "Loaded lnet for $(uname -r)"; }
+
+# --- LUSTRE_LNET_BOOT_WORKAROUND: start ---
+get_primary_vnic_interface() {
+  local vnics primary_mac retries=10 iface
+  vnics=$(get_imds "vnics") || { echo "ERROR: Could not read VNIC metadata" >&2; return 1; }
+  primary_mac=$(echo "${vnics}" | jq -rcM '.[0].macAddr')
+  [[ -n "${primary_mac}" && "${primary_mac}" != "null" ]] || { echo "ERROR: no primary MAC" >&2; return 1; }
+  while [[ ${retries} -gt 0 ]]; do
+    iface=$(ip -o link | grep -i "${primary_mac}" | awk -F': ' '{print $2}' | cut -d@ -f1 || true)
+    [[ -n "${iface}" ]] && { echo "${iface}"; return 0; }
+    retries=$((retries - 1)); sleep 2
+  done
+  echo "ERROR: no interface for MAC ${primary_mac}" >&2; return 1
+}
+
+tcp_lnet_up_on_interface() {
+  local iface="${1}" out
+  out=$(lnetctl net show --net tcp 2>/dev/null) || return 1
+  echo "${out}" | grep -q 'status: up' && echo "${out}" | grep -q "${iface}"
+}
+
+configure_lnet() {
+  local primary_if
+  command -v lnetctl >/dev/null 2>&1 || { echo "ERROR: lnetctl not found" >&2; exit 1; }
+  primary_if=$(get_primary_vnic_interface)
+  echo "Configuring LNet on ${primary_if} (Oracle CSI workaround)"
+  lnetctl lnet configure
+  tcp_lnet_up_on_interface "${primary_if}" && { echo "TCP LNet already up on ${primary_if}"; return 0; }
+  lnetctl net add --net tcp --if "${primary_if}"
+  tcp_lnet_up_on_interface "${primary_if}" || { echo "ERROR: TCP LNet not up on ${primary_if}" >&2; exit 1; }
+  echo "TCP LNet is up on ${primary_if}"
+}
+# --- LUSTRE_LNET_BOOT_WORKAROUND: end ---
+
+main() {
+  is_lustre_node || { echo "lustre-config != true; skipping"; exit 0; }
+  command -v dkms >/dev/null 2>&1 || { echo "ERROR: dkms not installed" >&2; exit 1; }
+  ensure_lustre_dkms
+  load_lustre_modules
+  [[ "${CONFIGURE_LNET_AT_BOOT}" == "true" ]] && configure_lnet
+}
+main "$@"
