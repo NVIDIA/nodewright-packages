@@ -52,3 +52,18 @@ def test_resolve_full_kernel_oracle_unchanged():
         assert "-aws" not in result.stdout
     finally:
         runner.cleanup()
+
+
+def test_oke_install_kernel_only_skips_actual_install(base_image):
+    runner = DockerTestRunner(package="nvidia-setup", base_image=base_image)
+    try:
+        result = runner.run_script(
+            script="apply.sh",
+            configmaps={"service": "oke", "accelerator": "gb200"},
+            env_vars={"NVIDIA_SETUP_INSTALL_KERNEL": "true"},
+            skip_system_operations=True,
+        )
+        assert_exit_code(result, 0)
+        assert_output_contains(result.stdout, "Skipping kernel install for test environment")
+    finally:
+        runner.cleanup()

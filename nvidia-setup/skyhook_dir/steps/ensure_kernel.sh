@@ -75,17 +75,25 @@ if [ -z "${TEST_CHECK_KERNEL_AT_LEAST:-}" ]; then
     exit 0
   fi
 
-  # Check current kernel meets requirement (exact or at-least depending on env)
-  required_full="$(resolve_full_kernel "${KERNEL}")"
-  if [ "${NVIDIA_SETUP_KERNEL_ALLOW_NEWER:-false}" = "true" ]; then
-    if ! check_kernel_at_least "${required_full}"; then
-      echo "Error: current kernel $(uname -r) is not >= required ${required_full}. Set NVIDIA_SETUP_INSTALL_KERNEL=true to install the exact kernel, or boot with a compatible kernel." >&2
+  # Meta/vendor kernels (e.g. linux-nvidia-64k): match flavor substring, not version.
+  if [ "${KERNEL_META:-false}" = "true" ]; then
+    flavor="${KERNEL##*linux-}"   # linux-nvidia-64k -> nvidia-64k
+    if ! uname -r | grep -q "${flavor}"; then
+      echo "Error: running kernel $(uname -r) is not a '${flavor}' kernel. Set NVIDIA_SETUP_INSTALL_KERNEL=true to install ${KERNEL}." >&2
       exit 1
     fi
   else
-    if ! check_kernel_exact "${required_full}"; then
-      echo "Error: current kernel $(uname -r) does not match required ${required_full} (exact match required). Set NVIDIA_SETUP_KERNEL_ALLOW_NEWER=true to allow a newer kernel, or NVIDIA_SETUP_INSTALL_KERNEL=true to install the exact kernel." >&2
-      exit 1
+    required_full="$(resolve_full_kernel "${KERNEL}")"
+    if [ "${NVIDIA_SETUP_KERNEL_ALLOW_NEWER:-false}" = "true" ]; then
+      if ! check_kernel_at_least "${required_full}"; then
+        echo "Error: current kernel $(uname -r) is not >= required ${required_full}. Set NVIDIA_SETUP_INSTALL_KERNEL=true to install the exact kernel, or boot with a compatible kernel." >&2
+        exit 1
+      fi
+    else
+      if ! check_kernel_exact "${required_full}"; then
+        echo "Error: current kernel $(uname -r) does not match required ${required_full} (exact match required). Set NVIDIA_SETUP_KERNEL_ALLOW_NEWER=true to allow a newer kernel, or NVIDIA_SETUP_INSTALL_KERNEL=true to install the exact kernel." >&2
+        exit 1
+      fi
     fi
   fi
 fi

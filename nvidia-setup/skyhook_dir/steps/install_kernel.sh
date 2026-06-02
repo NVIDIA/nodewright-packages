@@ -99,13 +99,30 @@ EOF
 
 }
 
+install_meta_kernel() {
+  apt update
+  echo "Installing meta kernel package ${KERNEL_VERSION}..."
+  apt-get install -y "${KERNEL_VERSION}"
+  update-grub
+  dpkg --list | grep -i linux-image || true
+}
+
 if [ -n "${SKIP_SYSTEM_OPERATIONS:-}" ]; then
-  full_kernel_ver="$(resolve_full_kernel "${KERNEL_VERSION}")"
-  echo "Skipping kernel install for test environment (target: ${full_kernel_ver})"
+  if [ "${KERNEL_META:-false}" = "true" ]; then
+    echo "Skipping kernel install for test environment (meta package: ${KERNEL_VERSION})"
+  else
+    full_kernel_ver="$(resolve_full_kernel "${KERNEL_VERSION}")"
+    echo "Skipping kernel install for test environment (target: ${full_kernel_ver})"
+  fi
   exit 0
 fi
 
-# Do initial work
-echo "Downgrading to target kernel version: ${KERNEL_VERSION}"
-downgrade_kernel
-echo "Done. Reboot to take effect."
+if [ "${KERNEL_META:-false}" = "true" ]; then
+  echo "Installing meta kernel package: ${KERNEL_VERSION}"
+  install_meta_kernel
+  echo "Done. Reboot to take effect."
+else
+  echo "Downgrading to target kernel version: ${KERNEL_VERSION}"
+  downgrade_kernel
+  echo "Done. Reboot to take effect."
+fi
