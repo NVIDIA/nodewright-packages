@@ -17,8 +17,24 @@
 # limitations under the License.
 
 set -euo pipefail
-apt update
-DEBIAN_FRONTEND=noninteractive apt install -y chrony
-sed -i '/^pool/d' /etc/chrony/chrony.conf
-echo "server 169.254.169.123 prefer iburst minpoll 4 maxpoll 4" >> /etc/chrony/chrony.conf
-echo "Configured Chrony"
+
+# shellcheck source=../load_defaults.sh
+. "${SKYHOOK_DIR}/skyhook_dir/load_defaults.sh"
+
+NTP_SERVER="${NTP_SERVER:-169.254.169.123}"   # default: AWS IMDS NTP (eks)
+
+if [ -n "${SKIP_SYSTEM_OPERATIONS:-}" ]; then
+  echo "Skipping chrony install for test environment"
+else
+  apt update
+  DEBIAN_FRONTEND=noninteractive apt install -y chrony
+fi
+
+CHRONY_CONF=/etc/chrony/chrony.conf
+mkdir -p "$(dirname "${CHRONY_CONF}")"
+touch "${CHRONY_CONF}"
+sed -i '/^pool/d' "${CHRONY_CONF}"
+if ! grep -q "${NTP_SERVER}" "${CHRONY_CONF}"; then
+  echo "server ${NTP_SERVER} prefer iburst minpoll 4 maxpoll 4" >> "${CHRONY_CONF}"
+fi
+echo "Configured Chrony with NTP server ${NTP_SERVER}"

@@ -67,3 +67,18 @@ def test_oke_install_kernel_only_skips_actual_install(base_image):
         assert_output_contains(result.stdout, "Skipping kernel install for test environment")
     finally:
         runner.cleanup()
+
+
+def test_oke_chrony_uses_oci_ntp(base_image):
+    runner = DockerTestRunner(package="nvidia-setup", base_image=base_image)
+    try:
+        result = runner.run_script(
+            script="steps/configure-chrony.sh",
+            configmaps={"service": "oke", "accelerator": "h100"},
+            skip_system_operations=True,
+        )
+        assert_exit_code(result, 0)
+        # chrony.conf should reference the OCI IMDS NTP server
+        assert "169.254.169.254" in runner.get_file_contents("/etc/chrony/chrony.conf")
+    finally:
+        runner.cleanup()
