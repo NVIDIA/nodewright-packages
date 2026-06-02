@@ -149,3 +149,18 @@ def test_oke_install_lustre_skips_and_installs_loader(base_image):
         assert runner.file_exists("/etc/systemd/system/lustre-modules-setup.service")
     finally:
         runner.cleanup()
+
+
+def test_oke_configure_limits_writes_memlock(base_image):
+    runner = DockerTestRunner(package="nvidia-setup", base_image=base_image)
+    try:
+        result = runner.run_script(
+            script="steps/configure_limits.sh",
+            configmaps={"service": "oke", "accelerator": "h100"},
+            skip_system_operations=True,
+        )
+        assert_exit_code(result, 0)
+        conf = runner.get_file_contents("/etc/security/limits.d/99-oci-hpc.conf")
+        assert "memlock" in conf and "unlimited" in conf
+    finally:
+        runner.cleanup()
