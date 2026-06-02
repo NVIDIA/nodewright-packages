@@ -65,10 +65,13 @@ profiles/
     │   ├── script.sh            # Sources common/mac-address-policy.sh, invokes common/bootloader.sh
     │   ├── nvidia-h100-inference.conf   # AWS-compatible inference override
     │   └── nvidia-gb200-inference.conf
-    └── aks/
-        ├── tuned.conf.template
-        ├── script.sh            # Sources common/mac-address-policy.sh, invokes common/bootloader.sh
-        └── nvidia-h100-inference.conf   # AKS-compatible inference override (drops kernel-6.8 EEVDF sysctls)
+    ├── aks/
+    │   ├── tuned.conf.template
+    │   ├── script.sh            # Sources common/mac-address-policy.sh, invokes common/bootloader.sh
+    │   └── nvidia-h100-inference.conf   # AKS-compatible inference override (drops kernel-6.8 EEVDF sysctls)
+    └── oke/
+        ├── tuned.conf.template  # OCI HPC [bootloader]/[sysctl] + MAC policy; include= added dynamically
+        └── script.sh            # Sources common/mac-address-policy.sh, invokes common/bootloader.sh
 ```
 
 Note: Profiles are stored in `profiles/` (not `root_dir/`) to avoid polluting the host filesystem during package extraction. The prepare scripts explicitly copy profiles to the appropriate tuned directories.
@@ -234,6 +237,7 @@ spec:
 |---------|-------------|
 | `eks` | eks-specific settings (MAC address policy for CNI) |
 | `aks` | aks-specific settings (MAC address policy, grub.d bootloader workaround for Ubuntu) |
+| `oke` | Oracle OKE/OCI settings: OCI HPC kernel cmdline (`oci_hpc.*` device naming, cstate/mitigations, `pcie_ports=dpc-native`), HPC + large-cluster sysctls, and MAC address policy; layered on `nvidia-{accelerator}-{intent}` for `h100`/`gb200`. The base OKE worker bootstrap stays in the OKE image; k8s/CNI sysctls and IOMMU are intentionally excluded (IOMMU is left to the workload profile / hardware-specific). |
 
 ## Adding OS-Specific Overrides
 
@@ -271,7 +275,7 @@ See the [tuned package README](../tuned/README.md) for complete documentation on
 
 ## Version
 
-- **Package Version**: 0.3.0
+- **Package Version**: 0.4.0
 - **Base Package**: tuned (latest via preprocess.sh)
 - **Schema Version**: v1
 
