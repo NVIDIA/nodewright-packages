@@ -861,3 +861,55 @@ def test_prepare_oke_h100_performance(base_image):
         assert prof == "oke-h100-performance"
     finally:
         runner.cleanup()
+
+
+def test_prepare_oke_gb200_inference(base_image):
+    """oke service generalizes across accelerator/intent (gb200 + inference)."""
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        configmaps = {"accelerator": "gb200", "intent": "inference", "service": "oke"}
+        create_container_for_testing(runner, configmaps)
+        install_tuned_in_container(runner, base_image)
+        result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
+        assert_exit_code(result, 0)
+        final = "/etc/tuned/oke-gb200-inference/tuned.conf"
+        assert runner.file_exists(final)
+        conf = runner.get_file_contents(final)
+        assert "include=nvidia-gb200-inference" in conf
+        assert "oci_hpc.vnic_device_names_mode=1" in conf
+    finally:
+        runner.cleanup()
+
+
+def test_prepare_oke_grub_config(base_image):
+    """oke service bootloader.sh creates the grub.d drop-in (mirrors the eks grub test)."""
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        configmaps = {"accelerator": "h100", "intent": "performance", "service": "oke"}
+        create_container_for_testing(runner, configmaps)
+        install_tuned_in_container(runner, base_image)
+        if "ubuntu" in base_image or "debian" in base_image:
+            runner.container.exec_run(
+                ["apt-get", "install", "-y", "grub-common", "grub2-common"],
+                workdir="/",
+            )
+        result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
+        assert_exit_code(result, 0)
+        # Simulate tuned writing the boot cmdline, then run the profile's bootloader script
+        runner.container.exec_run(
+            ["bash", "-c", "mkdir -p /etc/tuned && echo 'TUNED_BOOT_CMDLINE=\"oci_hpc.rdma_device_names_mode=2\"' > /etc/tuned/bootcmdline"],
+            workdir="/",
+        )
+        runner.container.exec_run(
+            ["bash", "-c", "/etc/tuned/oke-h100-performance/bootloader.sh || true"],
+            workdir="/",
+        )
+        assert runner.file_exists("/etc/default/grub.d/99_tuned.cfg"), \
+            "Grub config file 99_tuned.cfg was not created"
+        grub_config_content = runner.container.exec_run(
+            ["bash", "-c", ". /etc/default/grub.d/99_tuned.cfg && echo $GRUB_CMDLINE_LINUX_DEFAULT"],
+            workdir="/",
+        ).output.decode("utf-8", errors="replace")
+        assert_output_contains(grub_config_content, "oci_hpc.rdma_device_names_mode=2")
+    finally:
+        runner.cleanup()
