@@ -1,0 +1,14 @@
+# View the README for more information about this file.
+
+# ConnectX-5 Ex virtual functions (RDMA)
+ACTION=="add", SUBSYSTEM=="net", ENV{ID_NET_DRIVER}=="mlx5_core", ENV{ID_MODEL_ID}=="0x101a", ATTR{mtu}="4220"
+ACTION=="add", SUBSYSTEM=="net", ENV{ID_NET_DRIVER}=="mlx5_core", ENV{ID_MODEL_ID}=="0x101a", ATTR{tx_queue_len}="20000"
+
+# ConnectX-6 Dx physical functions (BM VCN)
+ACTION=="add", SUBSYSTEM=="net", ENV{ID_NET_DRIVER}=="mlx5_core", ENV{ID_MODEL_ID}=="0x101d", ATTR{mtu}="9000"
+
+# ConnectX-7 physical functions (BM.GPU.H100.8)
+ACTION=="add", SUBSYSTEM=="net", ENV{ID_NET_DRIVER}=="mlx5_core", ENV{ID_MODEL_ID}=="0x1021", ATTR{mtu}="9000"
+
+# Virtio network device (VM VCN)
+ACTION=="add", SUBSYSTEM=="net", ENV{ID_NET_DRIVER}=="virtio_net", ENV{ID_MODEL_ID}=="0x1000", ATTR{mtu}="9000"

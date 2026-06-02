@@ -111,3 +111,24 @@ def test_oke_install_oci_hpc_packages_skips(base_image):
         assert_output_contains(result.stdout, "Skipping OCI HPC package install")
     finally:
         runner.cleanup()
+
+
+def test_oke_configure_hpc_networking_drops_files(base_image):
+    runner = DockerTestRunner(package="nvidia-setup", base_image=base_image)
+    try:
+        result = runner.run_script(
+            script="steps/configure_hpc_networking.sh",
+            configmaps={"service": "oke", "accelerator": "h100"},
+            script_args=["h100"],
+            skip_system_operations=True,
+        )
+        assert_exit_code(result, 0)
+        for path in [
+            "/etc/udev/rules.d/99-oci-network-mlx.rules",
+            "/usr/bin/oci-create-vfs",
+            "/usr/bin/oci-sriov-vf-config",
+            "/etc/oracle-cloud-agent/plugins/oci-hpc/oci-hpc-configure/rdma_network.json",
+        ]:
+            assert runner.file_exists(path), f"missing {path}"
+    finally:
+        runner.cleanup()

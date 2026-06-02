@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -e -o pipefail
+
+REBOOT_TRIGGER_FILE=/tmp/.mlx-vf-reboot-required
+
+mst start
+for pci in $(mst status -v | grep -e "net-rdma[0-9]" | awk {'print $3'}); do
+    enabled=$(mlxconfig -d "${pci}" q | grep SRIOV_EN | tr -s ' ' | cut -d " " -f 3 | cut -d "(" -f 1)
+    vfs=$(mlxconfig -d "${pci}" q | grep VFS | tr -s ' ' | cut -d " " -f 3 | cut -d "(" -f 1)
+    echo "$pci - sriov enabled: $enabled - vfs count: $vfs"
+    if [[ $enabled == "True" && $vfs -eq 1 ]]; then
+        echo "SRIOV already enabled and NUM_OF_VFS already set for $pci. Skipping.."
+        continue
+    else
+        echo "Enabling SRIOV and setting VF count to 1"
+        mlxconfig -d $pci -y set SRIOV_EN=1 NUM_OF_VFS=1
+        touch "${REBOOT_TRIGGER_FILE}"
+    fi
+done
+
+if [[ -f "${REBOOT_TRIGGER_FILE}" ]]; then
+  echo "Rebooting"
+  nohup bash -c "sleep 5 && reboot" &
+fi
+
+find /sys/class/net -name "rdma*" -exec basename {} \; \
+  | grep -E "rdma[0-9]+" \
+  | xargs -I{} oci-create-vfs {} 1

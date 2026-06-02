@@ -1,0 +1,24 @@
+{
+  "rdma-network": [
+    {
+      "default-settings": {
+        "rdma_network": "172.16.0.0/12",
+        "overwrite_config_files": true,
+        "single_subnet": true,
+        "modify_subnet": false,
+        "modify_arp": true
+      },
+      "subnet-settings": {
+        "netmask": "255.255.240.0",
+        "override_netconfig_netmask": "255.255.240.0"
+      },
+      "arp-settings": {
+        "rp_filter": "0",
+        "arp_ignore": "1",
+        "arp_announce": "2",
+        "accept_local": "1",
+        "arp_filter": "1"
+      }
+    }
+  ]
+}
