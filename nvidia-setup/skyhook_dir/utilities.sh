@@ -35,9 +35,11 @@ resolve_full_kernel() {
   if [ "${arch}" = "arm64" ] || [ "${arch}" = "aarch64" ]; then
     suffix="-aws-64k"
   fi
-  # If base_version already contains -aws or similar, avoid duplicating
+  # If base_version already contains a known flavor suffix, return as-is
   case "${base_version}" in
-    *-aws*) echo "${base_version}" ;;
-    *)      echo "${base_version}${suffix}" ;;
+    *-aws*)         echo "${base_version}" ;;
+    *-oracle*)      echo "${base_version}" ;;   # OKE x86 worker kernel (already full)
+    *nvidia-64k*)   echo "${base_version}" ;;   # OKE Grace vendor kernel / meta package
+    *)              echo "${base_version}${suffix}" ;;
   esac
 }
