@@ -52,9 +52,31 @@ run_eks_gb200() {
   "${STEPS_DIR}/setup_local_disks.sh" raid0
 }
 
+run_oke_h100() {
+  "${STEPS_DIR}/upgrade.sh"
+  "${STEPS_DIR}/install_doca.sh" "${DOCA_VERSION}"
+  "${STEPS_DIR}/install_oci_hpc_packages.sh"
+  "${STEPS_DIR}/configure_hpc_networking.sh" "${ACCELERATOR}"
+  "${STEPS_DIR}/install_lustre_oke.sh"
+  "${STEPS_DIR}/configure_limits.sh"
+  "${STEPS_DIR}/configure-chrony.sh"
+}
+
+run_oke_gb200() {
+  "${STEPS_DIR}/upgrade.sh"
+  "${STEPS_DIR}/install_doca.sh" "${DOCA_VERSION}"
+  "${STEPS_DIR}/install_oci_hpc_packages.sh"
+  "${STEPS_DIR}/configure_hpc_networking.sh" "${ACCELERATOR}"
+  "${STEPS_DIR}/install_lustre_oke.sh"
+  "${STEPS_DIR}/configure_limits.sh"
+  "${STEPS_DIR}/configure-chrony.sh"
+}
+
 case "${COMBINATION}" in
   eks-h100)  run_eks_h100 ;;
   eks-gb200) run_eks_gb200 ;;
+  oke-h100)  run_oke_h100 ;;
+  oke-gb200) run_oke_gb200 ;;
   *)
     echo "Unsupported combination: ${COMBINATION}" >&2
     echo "Supported: $(find "${DEFAULTS_DIR}" -maxdepth 1 -name '*.conf' -exec basename {} .conf \; 2>/dev/null | tr '\n' ' ')" >&2

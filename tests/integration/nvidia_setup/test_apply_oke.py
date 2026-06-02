@@ -164,3 +164,19 @@ def test_oke_configure_limits_writes_memlock(base_image):
         assert "memlock" in conf and "unlimited" in conf
     finally:
         runner.cleanup()
+
+
+def test_oke_apply_h100_skips_system_ops(base_image):
+    runner = DockerTestRunner(package="nvidia-setup", base_image=base_image)
+    try:
+        result = runner.run_script(
+            script="apply.sh",
+            configmaps={"service": "oke", "accelerator": "h100"},
+            env_vars={"NVIDIA_SETUP_KERNEL_ALLOW_NEWER": "true"},
+            skip_system_operations=True,
+        )
+        assert_exit_code(result, 0)
+        assert_output_contains(result.stdout, "Skipping DOCA install")
+        assert_output_contains(result.stdout, "Skipping Lustre package install")
+    finally:
+        runner.cleanup()

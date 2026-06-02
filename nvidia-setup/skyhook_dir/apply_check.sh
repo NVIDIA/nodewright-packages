@@ -45,9 +45,31 @@ check_eks_gb200() {
   "${STEPS_CHECK_DIR}/setup_local_disks_check.sh"
 }
 
+check_oke_h100() {
+  "${STEPS_CHECK_DIR}/upgrade_check.sh"
+  "${STEPS_CHECK_DIR}/install_doca_check.sh"
+  "${STEPS_CHECK_DIR}/install_oci_hpc_packages_check.sh"
+  "${STEPS_CHECK_DIR}/configure_hpc_networking_check.sh"
+  "${STEPS_CHECK_DIR}/install_lustre_oke_check.sh"
+  "${STEPS_CHECK_DIR}/configure_limits_check.sh"
+  "${STEPS_CHECK_DIR}/configure_chrony_check.sh"
+}
+
+check_oke_gb200() {
+  "${STEPS_CHECK_DIR}/upgrade_check.sh"
+  "${STEPS_CHECK_DIR}/install_doca_check.sh"
+  "${STEPS_CHECK_DIR}/install_oci_hpc_packages_check.sh"
+  "${STEPS_CHECK_DIR}/configure_hpc_networking_check.sh"
+  "${STEPS_CHECK_DIR}/install_lustre_oke_check.sh"
+  "${STEPS_CHECK_DIR}/configure_limits_check.sh"
+  "${STEPS_CHECK_DIR}/configure_chrony_check.sh"
+}
+
 case "${COMBINATION}" in
   eks-h100)  check_eks_h100 ;;
   eks-gb200) check_eks_gb200 ;;
+  oke-h100)  check_oke_h100 ;;
+  oke-gb200) check_oke_gb200 ;;
   *)
     echo "Unsupported combination: ${COMBINATION}" >&2
     echo "Supported: $(find "${DEFAULTS_DIR}" -maxdepth 1 -name '*.conf' -exec basename {} .conf \; 2>/dev/null | tr '\n' ' ')" >&2
