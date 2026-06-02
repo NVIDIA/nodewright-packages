@@ -834,3 +834,30 @@ def test_prepare_nvidia_profiles_common_profiles_deployed(base_image):
 
     finally:
         runner.cleanup()
+
+
+def test_prepare_oke_h100_performance(base_image):
+    """service=oke, accelerator=h100, intent=performance builds oke-h100-performance
+    that includes the workload profile and carries OCI bootloader + sysctl tuning."""
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        configmaps = {"accelerator": "h100", "intent": "performance", "service": "oke"}
+        create_container_for_testing(runner, configmaps)
+        install_tuned_in_container(runner, base_image)
+        result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
+        assert_exit_code(result, 0)
+
+        final = "/etc/tuned/oke-h100-performance/tuned.conf"
+        assert runner.file_exists(final)
+        conf = runner.get_file_contents(final)
+        assert "include=nvidia-h100-performance" in conf
+        assert "oci_hpc.rdma_device_names_mode=2" in conf
+        assert "kernel.numa_balancing = 0" in conf
+        # script + shared MAC helper copied into the final profile dir
+        assert runner.file_exists("/etc/tuned/oke-h100-performance/script.sh")
+        assert runner.file_exists("/etc/tuned/oke-h100-performance/mac-address-policy.sh")
+        # tuned_profile written for the inherited apply step
+        prof = runner.get_file_contents("/skyhook-package/configmaps/tuned_profile").strip()
+        assert prof == "oke-h100-performance"
+    finally:
+        runner.cleanup()

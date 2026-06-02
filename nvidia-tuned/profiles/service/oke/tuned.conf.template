@@ -1,0 +1,29 @@
+[main]
+summary=NVIDIA OKE (OCI) service profile: OCI HPC kernel cmdline, sysctls, and MAC address policy
+
+[bootloader]
+cmdline_oci_hpc=oci_hpc.rdma_device_names_mode=2 oci_hpc.vnic_device_names_mode=1
+cmdline_oke_perf=processor.max_cstate=1 intel_idle.max_cstate=0 mce=ignore_ce nohz=off numa_balancing=disable skew_tick=1
+cmdline_oke_pcie=pcie_ports=dpc-native
+cmdline_oke_mitigations=noibrs noibpb nopti nospectre_v2 nospectre_v1 l1tf=off nospec_store_bypass_disable no_stf_barrier mds=off mitigations=off
+cmdline_oke_misc=selinux=0 namespace.unpriv_enable=1 user_namespace.enable=1 nvme_core.shutdown_timeout=10 libiscsi.debug_libiscsi_eh=1 crash_kexec_post_notifiers
+
+[sysctl]
+kernel.numa_balancing = 0
+kernel.pid_max = 4194304
+vm.max_map_count = 262144
+vm.overcommit_memory = 1
+vm.compaction_proactiveness = 20
+vm.min_free_kbytes = 65536
+fs.file-max = 2097152
+fs.nr_open = 1048576
+fs.inotify.max_user_instances = 65535
+fs.inotify.max_user_watches = 524288
+# Large-cluster neighbor (ARP) table sizing - from Oracle oci-hpc-images gpu_tuning (group_vars/all.yml)
+net.ipv4.neigh.default.gc_thresh1 = 32768
+net.ipv4.neigh.default.gc_thresh2 = 65535
+net.ipv4.neigh.default.gc_thresh3 = 131072
+kernel.perf_event_paranoid = 2
+
+[script]
+script=${i:PROFILE_DIR}/script.sh
