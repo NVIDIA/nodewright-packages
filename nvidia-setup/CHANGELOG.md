@@ -2,7 +2,17 @@
 
 All notable changes to this package will be documented in this file.
 
-## [Unreleased]
+## [0.4.0]
+
+### New Features
+
+- *(nvidia-setup)* Bump EKS h100/gb200 defaults to kernel `6.17.0-1017-aws` and EFA `1.48.0` by [@ayuskauskas](https://github.com/ayuskauskas)
+
+### Bug Fixes
+
+- *(nvidia-setup)* Resolve the 64k-page kernel for arm64: `resolve_full_kernel` now appends `-64k` on aarch64 (e.g. GB200 installs `6.17.0-1017-aws-64k`) instead of the non-64k flavor by [@ayuskauskas](https://github.com/ayuskauskas)
+
+## [0.3.0] - 2026-05-29
 
 ### New Features
 

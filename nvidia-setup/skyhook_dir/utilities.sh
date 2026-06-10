@@ -17,8 +17,12 @@
 # limitations under the License.
 
 # resolve_full_kernel for nvidia-setup (skyhook): no get_var; use KERNEL and architecture.
+# The conf (defaults/<service>-<accelerator>.conf) already specifies the exact kernel
+# flavor (e.g. 6.17.0-1017-aws), so the only thing left to resolve is the
+# architecture-specific page-size variant: arm64/aarch64 nodes (e.g. GB200/Grace) use
+# the -64k kernel, x86_64 nodes use the flavor as-is.
 # Usage: resolve_full_kernel <base_kernel_version>
-# Returns: <base_kernel_version>-aws[-64k] for EKS
+# Returns: <conf_kernel>[-64k]
 resolve_full_kernel() {
   local base_version="$1"
   if [ -z "${base_version}" ]; then
@@ -28,16 +32,18 @@ resolve_full_kernel() {
     echo "ERROR: kernel version not set" >&2
     return 1
   fi
-  # EKS on AWS: suffix is -aws
+  # arm64 uses the 64k page-size kernel; append -64k unless the conf already has it.
   local arch
   arch=$(uname -m)
-  local suffix="-aws"
-  if [ "${arch}" = "arm64" ] || [ "${arch}" = "aarch64" ]; then
-    suffix="-aws-64k"
-  fi
-  # If base_version already contains -aws or similar, avoid duplicating
-  case "${base_version}" in
-    *-aws*) echo "${base_version}" ;;
-    *)      echo "${base_version}${suffix}" ;;
+  case "${arch}" in
+    arm64 | aarch64)
+      case "${base_version}" in
+        *-64k) echo "${base_version}" ;;
+        *)     echo "${base_version}-64k" ;;
+      esac
+      ;;
+    *)
+      echo "${base_version}"
+      ;;
   esac
 }
