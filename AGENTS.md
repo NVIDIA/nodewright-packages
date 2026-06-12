@@ -58,7 +58,8 @@ Run from the repo root unless noted. See `DEVELOPER.md` for the full pre-commit 
 
 ### Commit and version conventions
 
-- **Conventional Commits**, with the **package name as scope**: `feat(shellscript): ...`, `fix(tuning): ...`. Use `docs(general/ci): ...` for repo-wide or CI changes.
+- **Conventional Commits**, with the **package name as scope**: `feat(shellscript): ...`, `fix(tuning): ...`. This applies to **both commit messages and PR titles**: a squash-merge uses the PR title as the commit subject, and the planned enforcement (below) checks the title. Use `general` (or `general/ci`) as the scope for repo-wide or CI changes, and use exactly one type per message; combined types like `docs+ci` are not valid Conventional Commits.
+- **CC is a documented convention, not yet CI-enforced.** Unlike the operator repo (which gates Conventional Commits with a commit-linting check on the PR title), nothing here verifies commit or PR-title format yet, so the discipline is on the author and reviewers. Adding that gate is tracked separately; until it lands, do not assume a malformed message or title will be caught for you.
 - **Sign-off is required** (DCO). Use `git commit -s`.
 - **Semantic versioning per package.** Bump `package_version` in the package's `config.json`, then tag as `<package>/<version>` (e.g. `tuned/1.3.0`). Each package versions independently.
 
