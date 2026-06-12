@@ -53,17 +53,15 @@ test-package: test-deps ## Run tests for a specific package. Usage: make test-pa
 
 ##@ Changelog
 
+# Changelogs are generated from git history by scripts/gen-changelog.sh, which
+# takes release boundaries from `git tag` (a single `git cliff --include-path`
+# call drops most release sections in this monorepo). CHANGELOG.md is machine-
+# owned; hand-authored notes live in the sibling RELEASE_NOTES.md. See
+# docs/release-process.md.
+
 .PHONY: changelog
-changelog: ## Generate/update CHANGELOG.md for a package. Usage: make changelog PACKAGE=nvidia-setup
-	@if [ -z "$(PACKAGE)" ]; then \
-		echo "ERROR: PACKAGE is required. Usage: make changelog PACKAGE=nvidia-setup"; \
-		exit 1; \
-	fi
-	git cliff \
-		--include-path "$(PACKAGE)/**" \
-		--tag-pattern "$(PACKAGE)/.*" \
-		-o $(PACKAGE)/CHANGELOG.md
-	@echo "Updated $(PACKAGE)/CHANGELOG.md"
+changelog: ## Regenerate a package CHANGELOG.md. Interactive picker with no PACKAGE; one-shot with PACKAGE=nvidia-setup [VERSION=0.3.0 to label the cut version]. Machine-owned; do not hand-edit.
+	@bash scripts/gen-changelog.sh $(PACKAGE) $(VERSION)
 
 .PHONY: changelog-preview
 changelog-preview: ## Preview unreleased changes for a package. Usage: make changelog-preview PACKAGE=nvidia-setup
@@ -71,11 +69,16 @@ changelog-preview: ## Preview unreleased changes for a package. Usage: make chan
 		echo "ERROR: PACKAGE is required. Usage: make changelog-preview PACKAGE=nvidia-setup"; \
 		exit 1; \
 	fi
-	git cliff \
+	@git cliff \
+		--offline \
 		--include-path "$(PACKAGE)/**" \
 		--tag-pattern "$(PACKAGE)/.*" \
 		--unreleased \
-		--strip header
+		--strip all
+
+.PHONY: release-tag
+release-tag: ## Interactively cut a release tag: prompts for package + bump (+ optional RC), creates the tag, and optionally pushes it (push triggers the CI release).
+	@bash scripts/release-tag.sh
 
 ##@ Validation
 

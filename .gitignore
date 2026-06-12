@@ -3,6 +3,7 @@ __pycache__/
 .DS_Store
 venv/
 .worktrees/
+.claude/worktrees/
 
 docs/plans
 docs/superpowers
