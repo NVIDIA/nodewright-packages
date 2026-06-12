@@ -317,3 +317,25 @@ jobs:
             echo "❌ Some packages failed to build"
             exit 1
           fi
+
+  # Single required status check for branch protection (see #78). This always
+  # runs on every PR and passes only when each upstream job either succeeded or
+  # was legitimately skipped (no package changed, so the matrix jobs do not
+  # run). Branch protection requires this one stable check name instead of the
+  # matrix jobs, which skip per-PR and would otherwise leave a required check
+  # stuck "pending" forever. `commitlint` is required separately since it always
+  # runs and reports on its own.
+  ci-gate:
+    name: ci-gate
+    needs: [detect-changes, validate, test, build]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Verify required jobs passed
+        run: |
+          results='${{ toJSON(needs) }}'
+          printf '%s\n' "$results"
+          # Pass when every upstream job is success or skipped; fail on any
+          # failure or cancellation.
+          echo "$results" | jq -e 'to_entries | all(.value.result == "success" or .value.result == "skipped")'
