@@ -60,6 +60,7 @@ body:
         - nvidia-setup
         - nvidia-tuned
         - nvidia-tuning-gke
+        - copy-fail
         - New package request
         - General / multiple packages
 

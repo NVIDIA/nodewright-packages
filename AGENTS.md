@@ -36,6 +36,27 @@ This repo does **not** contain the operator, the agent, or any Go code. It is sh
 └── skyhook_dir/        # lifecycle scripts and static files the scripts use
 ```
 
+## Adding a new package
+
+A package becomes "real" to CI once its directory has a `Dockerfile`. Beyond the
+package contents themselves, a few repo-wide places track the package set and must
+be updated in the same change, or its label automation silently goes stale:
+
+- `.github/labels.yml`: add a `package/<name>` label (same color family as the
+  others). Run `make labels` to sync it to GitHub.
+- `.github/labeler.yml`: add a `package/<name>` entry mapping `<name>/**` so PRs
+  touching the package get labeled.
+- `.github/ISSUE_TEMPLATE/bug_report_form.yml` and `feature_request_form.yml`: add
+  `<name>` to the "Which package does this relate to?" dropdown so reporters can
+  select it.
+- `.github/workflows/triage.yaml`: add `<name>` to the `PACKAGES` list (keep the
+  longest-name-first ordering so substring names like `tuned` don't shadow
+  `nvidia-tuned`).
+
+Keep these four in sync with each other; the dropdown value, the label suffix, the
+labeler glob directory, and the triage `PACKAGES` entry are all the same package
+directory name.
+
 ## How packages work (the contract you must not break)
 
 - Everything under `/skyhook-package` in the image lands at `${SKYHOOK_DIR}` on the host. `skyhook_dir/` lands at `${STEP_ROOT}`. `root_dir/` is laid down at `/`.
@@ -86,6 +107,23 @@ Almost all package logic is bash. The existing scripts are not yet consistent (s
 - **On tag push `<package>/<version>`:** two independent workflows run. `build_container.yaml` builds and pushes the multi-arch image (`linux/amd64,linux/arm64`) with a build-provenance attestation; `release.yml` creates the GitHub Release with `git-cliff` notes scoped to that package. The image build (here and in `pr_build.yaml`) goes through the `.github/actions/build-package` composite action. (`build_package.yml` is a reusable `workflow_call` workflow that exists but is not currently wired up.)
 - **Published image path:** `ghcr.io/nvidia/skyhook-packages/<package>:<version>` (the `skyhook-packages` segment is retained pending the rename).
 - An optional `<package>/preprocess.sh` is run before the image build and can emit `BUILD_ARGS`.
+
+## Keeping software current
+
+Prefer the latest stable versions of the software this repo depends on, and keep
+them moving forward rather than letting them drift. This covers base images in
+`Dockerfile`s, the tools the lifecycle scripts invoke, the Python deps under
+`tests/`, and the `uses:` actions in workflows. Staying current is how we pick up
+upstream security and bug fixes.
+
+Balance "latest" against reproducibility and supply-chain safety:
+
+- **Pin GitHub Actions to a commit SHA** with the human-readable version in a
+  trailing comment (e.g. `actions/labeler@f27b...e213  # v6.1.0`). To update, bump
+  the SHA and the comment together; do not float a `@v6` tag.
+- When you touch a file that references a pinned action, a base image tag, or a
+  tool version, check whether a newer stable release exists and update it if the
+  bump is safe. Treat a stale pin you are already editing as worth refreshing.
 
 ## Gotchas
 
