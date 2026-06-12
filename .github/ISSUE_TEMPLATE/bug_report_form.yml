@@ -34,6 +34,21 @@ body:
     validations:
       required: true
 
+  - type: dropdown
+    id: package
+    attributes:
+      label: Which package does this relate to?
+      options:
+        - shellscript
+        - tuning
+        - tuned
+        - kdump
+        - nvidia-setup
+        - nvidia-tuned
+        - nvidia-tuning-gke
+        - copy-fail
+        - General / multiple packages
+
   - type: input
     id: package-version
     attributes:
