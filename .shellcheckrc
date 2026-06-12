@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# ShellCheck configuration for skyhook-packages (NodeWright Packages).
+# See https://github.com/koalaman/shellcheck/wiki for rule docs.
+
+# Package scripts source files by their on-host runtime path
+# (e.g. ". ${SKYHOOK_DIR}/skyhook_dir/load_defaults.sh"), which ShellCheck
+# cannot resolve statically. Suppress the "not following sourced file" info
+# rather than annotating every source line.
+disable=SC1091
