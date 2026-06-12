@@ -16,9 +16,6 @@
 
 blank_issues_enabled: false
 contact_links:
-  - name: Ask a question
-    url: https://github.com/NVIDIA/nodewright-packages/discussions
-    about: Ask questions and get help from the community via GitHub Discussions.
   - name: Report a security vulnerability
     url: https://github.com/NVIDIA/nodewright-packages/security/advisories/new
     about: Please report security vulnerabilities privately. Do not open a public issue.
