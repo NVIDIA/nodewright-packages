@@ -71,7 +71,7 @@ directory name.
 
 Run from the repo root unless noted. See `DEVELOPER.md` for the full pre-commit checklist.
 
-- **License headers:** `make license-fmt` (wraps `scripts/format_license.py`). All source files carry the Apache 2.0 SPDX header.
+- **License headers:** every source file (scripts, YAML, Dockerfiles, config) must carry the Apache 2.0 SPDX header. When you add a file, copy the header from a neighbouring file of the same type so the comment style and SPDX lines match. `make license-fmt` (`scripts/format_license.py`) can add headers, but it is currently not idempotent: it duplicates the header on files that have only the 2-line SPDX form (see #74), so add headers by hand and avoid running the formatter repo-wide until that is fixed.
 - **Validate config:** `make validate-standalone PACKAGE=<name>` for standalone packages, or `make validate-inherited PACKAGE=<name>` for inherited ones (this builds the image first, then validates the assembled `/skyhook-package`). Validation runs in the `ghcr.io/nvidia/skyhook/agent:latest` container and needs Docker or Podman.
 - **Test:** `make test` runs the whole Docker-based suite in parallel; `make test-package PACKAGE=<name>` runs one package's tests. Tests need a working Docker daemon and create a `venv/`.
 - **Changelog (per package):** `make changelog-preview PACKAGE=<name>` to preview unreleased notes, `make changelog PACKAGE=<name>` to write `<package>/CHANGELOG.md`. Notes come from `git-cliff` (see `cliff.toml`), scoped by `--include-path <package>/**` and `--tag-pattern <package>/.*`.
@@ -107,6 +107,14 @@ Almost all package logic is bash. The existing scripts are not yet consistent (s
 - **On tag push `<package>/<version>`:** two independent workflows run. `build_container.yaml` builds and pushes the multi-arch image (`linux/amd64,linux/arm64`) with a build-provenance attestation; `release.yml` creates the GitHub Release with `git-cliff` notes scoped to that package. The image build (here and in `pr_build.yaml`) goes through the `.github/actions/build-package` composite action. (`build_package.yml` is a reusable `workflow_call` workflow that exists but is not currently wired up.)
 - **Published image path:** `ghcr.io/nvidia/skyhook-packages/<package>:<version>` (the `skyhook-packages` segment is retained pending the rename).
 - An optional `<package>/preprocess.sh` is run before the image build and can emit `BUILD_ARGS`.
+
+## Code review (CodeRabbit)
+
+`.coderabbit.yaml` configures CodeRabbit's automated PR review. Keep it in step with the repo so reviews stay useful, and update it in the same change that introduces the drift:
+
+- **Guidance docs:** add new repo-guidance files to `knowledge_base.code_guidelines.filePatterns` (currently `AGENTS.md`, `CONTRIBUTING.md`, `README.md`, `DEVELOPER.md`, `PACKAGE_LIFECYCLE.md`) so reviews enforce our conventions.
+- **Generated or vendored content:** add new such paths to `reviews.path_filters` (currently the git-cliff-generated `CHANGELOG.md` and `RELEASE_NOTES.md`) so CodeRabbit does not review non-authored files.
+- **Tools:** keep `reviews.tools` aligned with the linters we actually use. `shellcheck` is on and shares rules with CI via `.shellcheckrc`; revisit `yamllint` (currently off) if malformed YAML starts slipping through.
 
 ## Keeping software current
 
