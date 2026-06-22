@@ -8,17 +8,24 @@ Before committing your changes, you should run the following validations to ensu
 
 ### 1. License Header Formatting
 
-All code files must have the proper Apache 2.0 license header. Format license headers using:
+Source files (`*.py`, `*.sh`, `*.yaml`/`*.yml`, and `Dockerfile`s) must carry the full
+Apache 2.0 license header (see `.github/license-header.tmpl`). Markdown and other docs
+do not need a header. Add or refresh headers with:
 
 ```bash
 make license-fmt
 ```
 
-Or directly:
+This runs [`google/addlicense`](https://github.com/google/addlicense) via `go run`
+(needs a local Go toolchain); it is idempotent and never duplicates a header. Verify
+headers without modifying files (this is what CI runs) using:
 
 ```bash
-python3 ./scripts/format_license.py --root-dir . --license-file ./LICENSE
+make license-check
 ```
+
+The `License Headers` workflow gates this on every PR, and also fails if a file ends up
+with a duplicated header.
 
 ### 2. Config.json Validation
 

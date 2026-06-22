@@ -10,9 +10,27 @@ labels: ## Sync GitHub labels from .github/labels.yml (requires gh CLI with repo
 
 ##@ Development
 
+# License headers are managed by google/addlicense, run straight from its Go
+# module with `go run` (needs a local Go toolchain; no container, no vendored
+# binary). addlicense never duplicates a header (it skips files that already have
+# one), so it is idempotent, unlike the old scripts/format_license.py it replaced
+# (see #74). The canonical style is the full Apache 2.0 block in
+# .github/license-header.tmpl. Scope mirrors the old tool: Python, shell, YAML,
+# and Dockerfiles, excluding chart/ and vendored trees. Docs (*.md and similar)
+# intentionally carry no header.
+ADDLICENSE_VERSION := v1.2.0
+ADDLICENSE := go run github.com/google/addlicense@$(ADDLICENSE_VERSION)
+# addlicense v1.2.0 does not expand `**` in path arguments, so we pass an explicit
+# file list from git (tracked files only, with chart/ and vendored trees excluded).
+LICENSE_FILES = $(shell git ls-files '*.py' '*.sh' '*.yaml' '*.yml' 'Dockerfile' '*/Dockerfile' ':!:chart/**' ':!:**/vendor/**' ':!:**/node_modules/**')
+
 .PHONY: license-fmt
-license-fmt: ## adds license header to code.
-	python3 ./scripts/format_license.py --root-dir . --license-file ./LICENSE
+license-fmt: ## Add Apache license headers to source files (google/addlicense; idempotent).
+	@$(ADDLICENSE) -f .github/license-header.tmpl $(LICENSE_FILES)
+
+.PHONY: license-check
+license-check: ## Verify in-scope source files carry a license header (CI gate).
+	@$(ADDLICENSE) -check -f .github/license-header.tmpl $(LICENSE_FILES)
 
 .PHONY: test-deps
 test-deps: ## Install Python test dependencies

@@ -1,0 +1,74 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: License Headers
+
+# Verifies every in-scope source file carries the Apache license header
+# (google/addlicense via `make license-check`), then guards against the
+# duplicate-header regression from #74: addlicense -check only verifies presence,
+# so a second SPDX block would otherwise pass. The guard fails if any in-scope
+# file has more than one SPDX-License-Identifier line.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  license:
+    name: Check license headers
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff  # v5.6.0
+        with:
+          go-version: stable
+
+      - name: Check headers (addlicense)
+        run: make license-check
+
+      - name: Guard against duplicate headers
+        shell: bash
+        run: |
+          # Count only real header lines: a comment-led "# SPDX-License-Identifier:"
+          # at column 1. This ignores prose or shell that merely mentions the
+          # string (e.g. this guard itself), avoiding self-referential matches.
+          dupes=()
+          while IFS= read -r f; do
+            n=$(grep -cE '^# SPDX-License-Identifier:' "$f" || true)
+            if [ "${n:-0}" -gt 1 ]; then dupes+=("$f (${n} headers)"); fi
+          done < <(git ls-files '*.py' '*.sh' '*.yaml' '*.yml' 'Dockerfile' '*/Dockerfile' \
+            ':!:chart/**' ':!:**/vendor/**' ':!:**/node_modules/**')
+          if [ ${#dupes[@]} -gt 0 ]; then
+            echo "::error::Files with duplicate license headers (see #74):"
+            printf '  %s\n' "${dupes[@]}" >&2
+            exit 1
+          fi
+          echo "No duplicate license headers."

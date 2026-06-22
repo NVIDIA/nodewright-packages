@@ -16,10 +16,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
-# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: Apache-2.0
-#
 # Prepares tuning configmaps from baked-in profiles.
 # Profile layout: profiles/{accelerator}/{intent}/ (e.g. profiles/h100/inference/).
 # Reads accelerator and intent from configmap, discovers available profiles from
