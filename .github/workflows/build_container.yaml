@@ -60,6 +60,7 @@ jobs:
           registry: ${{ env.REGISTRY }}
           image_name: ${{ env.IMAGE_NAME }}
           generate_attestation: 'true'
+          sign_image: 'true'
           save_image_info: 'false'
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -71,10 +72,29 @@ jobs:
           echo "subject-name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
           echo "digest=${{ steps.build.outputs.image_digest }}" >> $GITHUB_OUTPUT
 
-      # Generate supply chain security attestation for the multi-platform manifest
-      - name: Generate artifact attestation
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-name: ${{ steps.manifest.outputs.subject-name }}
-          subject-digest: ${{ steps.manifest.outputs.digest }}
-          push-to-registry: true
+      # SLSA build provenance is attested by the build-package action above
+      # (generate_attestation: 'true'); no separate attestation is needed here.
+      #
+      # Fail the release if the keyless signature does not verify. cosign was
+      # installed by the build-package action above (same job).
+      - name: Verify image signature and provenance
+        shell: bash
+        env:
+          IMAGE: ${{ steps.manifest.outputs.subject-name }}
+          DIGEST: ${{ steps.manifest.outputs.digest }}
+          # Exact keyless cert identity (SAN): this workflow on this exact tag.
+          # github.repository and github.ref are both GitHub-controlled, so this
+          # tracks the repo's real slug and pins the signer to refs/tags/<tag>
+          # with no wildcard. The signature and the provenance attestation are
+          # both produced in this job, so they share this identity.
+          EXPECTED_IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/build_container.yaml@${{ github.ref }}
+        run: |
+          # Keyless signature.
+          cosign verify "${IMAGE}@${DIGEST}" \
+            --certificate-identity "${EXPECTED_IDENTITY}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          # SLSA v1 build provenance (from actions/attest-build-provenance).
+          cosign verify-attestation "${IMAGE}@${DIGEST}" \
+            --certificate-identity "${EXPECTED_IDENTITY}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --type https://slsa.dev/provenance/v1

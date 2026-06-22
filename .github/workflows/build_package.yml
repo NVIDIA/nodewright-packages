@@ -123,7 +123,7 @@ jobs:
 
       - name: Generate artifact attestation
         if: inputs.generate_attestation
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32  # v4.1.0
         with:
           subject-name: ${{ inputs.registry }}/${{ inputs.image_name }}/${{ inputs.package_name }}
           subject-digest: ${{ steps.push.outputs.digest }}
