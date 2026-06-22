@@ -70,7 +70,7 @@ Source files (`*.py`, `*.sh`, `*.yaml`/`*.yml`, `Dockerfile`) carry the full Apa
 header defined in `.github/license-header.tmpl`. Markdown and other docs do not need one.
 Add or refresh headers with:
 
-```
+```bash
 make license-fmt
 ```
 
