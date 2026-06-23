@@ -123,11 +123,15 @@ jobs:
 
       - name: Generate artifact attestation
         if: inputs.generate_attestation
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32  # v4.1.0
         with:
           subject-name: ${{ inputs.registry }}/${{ inputs.image_name }}/${{ inputs.package_name }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
+          # Defaults to true when push-to-registry is true, but that needs
+          # artifact-metadata: write, which callers don't grant. We only need the
+          # attestation pushed to the registry, not a storage record.
+          create-storage-record: false
 
       - name: Save image info
         if: inputs.save_image_info

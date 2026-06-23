@@ -39,6 +39,10 @@ inputs:
     required: false
     default: 'false'
     description: 'Whether to generate artifact attestation'
+  sign_image:
+    required: false
+    default: 'false'
+    description: 'Whether to sign the pushed image with a keyless cosign signature'
   save_image_info:
     required: false
     default: 'false'
@@ -141,11 +145,31 @@ runs:
 
     - name: Generate artifact attestation
       if: inputs.generate_attestation == 'true'
-      uses: actions/attest-build-provenance@v2
+      uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32  # v4.1.0
       with:
         subject-name: ${{ inputs.registry }}/${{ inputs.image_name }}/${{ inputs.package_name }}
         subject-digest: ${{ steps.push.outputs.digest }}
         push-to-registry: true
+        # Defaults to true when push-to-registry is true, but that needs
+        # artifact-metadata: write, which callers don't grant. We only need the
+        # attestation pushed to the registry, not a storage record.
+        create-storage-record: false
+
+    - name: Install cosign
+      if: inputs.sign_image == 'true'
+      uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+
+    - name: Sign image (keyless)
+      if: inputs.sign_image == 'true'
+      shell: bash
+      run: |
+        # Keyless signature via the GitHub Actions OIDC identity, recorded in
+        # the public Rekor transparency log. --recursive signs the manifest-list
+        # digest AND every platform-specific child manifest under it, so a pull
+        # by a per-architecture digest still verifies. cosign reuses the docker
+        # login performed above to push the .sig back to the registry.
+        cosign sign --yes --recursive \
+          "${{ inputs.registry }}/${{ inputs.image_name }}/${{ inputs.package_name }}@${{ steps.push.outputs.digest }}"
 
     - name: Save image info
       if: inputs.save_image_info == 'true'

@@ -16,10 +16,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
-# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: Apache-2.0
-#
 # Verifies that prepare_nvidia_configs.sh has run: configmaps populated from
 # the selected accelerator/intent profile. Uses the same profile layout
 # (profiles/{accelerator}/{intent}/) and discovers available profiles from
