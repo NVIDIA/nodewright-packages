@@ -128,6 +128,10 @@ jobs:
           subject-name: ${{ inputs.registry }}/${{ inputs.image_name }}/${{ inputs.package_name }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
+          # Defaults to true when push-to-registry is true, but that needs
+          # artifact-metadata: write, which callers don't grant. We only need the
+          # attestation pushed to the registry, not a storage record.
+          create-storage-record: false
 
       - name: Save image info
         if: inputs.save_image_info
