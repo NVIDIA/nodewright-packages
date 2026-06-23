@@ -10,9 +10,27 @@ labels: ## Sync GitHub labels from .github/labels.yml (requires gh CLI with repo
 
 ##@ Development
 
+# License headers are managed by google/addlicense, run straight from its Go
+# module with `go run` (needs a local Go toolchain; no container, no vendored
+# binary). addlicense never duplicates a header (it skips files that already have
+# one), so it is idempotent, unlike the old scripts/format_license.py it replaced
+# (see #74). The canonical style is the full Apache 2.0 block in
+# .github/license-header.tmpl. Scope mirrors the old tool: Python, shell, YAML,
+# and Dockerfiles, excluding chart/ and vendored trees. Docs (*.md and similar)
+# intentionally carry no header.
+ADDLICENSE_VERSION := v1.2.0
+ADDLICENSE := go run github.com/google/addlicense@$(ADDLICENSE_VERSION)
+# addlicense v1.2.0 does not expand `**` in path arguments, so we pass an explicit
+# file list from git (tracked files only, with chart/ and vendored trees excluded).
+LICENSE_FILES = $(shell git ls-files '*.py' '*.sh' '*.yaml' '*.yml' 'Dockerfile' '*/Dockerfile' ':!:chart/**' ':!:**/vendor/**' ':!:**/node_modules/**')
+
 .PHONY: license-fmt
-license-fmt: ## adds license header to code.
-	python3 ./scripts/format_license.py --root-dir . --license-file ./LICENSE
+license-fmt: ## Add Apache license headers to source files (google/addlicense; idempotent).
+	@$(ADDLICENSE) -f .github/license-header.tmpl $(LICENSE_FILES)
+
+.PHONY: license-check
+license-check: ## Verify in-scope source files carry a license header (CI gate).
+	@$(ADDLICENSE) -check -f .github/license-header.tmpl $(LICENSE_FILES)
 
 .PHONY: test-deps
 test-deps: ## Install Python test dependencies
@@ -53,17 +71,15 @@ test-package: test-deps ## Run tests for a specific package. Usage: make test-pa
 
 ##@ Changelog
 
+# Changelogs are generated from git history by scripts/gen-changelog.sh, which
+# takes release boundaries from `git tag` (a single `git cliff --include-path`
+# call drops most release sections in this monorepo). CHANGELOG.md is machine-
+# owned; hand-authored notes live in the sibling RELEASE_NOTES.md. See
+# docs/release-process.md.
+
 .PHONY: changelog
-changelog: ## Generate/update CHANGELOG.md for a package. Usage: make changelog PACKAGE=nvidia-setup
-	@if [ -z "$(PACKAGE)" ]; then \
-		echo "ERROR: PACKAGE is required. Usage: make changelog PACKAGE=nvidia-setup"; \
-		exit 1; \
-	fi
-	git cliff \
-		--include-path "$(PACKAGE)/**" \
-		--tag-pattern "$(PACKAGE)/.*" \
-		-o $(PACKAGE)/CHANGELOG.md
-	@echo "Updated $(PACKAGE)/CHANGELOG.md"
+changelog: ## Regenerate a package CHANGELOG.md. Interactive picker with no PACKAGE; one-shot with PACKAGE=nvidia-setup [VERSION=0.3.0 to label the cut version]. Machine-owned; do not hand-edit.
+	@bash scripts/gen-changelog.sh $(PACKAGE) $(VERSION)
 
 .PHONY: changelog-preview
 changelog-preview: ## Preview unreleased changes for a package. Usage: make changelog-preview PACKAGE=nvidia-setup
@@ -71,11 +87,16 @@ changelog-preview: ## Preview unreleased changes for a package. Usage: make chan
 		echo "ERROR: PACKAGE is required. Usage: make changelog-preview PACKAGE=nvidia-setup"; \
 		exit 1; \
 	fi
-	git cliff \
+	@git cliff \
+		--offline \
 		--include-path "$(PACKAGE)/**" \
 		--tag-pattern "$(PACKAGE)/.*" \
 		--unreleased \
-		--strip header
+		--strip all
+
+.PHONY: release-tag
+release-tag: ## Interactively cut a release tag: prompts for package + bump (+ optional RC), creates the tag, and optionally pushes it (push triggers the CI release).
+	@bash scripts/release-tag.sh
 
 ##@ Validation
 

@@ -1,6 +1,19 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 # GitHub label definitions for nodewright-packages.
 # Sync to GitHub with: make labels
 #
@@ -99,3 +112,56 @@
 - name: "do-not-merge"
   color: "b60205"
   description: "PR should not be merged in its current state"
+
+# ── Triage ───────────────────────────────────────────────────────────────────
+# Applied on issue open by .github/workflows/triage.yaml, removed once a routing
+# label (package/*, component/ci, or doc) lands.
+
+- name: "needs-triage"
+  color: "ededed"
+  description: "New issue awaiting triage. Removed once a routing label is applied."
+
+# ── Package / Area ────────────────────────────────────────────────────────────
+# Which package or area an issue/PR touches. Applied by triage (issues) and by
+# the path labeler (PRs); see .github/workflows/triage.yaml, .github/labeler.yml.
+# One label per package directory; packages release independently.
+
+- name: "package/copy-fail"
+  color: "1d76db"
+  description: "Relates to the copy-fail package"
+
+- name: "package/kdump"
+  color: "1d76db"
+  description: "Relates to the kdump package"
+
+- name: "package/nvidia-setup"
+  color: "1d76db"
+  description: "Relates to the nvidia-setup package"
+
+- name: "package/nvidia-tuned"
+  color: "1d76db"
+  description: "Relates to the nvidia-tuned package"
+
+- name: "package/nvidia-tuning-gke"
+  color: "1d76db"
+  description: "Relates to the nvidia-tuning-gke package"
+
+- name: "package/shellscript"
+  color: "1d76db"
+  description: "Relates to the shellscript package"
+
+- name: "package/tuned"
+  color: "1d76db"
+  description: "Relates to the tuned package"
+
+- name: "package/tuning"
+  color: "1d76db"
+  description: "Relates to the tuning package"
+
+- name: "component/ci"
+  color: "5319e7"
+  description: "CI, GitHub Actions, repo tooling and scripts"
+
+- name: "tests"
+  color: "fef2c0"
+  description: "Relates to the test suite (tests/)"

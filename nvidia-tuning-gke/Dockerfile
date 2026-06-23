@@ -14,9 +14,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: Apache-2.0
-#
 # Extends the tuning package with baked-in H100/GB200 configs for GKE.
 # Config step: prepare_nvidia_configs.sh (populate configmaps from profile)
 #              then update_settings.sh (base tuning apply).

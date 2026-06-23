@@ -66,10 +66,15 @@ We use [Conventional Commits](https://www.conventionalcommits.org/) for our comm
 
 ## License Header
 
-We use our scripts/format_license.py to add the license header to the code.
+Source files (`*.py`, `*.sh`, `*.yaml`/`*.yml`, `Dockerfile`) carry the full Apache 2.0
+header defined in `.github/license-header.tmpl`. Markdown and other docs do not need one.
+Add or refresh headers with:
 
-```
-./scripts/format_license.py
+```bash
+make license-fmt
 ```
 
-It will add the license header based on the LICENSE file to the code and remove/replace the existing license header.
+This wraps [`google/addlicense`](https://github.com/google/addlicense) (run via `go run`,
+so a local Go toolchain is required); it is idempotent and never duplicates a header.
+Run `make license-check` to verify without modifying files; CI runs the same check on
+every PR.

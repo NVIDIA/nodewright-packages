@@ -1,0 +1,82 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Path-based PR labels for actions/labeler. Kept in sync with the package/*
+# label family in .github/labels.yml and the triage keyword maps in
+# .github/workflows/triage.yaml.
+#
+# One label per package directory. Packages are independent top-level dirs, so a
+# simple '<package>/**' glob per label is unambiguous (e.g. 'tuned/**' does not
+# match 'nvidia-tuned/**').
+
+package/copy-fail:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'copy-fail/**'
+
+package/kdump:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'kdump/**'
+
+package/nvidia-setup:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'nvidia-setup/**'
+
+package/nvidia-tuned:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'nvidia-tuned/**'
+
+package/nvidia-tuning-gke:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'nvidia-tuning-gke/**'
+
+package/shellscript:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'shellscript/**'
+
+package/tuned:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'tuned/**'
+
+package/tuning:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'tuning/**'
+
+component/ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.github/**'
+          - 'scripts/**'
+          - '**/[Mm]akefile'
+          - '**/*.mk'
+
+tests:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'tests/**'
+
+doc:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'docs/**'
+          - '**/*.md'

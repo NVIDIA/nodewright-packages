@@ -2,6 +2,9 @@ __pycache__/
 .pytest_cache/
 .DS_Store
 venv/
+node_modules/
 .worktrees/
+.claude/worktrees/
 
 docs/plans
+docs/superpowers

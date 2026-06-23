@@ -1,0 +1,223 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Issue Triage
+
+# Auto-triages incoming issues: stamps needs-triage on open, infers a package/*
+# label from the issue-form package dropdown (then conventional-commit scope, then
+# package-name keywords), and clears needs-triage once a routing label lands.
+#
+# Keep the package list here in sync with .github/labels.yml, .github/labeler.yml,
+# and the package dropdowns in .github/ISSUE_TEMPLATE/*.
+
+on:
+  issues:
+    types: [opened, labeled]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+# Serialize per issue so a rapid open->label sequence doesn't race on the
+# needs-triage label. Don't cancel: every event must finish its labeling.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+
+  triage:
+    name: Auto-Triage Issues
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    timeout-minutes: 5
+    steps:
+      - name: Add needs-triage on new issue
+        if: github.event.action == 'opened'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: ['needs-triage'],
+            });
+
+      - name: Infer package label on new issue
+        if: github.event.action == 'opened'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            const title = context.payload.issue.title || '';
+            const body = context.payload.issue.body || '';
+            const existingLabels = new Set((context.payload.issue.labels || []).map(label => label.name));
+
+            // The package directories, longest names first so a substring match
+            // (e.g. "tuned" inside "nvidia-tuned") never beats the specific one.
+            const PACKAGES = [
+              'nvidia-tuning-gke',
+              'nvidia-tuned',
+              'nvidia-setup',
+              'copy-fail',
+              'shellscript',
+              'kdump',
+              'tuned',
+              'tuning',
+            ];
+
+            // Conventional-commit scope tokens -> label. Package scopes map to
+            // their package label; cross-cutting scopes map to area labels.
+            const scopeMap = new Map([
+              ...PACKAGES.map(pkg => [pkg, `package/${pkg}`]),
+              ['general', 'component/ci'],
+              ['ci', 'component/ci'],
+              ['actions', 'component/ci'],
+              ['workflow', 'component/ci'],
+              ['workflows', 'component/ci'],
+              ['tooling', 'component/ci'],
+              ['doc', 'doc'],
+              ['docs', 'doc'],
+              ['readme', 'doc'],
+              ['test', 'tests'],
+              ['tests', 'tests'],
+            ]);
+
+            function normalize(value) {
+              return value.trim().toLowerCase();
+            }
+
+            // Sentinel dropdown values that don't map to a single package; ignore
+            // them and fall back to scope/keyword inference.
+            const AMBIGUOUS = ['new package request', 'general / multiple packages', '_no response_', 'none'];
+
+            // The issue forms render the package dropdown as a "### Which package
+            // does this relate to?" heading followed by the chosen value.
+            function inferFromDropdown() {
+              const match = body.match(/^#{2,3}\s+Which package does this relate to\?\s*$[\r\n]+(?:[\r\n]*)([^\r\n]+)/im);
+              if (!match) {
+                return null;
+              }
+              const value = normalize(match[1]);
+              if (!value || AMBIGUOUS.includes(value)) {
+                return null;
+              }
+              return PACKAGES.includes(value) ? `package/${value}` : null;
+            }
+
+            // Conventional-commit scope in the title, e.g. "fix(kdump): ...".
+            function inferFromScope() {
+              const scopeMatch = title.toLowerCase().match(/^[a-z]+\(([^)]+)\):/);
+              if (!scopeMatch) {
+                return null;
+              }
+              // Scope may be "general/ci" etc.; try the whole scope then each token.
+              const scope = scopeMatch[1].trim();
+              if (scopeMap.has(scope)) {
+                return scopeMap.get(scope);
+              }
+              for (const token of scope.split(/[^a-z0-9-]+/)) {
+                if (scopeMap.has(token)) {
+                  return scopeMap.get(token);
+                }
+              }
+              return null;
+            }
+
+            // Keyword match against package names only (most specific first).
+            function inferFromText(text) {
+              const normalized = text.toLowerCase();
+              for (const pkg of PACKAGES) {
+                const re = new RegExp(`\\b${pkg}\\b`);
+                if (re.test(normalized)) {
+                  return `package/${pkg}`;
+                }
+              }
+              return null;
+            }
+
+            const ROUTING = label => label.startsWith('package/') || ['doc', 'component/ci', 'tests'].includes(label);
+            const labels = new Set([...existingLabels].filter(ROUTING));
+
+            // Only infer when the reporter gave us no routing label already.
+            if (labels.size === 0) {
+              const inferred = inferFromDropdown() || inferFromScope() || inferFromText(title) || inferFromText(body);
+              if (inferred) {
+                labels.add(inferred);
+              }
+            }
+
+            if (labels.size === 0) {
+              core.info('No package label inferred for this issue');
+              return;
+            }
+
+            const toAdd = [...labels].filter(label => !existingLabels.has(label));
+            if (toAdd.length > 0) {
+              core.info(`Adding labels: ${toAdd.join(', ')}`);
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                labels: toAdd,
+              });
+            } else {
+              core.info('Issue already has all inferred labels');
+            }
+
+            try {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                name: 'needs-triage',
+              });
+              core.info('Removed needs-triage after routing label assignment');
+            } catch (error) {
+              if (error.status === 404) {
+                core.info('needs-triage label not present');
+                return;
+              }
+              throw error;
+            }
+
+      # Only a routing decision (package/*, doc, or component/ci) counts as
+      # triaged. Automated labels like lifecycle/stale must NOT clear needs-triage.
+      - name: Remove needs-triage when triaged
+        if: >-
+          github.event.action == 'labeled' &&
+          (startsWith(github.event.label.name, 'package/') ||
+           github.event.label.name == 'doc' ||
+           github.event.label.name == 'component/ci' ||
+           github.event.label.name == 'tests')
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
+        with:
+          script: |
+            const { data: labels } = await github.rest.issues.listLabelsOnIssue({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            if (labels.some(l => l.name === 'needs-triage')) {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                name: 'needs-triage',
+              });
+            }

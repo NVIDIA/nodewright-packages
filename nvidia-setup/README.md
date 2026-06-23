@@ -22,6 +22,8 @@ See [VERSION_OVERVIEW.md](VERSION_OVERVIEW.md) for more information about what i
 | eks     | gb200       | 6.14.0-1018-aws         |  1.47.0      |
 | oke     | h100        | 6.8.0-1041-oracle       |  n/a (OCI)   |
 | oke     | gb200       | linux-nvidia-64k (meta) |  n/a (OCI)   |
+| bcm     | h100        | n/a                 |  n/a         |
+| bcm     | gb200       | n/a                 |  n/a         |
 
 Defaults are defined in `skyhook_dir/defaults/eks-h100.conf`, `eks-gb200.conf`, `oke-h100.conf`, and `oke-gb200.conf`. Keep this table in sync when adding or changing defaults.
 
@@ -43,6 +45,32 @@ Set these on the package spec in the NodeWright Custom Resource (`spec.packages.
 - `NVIDIA_PIN_KERNEL` - `true` or `false` (defaults: `false`). If `true`, pin the kernel to the exact version in the package so that it will not upgrade in future.
 - `NVIDIA_KERNEL` – kernel version (overrides default from defaults file)
 - `NVIDIA_EFA` – EFA installer version
+
+## BCM Service
+
+For `service=bcm`, this package does a single thing in the apply stage: it aliases the upstream-style kernel source-tree path to Ubuntu's headers tree so that consumers (gpu-operator `nvidia-driver-daemonset`, NVIDIA DRA driver) which read `/usr/src/linux-$(uname -r)/.config` find it.
+
+On Ubuntu the file only exists at `/usr/src/linux-headers-$(uname -r)/.config`. Without this alias, `aicr validate` stalls (DRA pod `Init:0/1`, driver daemonset unhealthy). See [AICR #1093](https://github.com/NVIDIA/aicr/issues/1093).
+
+What this step does (full-directory symlink, idempotent across reboots and kernel upgrades):
+
+```
+ln -s linux-headers-$(uname -r) /usr/src/linux-$(uname -r)
+```
+
+For `service=bcm` the apply stage skips the kernel/EFA pipeline and runs only this step; `apply-check` verifies the symlink resolves. Because the script keys off `uname -r` at runtime, the alias is recreated by re-applying the package after a kernel upgrade.
+
+Example SCR fragment:
+
+```yaml
+packages:
+  nvidia-setup-bcm:
+    image: ghcr.io/nvidia/skyhook-packages/nvidia-setup
+    version: 0.3.0
+    configMap:
+      service: bcm
+      accelerator: h100
+```
 
 ## Apply Steps (EKS)
 

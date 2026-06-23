@@ -1,0 +1,112 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# ShellCheck linting for the repo's bash scripts.
+#
+# ADVISORY today: this workflow reports findings as PR annotations and a job
+# summary but does NOT fail the build (the shellcheck step uses
+# `continue-on-error`). The goal is to drive the existing findings to zero,
+# then flip this to a required check. Rule configuration lives in .shellcheckrc.
+
+name: ShellCheck
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '**/*.sh'
+      - '.shellcheckrc'
+      - '.github/workflows/lint-shellcheck.yaml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  shellcheck:
+    name: shellcheck (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Show shellcheck version
+        run: shellcheck --version
+
+      # Register a problem matcher so findings surface as inline PR annotations.
+      - name: Register shellcheck problem matcher
+        run: |
+          cat > "${RUNNER_TEMP}/shellcheck-matcher.json" <<'EOF'
+          {
+            "problemMatcher": [
+              {
+                "owner": "shellcheck",
+                "pattern": [
+                  {
+                    "regexp": "^(.+):(\\d+):(\\d+):\\s+(warning|error):\\s+(.+)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                  }
+                ]
+              }
+            ]
+          }
+          EOF
+          echo "::add-matcher::${RUNNER_TEMP}/shellcheck-matcher.json"
+
+      # ubuntu-latest ships shellcheck preinstalled. Lint every tracked *.sh
+      # file (excluding the Python venv). continue-on-error keeps this advisory.
+      - name: Run shellcheck
+        id: shellcheck
+        continue-on-error: true
+        run: |
+          mapfile -t FILES < <(git ls-files '*.sh' | grep -v '^venv/')
+          echo "Linting ${#FILES[@]} shell scripts"
+          if [ "${#FILES[@]}" -eq 0 ]; then
+            echo "No shell scripts found; nothing to lint."
+            : > "${RUNNER_TEMP}/shellcheck.out"
+            exit 0
+          fi
+          shellcheck -f gcc "${FILES[@]}" | tee "${RUNNER_TEMP}/shellcheck.out"
+
+      - name: Summarize findings
+        if: always()
+        run: |
+          OUT="${RUNNER_TEMP}/shellcheck.out"
+          {
+            echo "## ShellCheck (advisory)"
+            echo ""
+            if [ ! -s "$OUT" ]; then
+              echo "No findings. :tada: This workflow can be promoted to a required check."
+              exit 0
+            fi
+            total=$(wc -l < "$OUT")
+            errors=$(grep -c ': error:' "$OUT" || true)
+            warnings=$(grep -c ': warning:' "$OUT" || true)
+            notes=$(grep -c ': note:' "$OUT" || true)
+            echo "| severity | count |"
+            echo "|----------|-------|"
+            echo "| error | ${errors} |"
+            echo "| warning | ${warnings} |"
+            echo "| note/style | ${notes} |"
+            echo "| total | ${total} |"
+            echo ""
+            echo "Findings are advisory and do not block this PR. See the annotations and the step log for details."
+          } >> "$GITHUB_STEP_SUMMARY"

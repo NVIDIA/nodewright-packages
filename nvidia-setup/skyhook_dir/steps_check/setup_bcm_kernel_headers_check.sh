@@ -1,3 +1,5 @@
+#!/bin/bash
+
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -14,8 +16,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-blank_issues_enabled: false
-contact_links:
-  - name: Report a security vulnerability
-    url: https://github.com/NVIDIA/nodewright-packages/security/advisories/new
-    about: Please report security vulnerabilities privately. Do not open a public issue.
+# Verify the BCM/Ubuntu kernel-headers alias is in place for the running kernel.
+# See setup_bcm_kernel_headers.sh and https://github.com/NVIDIA/aicr/issues/1093.
+
+set -euo pipefail
+
+KERNEL_RELEASE="$(uname -r)"
+LINK_PATH="/usr/src/linux-${KERNEL_RELEASE}"
+CONFIG_PATH="${LINK_PATH}/.config"
+
+if [ ! -e "${LINK_PATH}" ]; then
+  echo "ERROR: ${LINK_PATH} does not exist" >&2
+  exit 1
+fi
+
+if [ ! -e "${CONFIG_PATH}" ]; then
+  echo "ERROR: ${CONFIG_PATH} does not resolve" >&2
+  exit 1
+fi
+
+echo "OK: ${CONFIG_PATH} resolves"
