@@ -20,7 +20,7 @@ This repo does **not** contain the operator, the agent, or any Go code. It is sh
 ## Repository layout
 
 - **Each top-level directory that contains a `Dockerfile` is a package.** Current packages: `shellscript`, `tuning`, `tuned`, `kdump`, `nvidia-setup`, `nvidia-tuning-gke`, `nvidia-tuned`, `copy-fail`.
-- `scripts/`: repo tooling (`validate.py`, `format_license.py`, `sync_labels.py`).
+- `scripts/`: repo tooling (`validate.py`, `sync_labels.py`).
 - `tests/integration/`: Docker-based pytest suites, one subdir per package that has tests (with hyphens converted to underscores, e.g. `nvidia-setup` to `nvidia_setup`; not every package has a subdir).
 - `.github/`: workflows, the `build-package` composite action, issue/PR templates, `labels.yml`, `CODEOWNERS`.
 - `docs/`: note that `docs/plans` and `docs/superpowers` are gitignored; `docs/` is not a tracked doc tree in this repo. Authoritative prose lives in the root `*.md` files below.
@@ -71,7 +71,7 @@ directory name.
 
 Run from the repo root unless noted. See `DEVELOPER.md` for the full pre-commit checklist.
 
-- **License headers:** every source file (scripts, YAML, Dockerfiles, config) must carry the Apache 2.0 SPDX header. When you add a file, copy the header from a neighbouring file of the same type so the comment style and SPDX lines match. `make license-fmt` (`scripts/format_license.py`) can add headers, but it is currently not idempotent: it duplicates the header on files that have only the 2-line SPDX form (see #74), so add headers by hand and avoid running the formatter repo-wide until that is fixed.
+- **License headers:** source files (`*.py`, `*.sh`, `*.yaml`/`*.yml`, `Dockerfile`) carry the full Apache 2.0 block header from `.github/license-header.tmpl`; Markdown and other docs do not need one. Run `make license-fmt` to add/refresh headers and `make license-check` to verify (the `License Headers` workflow runs the check on every PR and also fails on a duplicated header). Both wrap [`google/addlicense`](https://github.com/google/addlicense) via `go run`, so they need a local Go toolchain; addlicense is idempotent and never duplicates a header (it replaced the old `format_license.py`, which did, see #74).
 - **Validate config:** `make validate-standalone PACKAGE=<name>` for standalone packages, or `make validate-inherited PACKAGE=<name>` for inherited ones (this builds the image first, then validates the assembled `/skyhook-package`). Validation runs in the `ghcr.io/nvidia/skyhook/agent:latest` container and needs Docker or Podman.
 - **Test:** `make test` runs the whole Docker-based suite in parallel; `make test-package PACKAGE=<name>` runs one package's tests. Tests need a working Docker daemon and create a `venv/`.
 - **Changelog (per package):** `make changelog-preview PACKAGE=<name>` to preview unreleased notes, `make changelog PACKAGE=<name>` to write `<package>/CHANGELOG.md`. Notes come from `git-cliff` (see `cliff.toml`), scoped by `--include-path <package>/**` and `--tag-pattern <package>/.*`.
