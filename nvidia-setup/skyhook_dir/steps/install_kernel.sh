@@ -37,6 +37,29 @@ fi
 
 CURRENT_KERNEL_VERSION=$(uname -r)
 
+# Run `apt-get install` and self-heal from an interrupted dpkg state. If the
+# install fails because dpkg was left half-configured (the classic
+# "E: dpkg was interrupted, you must manually run 'dpkg --configure -a'" or
+# "Sub-process /usr/bin/dpkg returned an error code" failures), repair the dpkg
+# database with `dpkg --configure -a` and retry the install once.
+apt_install_with_dpkg_heal() {
+  local output status
+  output="$(apt-get install -y "$@" 2>&1)" && status=0 || status=$?
+  printf '%s\n' "${output}"
+
+  if [[ "${status}" -eq 0 ]]; then
+    return 0
+  fi
+
+  if printf '%s\n' "${output}" | grep -qi 'dpkg'; then
+    echo "apt-get install failed with a dpkg error; running 'dpkg --configure -a' and retrying..." >&2
+    dpkg --configure -a
+    apt-get install -y "$@"
+  else
+    return "${status}"
+  fi
+}
+
 downgrade_kernel() {
   # Deterministic selection: construct the exact kernel flavor to install
   apt update
@@ -44,11 +67,11 @@ downgrade_kernel() {
 
   # Install older kernel headers
   echo "Installing kernel ${full_kernel_ver}..."
-  apt-get install -y \
-    linux-image-$full_kernel_ver \
-    linux-headers-$full_kernel_ver \
-    linux-modules-$full_kernel_ver \
-    linux-modules-extra-$full_kernel_ver
+  apt_install_with_dpkg_heal \
+    "linux-image-${full_kernel_ver}" \
+    "linux-headers-${full_kernel_ver}" \
+    "linux-modules-${full_kernel_ver}" \
+    "linux-modules-extra-${full_kernel_ver}"
     
   # Update grub to make sure the new kernel is available 
   update-grub

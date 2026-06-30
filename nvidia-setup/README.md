@@ -18,8 +18,8 @@ See [VERSION_OVERVIEW.md](VERSION_OVERVIEW.md) for more information about what i
 
 | service | accelerator | default kernel      |  default efa |
 |---------|-------------|---------------------|--------------|
-| eks     | h100        | 6.17.0-1017-aws     |  1.48.0      |
-| eks     | gb200       | 6.17.0-1017-aws     |  1.48.0      |
+| eks     | h100        | 6.17.0-1019-aws     |  1.48.0      |
+| eks     | gb200       | 6.17.0-1019-aws     |  1.48.0      |
 | bcm     | h100        | n/a                 |  n/a         |
 | bcm     | gb200       | n/a                 |  n/a         |
 
