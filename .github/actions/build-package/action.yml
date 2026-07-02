@@ -168,8 +168,11 @@ runs:
         # digest AND every platform-specific child manifest under it, so a pull
         # by a per-architecture digest still verifies. cosign reuses the docker
         # login performed above to push the .sig back to the registry.
-        cosign sign --yes --recursive \
-          "${{ inputs.registry }}/${{ inputs.image_name }}/${{ inputs.package_name }}@${{ steps.push.outputs.digest }}"
+        # OCI repository names must be lowercase; image_name comes from
+        # github.repository, which carries the uppercase org (NVIDIA/...), so
+        # lowercase the reference before handing it to cosign.
+        ref="${{ inputs.registry }}/${{ inputs.image_name }}/${{ inputs.package_name }}@${{ steps.push.outputs.digest }}"
+        cosign sign --yes --recursive "${ref,,}"
 
     - name: Save image info
       if: inputs.save_image_info == 'true'

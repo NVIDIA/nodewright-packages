@@ -68,8 +68,10 @@ jobs:
         id: manifest
         shell: bash
         run: |
+          # Lowercase because cosign rejects uppercase repository names and
+          # env.IMAGE_NAME comes from github.repository (NVIDIA/...).
           IMAGE_NAME="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ steps.extract.outputs.package_name }}"
-          echo "subject-name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
+          echo "subject-name=${IMAGE_NAME,,}" >> $GITHUB_OUTPUT
           echo "digest=${{ steps.build.outputs.image_digest }}" >> $GITHUB_OUTPUT
 
       # SLSA build provenance is attested by the build-package action above
