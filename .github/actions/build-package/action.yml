@@ -162,14 +162,20 @@ runs:
     - name: Sign image (keyless)
       if: inputs.sign_image == 'true'
       shell: bash
+      # The reference goes through env rather than inline ${{ }} expansion so
+      # tag-derived inputs cannot inject shell into the script.
+      env:
+        IMAGE_REF: ${{ inputs.registry }}/${{ inputs.image_name }}/${{ inputs.package_name }}@${{ steps.push.outputs.digest }}
       run: |
         # Keyless signature via the GitHub Actions OIDC identity, recorded in
         # the public Rekor transparency log. --recursive signs the manifest-list
         # digest AND every platform-specific child manifest under it, so a pull
         # by a per-architecture digest still verifies. cosign reuses the docker
         # login performed above to push the .sig back to the registry.
-        cosign sign --yes --recursive \
-          "${{ inputs.registry }}/${{ inputs.image_name }}/${{ inputs.package_name }}@${{ steps.push.outputs.digest }}"
+        # OCI repository names must be lowercase; image_name comes from
+        # github.repository, which carries the uppercase org (NVIDIA/...), so
+        # lowercase the reference before handing it to cosign.
+        cosign sign --yes --recursive "${IMAGE_REF,,}"
 
     - name: Save image info
       if: inputs.save_image_info == 'true'
