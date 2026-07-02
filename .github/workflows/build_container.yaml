@@ -46,8 +46,12 @@ jobs:
 
       - name: Extract package name from tag
         id: extract
+        # The tag name goes through env rather than inline ${{ }} expansion so
+        # a crafted tag cannot inject shell into the script.
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          PACKAGE_NAME=$(echo "${{ github.ref_name }}" | cut -f 1 -d /)
+          PACKAGE_NAME="${REF_NAME%%/*}"
           echo "package_name=${PACKAGE_NAME}" >> $GITHUB_OUTPUT
 
       - name: Build and push Docker image
@@ -67,12 +71,18 @@ jobs:
       - name: Get manifest information
         id: manifest
         shell: bash
+        # PACKAGE_NAME derives from the tag name, so it goes through env
+        # rather than inline ${{ }} expansion to avoid shell injection.
+        # REGISTRY and IMAGE_NAME are already exported by the workflow env.
+        env:
+          PACKAGE_NAME: ${{ steps.extract.outputs.package_name }}
+          DIGEST: ${{ steps.build.outputs.image_digest }}
         run: |
           # Lowercase because cosign rejects uppercase repository names and
-          # env.IMAGE_NAME comes from github.repository (NVIDIA/...).
-          IMAGE_NAME="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ steps.extract.outputs.package_name }}"
-          echo "subject-name=${IMAGE_NAME,,}" >> $GITHUB_OUTPUT
-          echo "digest=${{ steps.build.outputs.image_digest }}" >> $GITHUB_OUTPUT
+          # IMAGE_NAME comes from github.repository (NVIDIA/...).
+          SUBJECT_NAME="${REGISTRY}/${IMAGE_NAME}/${PACKAGE_NAME}"
+          echo "subject-name=${SUBJECT_NAME,,}" >> $GITHUB_OUTPUT
+          echo "digest=${DIGEST}" >> $GITHUB_OUTPUT
 
       # SLSA build provenance is attested by the build-package action above
       # (generate_attestation: 'true'); no separate attestation is needed here.
