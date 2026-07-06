@@ -85,7 +85,12 @@ resolve_tuned_profiles_dir() {
     major="$(echo "$tuned_version" | cut -d. -f1)"
     minor="$(echo "$tuned_version" | cut -d. -f2)"
 
-    if [ "$major" -gt 2 ] || { [ "$major" -eq 2 ] && [ "$minor" -ge 23 ]; }; then
+    if ! [[ "$major" =~ ^[0-9]+$ ]] || ! [[ "$minor" =~ ^[0-9]+$ ]]; then
+        echo "ERROR: Could not parse tuned version: $tuned_version"
+        exit 1
+    fi
+
+    if [[ "$major" -gt 2 ]] || { [[ "$major" -eq 2 ]] && [[ "$minor" -ge 23 ]]; }; then
         TUNED_PROFILES_DIR="/etc/tuned/profiles"
     else
         TUNED_PROFILES_DIR="/etc/tuned"
