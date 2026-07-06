@@ -91,5 +91,5 @@ resolve_tuned_profiles_dir() {
         TUNED_PROFILES_DIR="/etc/tuned"
     fi
 
-    echo "tuned $tuned_version: deploying profiles to $TUNED_PROFILES_DIR"
+    echo "tuned $tuned_version: profiles dir is $TUNED_PROFILES_DIR"
 }
