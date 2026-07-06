@@ -19,8 +19,15 @@
 
 set -x
 
+# Source shared utilities
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=utils.sh
+source "${SCRIPT_DIR}/utils.sh"
+
 CONFIGMAP_DIR="${SKYHOOK_DIR}/configmaps"
-TUNED_DIR="/etc/tuned"
+# Verify custom profiles where the installed tuned version reads them.
+resolve_tuned_profiles_dir
+TUNED_DIR="${TUNED_PROFILES_DIR}"
 SCRIPTS_DIR="/etc/tuned/scripts"
 
 # check tuned service is installed and running
