@@ -76,7 +76,7 @@ done
 # Supports multiple space-separated profiles, e.g., "hpc-compute aws"
 TUNED_PROFILE_FILE="$CONFIGMAP_DIR/tuned_profile"
 if [ -f "$TUNED_PROFILE_FILE" ]; then
-    tuned_profiles=$(cat "$TUNED_PROFILE_FILE" | xargs)  # read and trim
+    tuned_profiles=$(xargs < "$TUNED_PROFILE_FILE")  # read and trim
     
     # Count the number of profiles
     # shellcheck disable=SC2086

@@ -107,7 +107,7 @@ TUNED_PROFILE_FILE="$CONFIGMAP_DIR/tuned_profile"
 if [ ! -f "$TUNED_PROFILE_FILE" ]; then
     echo "WARNING: tuned_profile file missing in $CONFIGMAP_DIR"
 else
-    tuned_profiles=$(cat "$TUNED_PROFILE_FILE" | xargs)
+    tuned_profiles=$(xargs < "$TUNED_PROFILE_FILE")
     
     # Count the number of profiles
     # shellcheck disable=SC2086
