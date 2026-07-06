@@ -19,3 +19,9 @@ example is not itself picked up as release notes):
 
     - Notable behavior change worth calling out.
 -->
+
+## 1.3.0
+
+- Custom tuned profiles are now deployed to the directory the installed tuned
+  version reads from. On tuned >= 2.23.0 that is `/etc/tuned/profiles`; on older
+  tuned it remains `/etc/tuned`. No action is required.
