@@ -26,7 +26,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/utils.sh"
 
 CONFIGMAP_DIR="${SKYHOOK_DIR}/configmaps"
-TUNED_DIR="/etc/tuned"
+# Deploy custom profiles where the installed tuned version reads them.
+resolve_tuned_profiles_dir
+TUNED_DIR="${TUNED_PROFILES_DIR}"
 SCRIPTS_DIR="/etc/tuned/scripts"
 
 # ensure tuned directory exists
