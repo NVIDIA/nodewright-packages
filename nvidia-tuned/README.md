@@ -6,7 +6,7 @@ A NodeWright package that extends the base `tuned` package with NVIDIA-specific 
 
 This package inherits from the base `tuned` package and adds pre-configured tuned profiles optimized for NVIDIA hardware. The profiles are organized by:
 
-- **Common base profiles**: Foundational settings deployed to `/usr/lib/tuned/`
+- **Common base profiles**: Foundational settings deployed to the tuned profiles dir (`/etc/tuned/profiles` on tuned >= 2.23, else `/etc/tuned`)
 - **OS-specific workload profiles**: Profiles that may vary by OS version
 - **Service profiles**: Service-specific settings (eks, GCP, etc.)
 
@@ -36,7 +36,7 @@ This package requires **tuned >= 2.19**. The following operating systems are sup
 
 ```
 profiles/
-├── common/                  # Base profiles → /usr/lib/tuned/
+├── common/                  # Base profiles → tuned profiles dir
 │   ├── nvidia-base/
 │   └── nvidia-acs-disable/
 ├── os/
@@ -78,9 +78,9 @@ Note: Profiles are stored in `profiles/` (not `root_dir/`) to avoid polluting th
 1. **Prepare stage**: `prepare_nvidia_profiles.sh` runs:
    - Reads `intent` and `accelerator` from the configmap
    - Constructs the profile name as `nvidia-{accelerator}-{intent}`
-   - Deploys common base profiles to `/usr/lib/tuned/`
+   - Deploys common base profiles to the resolved tuned profiles dir
    - Detects OS from `/etc/os-release`
-   - Copies the appropriate OS-specific workload profiles to `/etc/tuned/`
+   - Copies the appropriate OS-specific workload profiles to the resolved tuned profiles dir (`/etc/tuned/profiles` on tuned >= 2.23, else `/etc/tuned`)
    - If a `service` is specified, creates service profile with dynamic `include=` pointing to the workload profile
 
 2. **Config stage**: The inherited `tuned` package applies the configured profile

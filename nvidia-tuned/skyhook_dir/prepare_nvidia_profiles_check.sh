@@ -20,10 +20,13 @@
 
 set -x
 
+# Source shared utilities (inherited from the tuned base image)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=utils.sh
+source "${SCRIPT_DIR}/utils.sh"
+
 CONFIGMAP_DIR="${SKYHOOK_DIR}/configmaps"
 PROFILES_DIR="${SKYHOOK_DIR}/profiles"
-TUNED_SYSTEM_DIR="/usr/lib/tuned"
-TUNED_USER_DIR="/etc/tuned"
 
 # Read configmap fields
 INTENT_FILE="$CONFIGMAP_DIR/intent"
@@ -52,19 +55,19 @@ build_final_profile_name() {
 
 # Verify common profiles are deployed
 verify_common_profiles() {
-    echo "Verifying common profiles in $TUNED_SYSTEM_DIR..."
+    echo "Verifying common profiles in $TUNED_PROFILES_DIR..."
 
     if [ -d "$PROFILES_DIR/common" ]; then
         for profile_dir in "$PROFILES_DIR/common"/*/; do
             [ -d "$profile_dir" ] || continue
             profile_name=$(basename "$profile_dir")
 
-            if [ ! -d "$TUNED_SYSTEM_DIR/$profile_name" ]; then
-                echo "ERROR: Common profile missing: $TUNED_SYSTEM_DIR/$profile_name"
+            if [ ! -d "$TUNED_PROFILES_DIR/$profile_name" ]; then
+                echo "ERROR: Common profile missing: $TUNED_PROFILES_DIR/$profile_name"
                 exit 1
             fi
 
-            if [ ! -f "$TUNED_SYSTEM_DIR/$profile_name/tuned.conf" ]; then
+            if [ ! -f "$TUNED_PROFILES_DIR/$profile_name/tuned.conf" ]; then
                 echo "ERROR: tuned.conf missing for common profile: $profile_name"
                 exit 1
             fi
@@ -76,7 +79,7 @@ verify_common_profiles() {
 
 # Verify ALL OS profiles are deployed
 verify_os_profiles() {
-    echo "Verifying OS profiles in $TUNED_USER_DIR..."
+    echo "Verifying OS profiles in $TUNED_PROFILES_DIR..."
 
     # We need to check that profiles were deployed from either OS-specific or common
     # Read OS info to determine expected source
@@ -105,12 +108,12 @@ verify_os_profiles() {
             local profile_name
             profile_name=$(basename "$profile_dir")
 
-            if [ ! -d "$TUNED_USER_DIR/$profile_name" ]; then
-                echo "ERROR: OS profile directory missing: $TUNED_USER_DIR/$profile_name"
+            if [ ! -d "$TUNED_PROFILES_DIR/$profile_name" ]; then
+                echo "ERROR: OS profile directory missing: $TUNED_PROFILES_DIR/$profile_name"
                 exit 1
             fi
 
-            if [ ! -f "$TUNED_USER_DIR/$profile_name/tuned.conf" ]; then
+            if [ ! -f "$TUNED_PROFILES_DIR/$profile_name/tuned.conf" ]; then
                 echo "ERROR: tuned.conf missing for OS profile: $profile_name"
                 exit 1
             fi
@@ -124,12 +127,12 @@ verify_os_profiles() {
 verify_constructed_profile() {
     local profile=$1
 
-    if [ ! -d "$TUNED_USER_DIR/$profile" ]; then
-        echo "ERROR: Constructed profile directory missing: $TUNED_USER_DIR/$profile"
+    if [ ! -d "$TUNED_PROFILES_DIR/$profile" ]; then
+        echo "ERROR: Constructed profile directory missing: $TUNED_PROFILES_DIR/$profile"
         exit 1
     fi
 
-    if [ ! -f "$TUNED_USER_DIR/$profile/tuned.conf" ]; then
+    if [ ! -f "$TUNED_PROFILES_DIR/$profile/tuned.conf" ]; then
         echo "ERROR: tuned.conf missing for constructed profile: $profile"
         exit 1
     fi
@@ -142,12 +145,12 @@ verify_service_profile() {
     local final_profile_name=$1
     local expected_workload_profile=$2
 
-    if [ ! -d "$TUNED_USER_DIR/$final_profile_name" ]; then
-        echo "ERROR: Service profile directory missing: $TUNED_USER_DIR/$final_profile_name"
+    if [ ! -d "$TUNED_PROFILES_DIR/$final_profile_name" ]; then
+        echo "ERROR: Service profile directory missing: $TUNED_PROFILES_DIR/$final_profile_name"
         exit 1
     fi
 
-    local service_conf="$TUNED_USER_DIR/$final_profile_name/tuned.conf"
+    local service_conf="$TUNED_PROFILES_DIR/$final_profile_name/tuned.conf"
     if [ ! -f "$service_conf" ]; then
         echo "ERROR: tuned.conf missing for service profile: $final_profile_name"
         exit 1
@@ -174,7 +177,7 @@ verify_tuned_profile_file() {
     fi
 
     local actual_profile
-    actual_profile=$(cat "$TUNED_PROFILE_FILE" | xargs)
+    actual_profile=$(xargs < "$TUNED_PROFILE_FILE")
 
     if [ "$actual_profile" != "$expected_profile" ]; then
         echo "ERROR: tuned_profile mismatch. Expected: $expected_profile, Got: $actual_profile"
@@ -185,9 +188,12 @@ verify_tuned_profile_file() {
 }
 
 main() {
+    # Resolve the single profiles directory for the installed tuned version.
+    resolve_tuned_profiles_dir
+
     # Read intent from configmap (defaults to performance)
     if [ -f "$INTENT_FILE" ]; then
-        INTENT=$(cat "$INTENT_FILE" | xargs)
+        INTENT=$(xargs < "$INTENT_FILE")
     fi
     if [ -z "${INTENT:-}" ]; then
         INTENT="performance"
@@ -199,12 +205,12 @@ main() {
         echo "ERROR: accelerator configmap not found at $ACCELERATOR_FILE"
         exit 1
     fi
-    ACCELERATOR=$(cat "$ACCELERATOR_FILE" | xargs)
+    ACCELERATOR=$(xargs < "$ACCELERATOR_FILE")
 
-    # Verify common profiles are deployed to /usr/lib/tuned/
+    # Verify common profiles are deployed
     verify_common_profiles
 
-    # Verify ALL OS profiles are deployed to /etc/tuned/
+    # Verify ALL OS profiles are deployed
     verify_os_profiles
 
     # When accelerator=generic, expect nvidia-generic
@@ -226,7 +232,7 @@ main() {
 
     # Check if service is specified
     if [ -f "$SERVICE_FILE" ]; then
-        SERVICE=$(cat "$SERVICE_FILE" | xargs)
+        SERVICE=$(xargs < "$SERVICE_FILE")
     fi
     if [ -n "${SERVICE:-}" ]; then
         FINAL_PROFILE=$(build_final_profile_name "$SERVICE" "$ACCELERATOR" "$INTENT")

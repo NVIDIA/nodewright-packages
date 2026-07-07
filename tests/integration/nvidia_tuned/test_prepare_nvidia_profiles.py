@@ -32,11 +32,21 @@ Tests verify:
 import pytest
 import re
 
+from pathlib import Path
+
 from tests.helpers.assertions import (
     assert_exit_code,
     assert_output_contains,
 )
 from tests.helpers.docker_test import DockerTestRunner
+
+
+# The prepare scripts source utils.sh, which in production comes from the parent
+# tuned image. The test harness copies only the on-disk nvidia-tuned/ dir into a
+# raw base image, so inject the parent utils.sh explicitly.
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+UTILS_SRC = _REPO_ROOT / "tuned" / "skyhook_dir" / "utils.sh"
+UTILS_DEST = "skyhook_dir/utils.sh"
 
 
 def install_tuned_in_container(runner: DockerTestRunner, base_image: str):
@@ -81,6 +91,18 @@ def _matches_any(text: str, *patterns: str) -> bool:
     return any(pattern in text for pattern in patterns)
 
 
+def _get_tuned_major_minor(runner: DockerTestRunner) -> tuple[int, int]:
+    """Parse the container's installed tuned version into (major, minor)."""
+    if runner.container is None:
+        raise RuntimeError("Container not initialized. Call install_tuned_in_container first.")
+    result = runner.container.exec_run(["tuned", "--version"], workdir="/")
+    assert_exit_code(result, 0)
+    output = result.output.decode("utf-8", errors="replace")
+    m = re.search(r"tuned\s+(\d+)\.(\d+)", output)
+    assert m is not None, f"Could not parse tuned version from: {output}"
+    return int(m.group(1)), int(m.group(2))
+
+
 def verify_tuned_version(runner: DockerTestRunner, base_image: str):
     """Verify tuned version meets OS-specific requirement."""
     # Determine required version based on OS
@@ -97,27 +119,22 @@ def verify_tuned_version(runner: DockerTestRunner, base_image: str):
             # Default to 2.19 for unknown OS
             required_major, required_minor = (2, 19)
     
-    # Ensure container is initialized
-    if runner.container is None:
-        raise RuntimeError("Container not initialized. Call install_tuned_in_container first.")
-    
-    result = runner.container.exec_run(
-        ["tuned", "--version"],
-        workdir="/"
-    )
-    
-    assert_exit_code(result, 0)
-    output = result.output.decode('utf-8', errors='replace')
-    
-    # Extract version number (format: "tuned 2.20.0")
-    version_match = re.search(r'tuned\s+(\d+)\.(\d+)', output)
-    assert version_match is not None, f"Could not parse tuned version from: {output}"
-    
-    major = int(version_match.group(1))
-    minor = int(version_match.group(2))
-    
+    major, minor = _get_tuned_major_minor(runner)
+
     assert major > required_major or (major == required_major and minor >= required_minor), \
         f"tuned version {major}.{minor} is less than required {required_major}.{required_minor} for {base_image}"
+
+
+def expected_profiles_dir(runner: DockerTestRunner) -> str:
+    """Return the dir tuned reads profiles from, based on the container's version.
+
+    tuned >= 2.23.0 -> /etc/tuned/profiles ; older -> /etc/tuned.
+    Mirrors resolve_tuned_profiles_dir in tuned/skyhook_dir/utils.sh.
+    """
+    major, minor = _get_tuned_major_minor(runner)
+    if major > 2 or (major == 2 and minor >= 23):
+        return "/etc/tuned/profiles"
+    return "/etc/tuned"
 
 
 def create_container_for_testing(runner: DockerTestRunner, configmaps: dict):
@@ -134,7 +151,13 @@ def create_container_for_testing(runner: DockerTestRunner, configmaps: dict):
     
     # Copy entire package directory structure
     shutil.copytree(runner._package_path, skyhook_package_dir, dirs_exist_ok=True)
-    
+
+    # Inject the parent tuned utils.sh (sourced by the prepare scripts).
+    utils_dest = skyhook_package_dir / "skyhook_dir" / "utils.sh"
+    utils_dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(UTILS_SRC, utils_dest)
+    utils_dest.chmod(0o755)
+
     # Create configmaps directory and write configmaps
     configmaps_dir = skyhook_package_dir / "configmaps"
     configmaps_dir.mkdir(parents=True, exist_ok=True)
@@ -268,10 +291,11 @@ def test_prepare_nvidia_profiles_no_service(base_image, accelerator, intent):
         assert expected_profile in tuned_profile_content, \
             f"Expected profile {expected_profile} not found in tuned_profile file"
         
-        # Verify profile directory exists in /etc/tuned
-        profile_exists = runner.file_exists(f"/etc/tuned/{expected_profile}/tuned.conf")
+        # Verify profile directory exists in the version-resolved profiles dir
+        profiles_dir = expected_profiles_dir(runner)
+        profile_exists = runner.file_exists(f"{profiles_dir}/{expected_profile}/tuned.conf")
         assert profile_exists, \
-            f"Profile {expected_profile} was not deployed to /etc/tuned/"
+            f"Profile {expected_profile} was not deployed to {profiles_dir}/"
         
     finally:
         runner.cleanup()
@@ -294,7 +318,8 @@ def test_prepare_nvidia_profiles_with_eks_service(base_image, accelerator, inten
             runner.run_script(
                 script="prepare_nvidia_profiles.sh",
                 configmaps=configmaps,
-                skip_system_operations=True
+                skip_system_operations=True,
+                extra_files=[(str(UTILS_SRC), UTILS_DEST)],
             )
         except Exception:
             # Script may fail, but container should be created
@@ -320,12 +345,13 @@ def test_prepare_nvidia_profiles_with_eks_service(base_image, accelerator, inten
         assert_output_contains(result.stdout, f"Final profile name: {expected_final_profile}")
         
         # Verify service profile directory exists (final name = eks-{accelerator}-{intent})
-        service_profile_exists = runner.file_exists(f"/etc/tuned/{expected_final_profile}/tuned.conf")
+        profiles_dir = expected_profiles_dir(runner)
+        service_profile_exists = runner.file_exists(f"{profiles_dir}/{expected_final_profile}/tuned.conf")
         assert service_profile_exists, f"EKS service profile {expected_final_profile} was not deployed"
-        
+
         # Verify service profile includes the workload profile
         service_profile_content = runner.get_file_contents(
-            f"/etc/tuned/{expected_final_profile}/tuned.conf"
+            f"{profiles_dir}/{expected_final_profile}/tuned.conf"
         )
         assert f"include={expected_workload_profile}" in service_profile_content, \
             f"EKS profile does not include {expected_workload_profile}"
@@ -339,12 +365,12 @@ def test_prepare_nvidia_profiles_with_eks_service(base_image, accelerator, inten
         
         # For EKS, verify bootloader script exists in final profile dir
         bootloader_script_exists = runner.file_exists(
-            f"/etc/tuned/{expected_final_profile}/bootloader.sh"
+            f"{profiles_dir}/{expected_final_profile}/bootloader.sh"
         )
         assert bootloader_script_exists, "EKS bootloader.sh script was not deployed"
-        
+
         # Verify script.sh exists in final profile dir
-        script_exists = runner.file_exists(f"/etc/tuned/{expected_final_profile}/script.sh")
+        script_exists = runner.file_exists(f"{profiles_dir}/{expected_final_profile}/script.sh")
         assert script_exists, "EKS script.sh was not deployed"
         
     finally:
@@ -380,12 +406,13 @@ def test_prepare_nvidia_profiles_with_aks_service(base_image, intent):
         assert_output_contains(result.stdout, f"Final profile name: {expected_final_profile}")
 
         # Final profile directory exists with tuned.conf
-        assert runner.file_exists(f"/etc/tuned/{expected_final_profile}/tuned.conf"), \
+        profiles_dir = expected_profiles_dir(runner)
+        assert runner.file_exists(f"{profiles_dir}/{expected_final_profile}/tuned.conf"), \
             f"AKS service profile {expected_final_profile} was not deployed"
 
         # tuned.conf includes the workload profile
         service_profile_content = runner.get_file_contents(
-            f"/etc/tuned/{expected_final_profile}/tuned.conf"
+            f"{profiles_dir}/{expected_final_profile}/tuned.conf"
         )
         assert f"include={expected_workload_profile}" in service_profile_content, \
             f"AKS profile does not include {expected_workload_profile}"
@@ -399,7 +426,7 @@ def test_prepare_nvidia_profiles_with_aks_service(base_image, intent):
 
         # Per-service script plus shared helpers are all present and executable
         for helper in ("script.sh", "mac-address-policy.sh", "bootloader.sh"):
-            path = f"/etc/tuned/{expected_final_profile}/{helper}"
+            path = f"{profiles_dir}/{expected_final_profile}/{helper}"
             assert runner.file_exists(path), f"{helper} was not deployed to {path}"
 
     finally:
@@ -446,9 +473,10 @@ def test_prepare_nvidia_profiles_eks_grub_config(base_image):
         
         # Final profile name = eks-h100-inference for this test's configmaps
         final_profile = "eks-h100-inference"
+        profiles_dir = expected_profiles_dir(runner)
         # Run the EKS bootloader script (skip update-grub if it fails)
         bootloader_result = runner.container.exec_run(
-            ["bash", "-c", f"/etc/tuned/{final_profile}/bootloader.sh || true"],
+            ["bash", "-c", f"{profiles_dir}/{final_profile}/bootloader.sh || true"],
             workdir="/"
         )
         
@@ -543,10 +571,11 @@ def test_prepare_nvidia_profiles_generic_accelerator(base_image):
         assert "nvidia-generic" in tuned_profile_content, \
             "Expected nvidia-generic in tuned_profile file"
         
-        # Verify nvidia-generic profile directory exists in /etc/tuned
-        profile_exists = runner.file_exists("/etc/tuned/nvidia-generic/tuned.conf")
+        # Verify nvidia-generic profile directory exists in the version-resolved dir
+        profiles_dir = expected_profiles_dir(runner)
+        profile_exists = runner.file_exists(f"{profiles_dir}/nvidia-generic/tuned.conf")
         assert profile_exists, \
-            "nvidia-generic profile was not deployed to /etc/tuned/"
+            f"nvidia-generic profile was not deployed to {profiles_dir}/"
         
     finally:
         runner.cleanup()
@@ -605,7 +634,8 @@ def test_prepare_nvidia_profiles_generic_ignores_service(base_image):
             f"Expected nvidia-generic (no service wrapping), got: {tuned_profile_content!r}"
         
         # Service profile directory should NOT exist
-        service_profile_exists = runner.file_exists("/etc/tuned/eks-generic-multiNodeTraining/tuned.conf")
+        profiles_dir = expected_profiles_dir(runner)
+        service_profile_exists = runner.file_exists(f"{profiles_dir}/eks-generic-multiNodeTraining/tuned.conf")
         assert not service_profile_exists, \
             "Service profile should not be created when accelerator=generic"
         
@@ -626,11 +656,12 @@ def test_prepare_nvidia_profiles_generic_profile_content(base_image):
         
         result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
         assert_exit_code(result, 0)
-        
+
+        profiles_dir = expected_profiles_dir(runner)
         profile_content = runner.get_file_contents(
-            "/etc/tuned/nvidia-generic/tuned.conf"
+            f"{profiles_dir}/nvidia-generic/tuned.conf"
         )
-        
+
         # Self-contained: no include directive
         assert "include=" not in profile_content, \
             "nvidia-generic should be self-contained with no include"
@@ -709,8 +740,9 @@ def test_prepare_nvidia_profiles_eks_service_specific_profile(base_image):
         
         # Verify that EKS-specific inference profile was deployed
         # (it should overwrite the OS profile)
+        profiles_dir = expected_profiles_dir(runner)
         inference_profile_content = runner.get_file_contents(
-            "/etc/tuned/nvidia-h100-inference/tuned.conf"
+            f"{profiles_dir}/nvidia-h100-inference/tuned.conf"
         )
         
         # EKS-specific profile should NOT have scheduler parameters set (they may be in comments)
@@ -752,9 +784,10 @@ def test_prepare_nvidia_profiles_aks_service_specific_profile(base_image):
         assert_exit_code(result, 0)
 
         # AKS-specific inference profile should have overwritten the OS profile
-        # at /etc/tuned/nvidia-h100-inference/tuned.conf
+        # at {profiles_dir}/nvidia-h100-inference/tuned.conf
+        profiles_dir = expected_profiles_dir(runner)
         inference_profile_content = runner.get_file_contents(
-            "/etc/tuned/nvidia-h100-inference/tuned.conf"
+            f"{profiles_dir}/nvidia-h100-inference/tuned.conf"
         )
 
         import re
@@ -798,7 +831,8 @@ def test_prepare_nvidia_profiles_common_service_rejected(base_image):
             f"Expected stdout to mention 'reserved service name', got: {result.stdout!r}"
 
         # No common-* final profile dir should have been created
-        assert not runner.file_exists("/etc/tuned/common-h100-performance/tuned.conf"), \
+        profiles_dir = expected_profiles_dir(runner)
+        assert not runner.file_exists(f"{profiles_dir}/common-h100-performance/tuned.conf"), \
             "common-h100-performance should NOT have been created"
 
     finally:
@@ -806,7 +840,7 @@ def test_prepare_nvidia_profiles_common_service_rejected(base_image):
 
 
 def test_prepare_nvidia_profiles_common_profiles_deployed(base_image):
-    """Test that common base profiles are deployed to /usr/lib/tuned/."""
+    """Test that common base profiles are deployed to the version-resolved profiles dir."""
     runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
     try:
         configmaps = {
@@ -826,11 +860,12 @@ def test_prepare_nvidia_profiles_common_profiles_deployed(base_image):
         assert_exit_code(result, 0)
 
         # Verify common profiles are deployed
-        nvidia_base_exists = runner.file_exists("/usr/lib/tuned/nvidia-base/tuned.conf")
-        assert nvidia_base_exists, "nvidia-base profile was not deployed to /usr/lib/tuned/"
+        profiles_dir = expected_profiles_dir(runner)
+        nvidia_base_exists = runner.file_exists(f"{profiles_dir}/nvidia-base/tuned.conf")
+        assert nvidia_base_exists, f"nvidia-base profile was not deployed to {profiles_dir}/"
 
-        nvidia_acs_disable_exists = runner.file_exists("/usr/lib/tuned/nvidia-acs-disable/tuned.conf")
-        assert nvidia_acs_disable_exists, "nvidia-acs-disable profile was not deployed to /usr/lib/tuned/"
+        nvidia_acs_disable_exists = runner.file_exists(f"{profiles_dir}/nvidia-acs-disable/tuned.conf")
+        assert nvidia_acs_disable_exists, f"nvidia-acs-disable profile was not deployed to {profiles_dir}/"
 
     finally:
         runner.cleanup()

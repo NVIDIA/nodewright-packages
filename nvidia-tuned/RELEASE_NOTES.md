@@ -19,3 +19,11 @@ example is not itself picked up as release notes):
 
     - Notable behavior change worth calling out.
 -->
+
+## 0.3.1
+
+- NVIDIA tuned profiles are now deployed to the directory the installed tuned
+  version reads from (`/etc/tuned/profiles` on tuned >= 2.23.0, else `/etc/tuned`),
+  fixing profiles being invisible to tuned on distros shipping tuned >= 2.23.0.
+  All profiles, including the common base profiles, now live in that one
+  directory; nothing is written to `/usr/lib/tuned`. No action is required.
