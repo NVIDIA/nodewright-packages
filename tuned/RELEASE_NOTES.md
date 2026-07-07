@@ -20,6 +20,17 @@ example is not itself picked up as release notes):
     - Notable behavior change worth calling out.
 -->
 
+## 1.3.1
+
+- Fixed profile validation so profiles that carry a `summary` in `tuned-adm
+  list` are recognized. The previous check matched the profile name anchored to
+  end-of-line, which only held for summary-less profiles; long, summary-bearing
+  names such as `nvidia-gb200-multiNodeTraining` (where `tuned-adm list` drops
+  the padding space before the summary) were reported as "not found" and the
+  `config` stage failed. No action is required. Consumers that inherit this
+  package (for example `nvidia-tuned`) pick up the fix by rebuilding on this
+  version.
+
 ## 1.3.0
 
 - Custom tuned profiles are now deployed to the directory the installed tuned

@@ -98,3 +98,33 @@ resolve_tuned_profiles_dir() {
 
     echo "tuned $tuned_version: profiles dir is $TUNED_PROFILES_DIR"
 }
+
+# Return 0 if the named profile appears in `tuned-adm list` output read from
+# stdin, non-zero otherwise. This is the pure, testable half of
+# tuned_profile_exists.
+#
+# `tuned-adm list` pads the profile-name column to a fixed width and appends
+# "- <summary>" for profiles that define one:
+#
+#   - nvidia-gb200-inference       - Optimized for inference workloads
+#   - nvidia-gb200-multiNodeTraining- Optimized for multi-node distributed training
+#
+# Once a name is as long as the column, the padding space is dropped and the
+# summary butts directly against the name (second line above). Anchoring the
+# match to end-of-line (`^- <name>$`) therefore only matched summary-less
+# profiles. Accept the name followed by whitespace (padded), the "- " summary
+# separator (padding dropped), or end-of-line (no summary). Requiring a space
+# after the separator dash keeps a name from matching a longer profile whose
+# name merely starts with "<name>-" (e.g. nvidia-gb200 vs nvidia-gb200-inference).
+#
+# Usage: printf '%s\n' "$(tuned-adm list)" | tuned_list_has_profile <profile>
+tuned_list_has_profile() {
+    local profile="$1"
+    grep -qE "^- ${profile}([[:space:]]|-[[:space:]]|$)"
+}
+
+# Return 0 if <profile> is a profile the installed tuned knows about.
+# Usage: tuned_profile_exists <profile>
+tuned_profile_exists() {
+    tuned-adm list | tuned_list_has_profile "$1"
+}
