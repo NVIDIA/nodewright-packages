@@ -110,9 +110,8 @@ else
     tuned_profiles=$(xargs < "$TUNED_PROFILE_FILE")
     
     # Validate each profile exists
-    available_profiles=$(tuned-adm list)
     for profile in $tuned_profiles; do
-        if ! echo "$available_profiles" | grep -q "^- $profile$"; then
+        if ! tuned_profile_exists "$profile"; then
             echo "ERROR: tuned profile '$profile' not found in tuned-adm list"
             exit 1
         fi
