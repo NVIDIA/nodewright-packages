@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
@@ -26,7 +26,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/utils.sh"
 
 CONFIGMAP_DIR="${SKYHOOK_DIR}/configmaps"
-TUNED_DIR="/etc/tuned"
+# Deploy custom profiles where the installed tuned version reads them.
+resolve_tuned_profiles_dir
+TUNED_DIR="${TUNED_PROFILES_DIR}"
 SCRIPTS_DIR="/etc/tuned/scripts"
 
 # ensure tuned directory exists
@@ -74,7 +76,7 @@ done
 # Supports multiple space-separated profiles, e.g., "hpc-compute aws"
 TUNED_PROFILE_FILE="$CONFIGMAP_DIR/tuned_profile"
 if [ -f "$TUNED_PROFILE_FILE" ]; then
-    tuned_profiles=$(cat "$TUNED_PROFILE_FILE" | xargs)  # read and trim
+    tuned_profiles=$(xargs < "$TUNED_PROFILE_FILE")  # read and trim
     
     # Count the number of profiles
     # shellcheck disable=SC2086

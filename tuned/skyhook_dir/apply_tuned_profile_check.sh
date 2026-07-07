@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
@@ -25,7 +25,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/utils.sh"
 
 CONFIGMAP_DIR="${SKYHOOK_DIR}/configmaps"
-TUNED_DIR="/etc/tuned"
+# Verify custom profiles where the installed tuned version reads them.
+resolve_tuned_profiles_dir
+TUNED_DIR="${TUNED_PROFILES_DIR}"
 SCRIPTS_DIR="/etc/tuned/scripts"
 
 # check tuned service is installed and running
@@ -105,7 +107,7 @@ TUNED_PROFILE_FILE="$CONFIGMAP_DIR/tuned_profile"
 if [ ! -f "$TUNED_PROFILE_FILE" ]; then
     echo "WARNING: tuned_profile file missing in $CONFIGMAP_DIR"
 else
-    tuned_profiles=$(cat "$TUNED_PROFILE_FILE" | xargs)
+    tuned_profiles=$(xargs < "$TUNED_PROFILE_FILE")
     
     # Count the number of profiles
     # shellcheck disable=SC2086

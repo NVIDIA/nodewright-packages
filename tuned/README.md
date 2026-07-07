@@ -66,7 +66,7 @@ tuned/
 - **Script**: `apply_tuned_profile.sh`
 - **Purpose**: Deploys custom profiles and applies the specified tuned profile
 - **Process**:
-  1. Creates custom profile directories in `/etc/tuned/`
+  1. Creates custom profile directories in the tuned profiles dir (`/etc/tuned/profiles` on tuned >= 2.23, else `/etc/tuned`)
   2. Copies configmap files as `tuned.conf` for each custom profile
   3. Reads the target profile from `tuned_profile` configmap file
   4. Applies the specified profile using `tuned-adm profile`
@@ -151,7 +151,7 @@ The package expects configmaps to be available in `${SKYHOOK_DIR}/configmaps/`:
 - **Custom profile files**: Any files in the configmaps directory (except `tuned_profile` and `*_script` files) will be treated as custom tuned profile configurations
   - File name becomes the profile name
   - File contents become the `tuned.conf` for that profile
-  - Files are deployed to `/etc/tuned/<profile_name>/tuned.conf`
+  - Files are deployed to `<profiles_dir>/<profile_name>/tuned.conf` (`<profiles_dir>` is `/etc/tuned/profiles` on tuned >= 2.23, else `/etc/tuned`)
 
 - **Script files**: Any files ending with `_script` will be deployed as executable scripts to `/etc/tuned/scripts/`
   - File name pattern: `<name>_script` (e.g., `setup_script`, `my_optimization_script`)
@@ -343,11 +343,11 @@ Use `tuned-adm list` to see all available profiles on your system or go to [tune
 
 2. **Profile not found**
    - List available profiles: `tuned-adm list`
-   - Check custom profile deployment in `/etc/tuned/`
+   - Check custom profile deployment in the tuned profiles dir (`/etc/tuned/profiles` on tuned >= 2.23, else `/etc/tuned`)
 
 3. **Permission errors**
    - Ensure scripts run with appropriate privileges
-   - Check `/etc/tuned/` directory permissions
+   - Check tuned profiles dir permissions (`/etc/tuned/profiles` on tuned >= 2.23, else `/etc/tuned`)
 
 4. **Verification errors**
    - Check verification: `tuned-adm verify`

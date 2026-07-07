@@ -19,3 +19,13 @@ example is not itself picked up as release notes):
 
     - Notable behavior change worth calling out.
 -->
+
+## 1.3.0
+
+- Custom tuned profiles are now deployed to the directory the installed tuned
+  version reads from. On tuned >= 2.23.0 that is `/etc/tuned/profiles`; on older
+  tuned it remains `/etc/tuned`. No action is required.
+- This is driven by newer distributions shipping tuned >= 2.23.0, which reads
+  profiles only from the `profiles/` subdirectory. In particular, Ubuntu 26.04
+  installs tuned 2.25, so profiles written to the old `/etc/tuned/<profile>`
+  location were no longer picked up.

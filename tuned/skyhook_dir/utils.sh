@@ -32,7 +32,7 @@ check_tuned_version_for_multiple_profiles() {
     
     # Get tuned version (format: "tuned 2.21.0")
     local tuned_version
-    tuned_version=$(tuned --version 2>/dev/null | awk '{print $2}')
+    tuned_version="$(get_tuned_version)"
     
     if [ -z "$tuned_version" ]; then
         echo "ERROR: Could not determine tuned version"
@@ -59,4 +59,42 @@ check_tuned_version_for_multiple_profiles() {
     fi
     
     echo "tuned version $tuned_version supports multiple profiles"
+}
+
+# Get the installed tuned version string (e.g. "2.23.0").
+# Echoes an empty string if tuned is not installed or the version cannot be parsed.
+get_tuned_version() {
+    tuned --version 2>/dev/null | awk '{print $2}'
+}
+
+# Set TUNED_PROFILES_DIR to the single directory all tuned profiles should be
+# deployed to, based on the installed tuned version. tuned >= 2.23.0 reads
+# profiles only from the profiles/ subdirectory (/etc/tuned/profiles); older
+# tuned reads them directly from /etc/tuned. We deploy everything to this one
+# user directory and write nothing to /usr/lib/tuned (tuned resolves include=
+# targets across all profile_dirs, and the user dir takes precedence).
+# Exits 1 if the tuned version cannot be determined.
+resolve_tuned_profiles_dir() {
+    local tuned_version major minor
+    tuned_version="$(get_tuned_version)"
+    if [ -z "$tuned_version" ]; then
+        echo "ERROR: Could not determine tuned version"
+        exit 1
+    fi
+
+    major="$(echo "$tuned_version" | cut -d. -f1)"
+    minor="$(echo "$tuned_version" | cut -d. -f2)"
+
+    if ! [[ "$major" =~ ^[0-9]+$ ]] || ! [[ "$minor" =~ ^[0-9]+$ ]]; then
+        echo "ERROR: Could not parse tuned version: $tuned_version"
+        exit 1
+    fi
+
+    if [[ "$major" -gt 2 ]] || { [[ "$major" -eq 2 ]] && [[ "$minor" -ge 23 ]]; }; then
+        TUNED_PROFILES_DIR="/etc/tuned/profiles"
+    else
+        TUNED_PROFILES_DIR="/etc/tuned"
+    fi
+
+    echo "tuned $tuned_version: profiles dir is $TUNED_PROFILES_DIR"
 }
