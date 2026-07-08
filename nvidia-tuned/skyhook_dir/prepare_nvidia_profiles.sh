@@ -20,17 +20,20 @@
 # 1. Reading intent, accelerator, and service from configmap
 # 2. Constructing the workload profile name as nvidia-{accelerator}-{intent}
 # 3. Final profile name: {service}-{accelerator}-{intent} when service is set, else workload profile name
-# 4. Copying common base profiles to /usr/lib/tuned/
+# 4. Copying common base profiles to the resolved profiles directory
 # 5. Selecting the appropriate OS-specific workload profiles
 # 6. Setting up the service profile with dynamic include
 
 set -xe
 set -u
 
+# Source shared utilities (inherited from the tuned base image)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=utils.sh
+source "${SCRIPT_DIR}/utils.sh"
+
 CONFIGMAP_DIR="${SKYHOOK_DIR}/configmaps"
 PROFILES_DIR="${SKYHOOK_DIR}/profiles"
-TUNED_SYSTEM_DIR="/usr/lib/tuned"
-TUNED_USER_DIR="/etc/tuned"
 
 # Read configmap fields
 INTENT_FILE="$CONFIGMAP_DIR/intent"
@@ -65,16 +68,16 @@ build_profile_name() {
     echo "nvidia-${accelerator}-${intent}"
 }
 
-# Copy common base profiles to /usr/lib/tuned/
+# Copy common base profiles to the resolved tuned profiles dir
 deploy_common_profiles() {
-    echo "Deploying common profiles to $TUNED_SYSTEM_DIR..."
+    echo "Deploying common profiles to $TUNED_PROFILES_DIR..."
 
     if [ -d "$PROFILES_DIR/common" ]; then
         for profile_dir in "$PROFILES_DIR/common"/*/; do
             [ -d "$profile_dir" ] || continue
             profile_name=$(basename "$profile_dir")
-            rm -rf "$TUNED_SYSTEM_DIR/$profile_name"
-            cp -rL "$profile_dir" "$TUNED_SYSTEM_DIR/$profile_name"
+            rm -rf "${TUNED_PROFILES_DIR:?}/$profile_name"
+            cp -rL "$profile_dir" "$TUNED_PROFILES_DIR/$profile_name"
             echo "Deployed common profile: $profile_name"
         done
     else
@@ -84,9 +87,15 @@ deploy_common_profiles() {
 
 # Deploy ALL OS-specific workload profiles
 deploy_os_profiles() {
-    echo "Deploying OS profiles to $TUNED_USER_DIR..."
+    echo "Deploying OS profiles to $TUNED_PROFILES_DIR..."
 
-    mkdir -p "$TUNED_USER_DIR"
+    mkdir -p "$TUNED_PROFILES_DIR"
+
+    # Track what this function deploys. Since all profiles now share one
+    # directory (common base profiles are deployed here first), checking the
+    # directory's overall contents no longer tells us whether OS profiles were
+    # found, so track it explicitly instead.
+    local deployed_any=false
 
     # Always deploy from os/common first (provides all profiles)
     if [ -d "$PROFILES_DIR/os/common" ]; then
@@ -94,8 +103,9 @@ deploy_os_profiles() {
         for profile_dir in "$PROFILES_DIR/os/common"/*/; do
             [ -d "$profile_dir" ] || continue
             profile_name=$(basename "$profile_dir")
-            rm -rf "$TUNED_USER_DIR/$profile_name"
-            cp -rL "$profile_dir" "$TUNED_USER_DIR/$profile_name"
+            rm -rf "${TUNED_PROFILES_DIR:?}/$profile_name"
+            cp -rL "$profile_dir" "$TUNED_PROFILES_DIR/$profile_name"
+            deployed_any=true
             echo "Deployed common profile: $profile_name"
         done
     else
@@ -108,14 +118,15 @@ deploy_os_profiles() {
         for profile_dir in "$PROFILES_DIR/os/$OS_ID/$VERSION"/*/; do
             [ -d "$profile_dir" ] || continue
             profile_name=$(basename "$profile_dir")
-            rm -rf "$TUNED_USER_DIR/$profile_name"
-            cp -rL "$profile_dir" "$TUNED_USER_DIR/$profile_name"
+            rm -rf "${TUNED_PROFILES_DIR:?}/$profile_name"
+            cp -rL "$profile_dir" "$TUNED_PROFILES_DIR/$profile_name"
+            deployed_any=true
             echo "Deployed OS-specific profile: $profile_name"
         done
     fi
 
-    # Verify we have at least some profiles
-    if [ ! -d "$TUNED_USER_DIR" ] || [ -z "$(ls -A "$TUNED_USER_DIR" 2>/dev/null)" ]; then
+    # Verify this function actually deployed at least one OS profile
+    if [ "$deployed_any" = false ]; then
         echo "ERROR: No OS profiles found in os/$OS_ID/$VERSION/ or os/common/"
         exit 1
     fi
@@ -125,11 +136,11 @@ deploy_os_profiles() {
 validate_profile() {
     local profile=$1
 
-    if [ ! -d "$TUNED_USER_DIR/$profile" ]; then
-        echo "ERROR: Constructed profile '$profile' not found in $TUNED_USER_DIR"
+    if [ ! -d "$TUNED_PROFILES_DIR/$profile" ]; then
+        echo "ERROR: Constructed profile '$profile' not found in $TUNED_PROFILES_DIR"
         echo "  intent=$INTENT, accelerator=$ACCELERATOR -> profile=$profile"
         echo "Available profiles:"
-        ls -1 "$TUNED_USER_DIR" 2>/dev/null || echo "  (none)"
+        ls -1 "$TUNED_PROFILES_DIR" 2>/dev/null || echo "  (none)"
         exit 1
     fi
 
@@ -165,8 +176,8 @@ deploy_service_profile() {
     if [ -f "$service_specific_profile" ]; then
         echo "Found service-specific profile: $service_specific_profile"
         # Deploy the service-specific profile to /etc/tuned/
-        mkdir -p "$TUNED_USER_DIR/$profile"
-        cp "$service_specific_profile" "$TUNED_USER_DIR/$profile/tuned.conf"
+        mkdir -p "$TUNED_PROFILES_DIR/$profile"
+        cp "$service_specific_profile" "$TUNED_PROFILES_DIR/$profile/tuned.conf"
         echo "Deployed service-specific profile: $profile"
         # Use the service-specific profile in the include
         local profile_to_include="$profile"
@@ -176,8 +187,8 @@ deploy_service_profile() {
     fi
 
     # Create service profile directory (final profile name = {service}-{accelerator}-{intent}); remove first so changed content is applied
-    rm -rf "$TUNED_USER_DIR/$final_profile_name"
-    mkdir -p "$TUNED_USER_DIR/$final_profile_name"
+    rm -rf "${TUNED_PROFILES_DIR:?}/$final_profile_name"
+    mkdir -p "$TUNED_PROFILES_DIR/$final_profile_name"
 
     # Copy shared helper scripts from profiles/service/common/ into the final profile dir.
     # Each service's script.sh sources these helpers from its own profile dir ($SCRIPT_DIR).
@@ -187,8 +198,8 @@ deploy_service_profile() {
             [ -f "$helper" ] || continue
             local helper_name
             helper_name=$(basename "$helper")
-            cp "$helper" "$TUNED_USER_DIR/$final_profile_name/$helper_name"
-            chmod +x "$TUNED_USER_DIR/$final_profile_name/$helper_name"
+            cp "$helper" "$TUNED_PROFILES_DIR/$final_profile_name/$helper_name"
+            chmod +x "$TUNED_PROFILES_DIR/$final_profile_name/$helper_name"
             echo "Copied shared helper: $helper_name"
         done
     fi
@@ -197,7 +208,7 @@ deploy_service_profile() {
     local template="$service_dir/tuned.conf.template"
     if [ -f "$template" ]; then
         # Insert include= line after [main]
-        sed "s/^\[main\]/[main]\ninclude=$profile_to_include/" "$template" | tee "$TUNED_USER_DIR/$final_profile_name/tuned.conf" > /dev/null
+        sed "s/^\[main\]/[main]\ninclude=$profile_to_include/" "$template" | tee "$TUNED_PROFILES_DIR/$final_profile_name/tuned.conf" > /dev/null
         echo "Created service profile: $final_profile_name with include=$profile_to_include"
     else
         echo "ERROR: Service template not found: $template"
@@ -210,8 +221,8 @@ deploy_service_profile() {
         filename=$(basename "$file")
         [ "$filename" = "tuned.conf.template" ] && continue
         [[ "$filename" == *.conf ]] && continue  # Skip .conf files (they're service-specific profiles)
-        cp "$file" "$TUNED_USER_DIR/$final_profile_name/$filename"
-        chmod +x "$TUNED_USER_DIR/$final_profile_name/$filename" 2>/dev/null || true
+        cp "$file" "$TUNED_PROFILES_DIR/$final_profile_name/$filename"
+        chmod +x "$TUNED_PROFILES_DIR/$final_profile_name/$filename" 2>/dev/null || true
         echo "Copied service file: $filename"
     done
 }
@@ -244,7 +255,7 @@ set_reapply_sysctl_off() {
 main() {
     # Read intent from configmap (defaults to performance)
     if [ -f "$INTENT_FILE" ]; then
-        INTENT=$(cat "$INTENT_FILE" | xargs)
+        INTENT=$(xargs < "$INTENT_FILE")
     fi
     if [ -z "${INTENT:-}" ]; then
         INTENT="performance"
@@ -256,12 +267,17 @@ main() {
         echo "ERROR: accelerator configmap not found at $ACCELERATOR_FILE"
         exit 1
     fi
-    ACCELERATOR=$(cat "$ACCELERATOR_FILE" | xargs)
+    ACCELERATOR=$(xargs < "$ACCELERATOR_FILE")
 
     # Detect OS
     detect_os
 
-    # Deploy common base profiles to /usr/lib/tuned/
+    # Resolve the single profiles directory for the installed tuned version
+    # and ensure it exists before deploying anything into it.
+    resolve_tuned_profiles_dir
+    mkdir -p "${TUNED_PROFILES_DIR}"
+
+    # Deploy common base profiles
     deploy_common_profiles
 
     # Deploy ALL OS-specific profiles to /etc/tuned/
@@ -287,7 +303,7 @@ main() {
 
     # Check if service is specified (optional)
     if [ -f "$SERVICE_FILE" ]; then
-        SERVICE=$(cat "$SERVICE_FILE" | xargs)
+        SERVICE=$(xargs < "$SERVICE_FILE")
     fi
     if [ -n "${SERVICE:-}" ]; then
         if [ "$SERVICE" = "common" ]; then
