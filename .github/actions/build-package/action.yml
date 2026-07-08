@@ -47,6 +47,10 @@ inputs:
     required: false
     default: 'false'
     description: 'Whether to save image tags to an artifact (for PR builds)'
+  push:
+    required: false
+    default: 'true'
+    description: 'Whether to push the built image to the registry. Fork PRs get a read-only token that cannot push (and cannot create a new org package), so callers set this to false to build without publishing.'
   github_token:
     required: true
     description: 'GitHub token for registry authentication (pass secrets.GITHUB_TOKEN from the calling workflow)'
@@ -137,7 +141,7 @@ runs:
       uses: docker/build-push-action@v6
       with:
         context: ${{ inputs.package_name }}
-        push: true
+        push: ${{ inputs.push }}
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
         platforms: linux/amd64,linux/arm64

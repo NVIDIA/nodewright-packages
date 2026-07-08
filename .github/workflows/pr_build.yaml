@@ -276,6 +276,10 @@ jobs:
           image_name: ${{ env.IMAGE_NAME }}
           generate_attestation: 'false'
           save_image_info: 'true'
+          # Fork PRs run with a read-only GITHUB_TOKEN and no secrets, so a push
+          # (which for a new package also means creating an org package) is denied.
+          # Build without publishing on forks; same-repo PRs still push a dev image.
+          push: ${{ github.event.pull_request.head.repo.fork == false }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
   # Summary job to report status
