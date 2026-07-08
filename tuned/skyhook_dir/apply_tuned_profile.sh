@@ -86,9 +86,8 @@ if [ -f "$TUNED_PROFILE_FILE" ]; then
     check_tuned_version_for_multiple_profiles "$profile_count"
     
     # Validate each profile exists before applying
-    available_profiles=$(tuned-adm list)
     for profile in $tuned_profiles; do
-        if ! echo "$available_profiles" | grep -q "^- $profile$"; then
+        if ! tuned_profile_exists "$profile"; then
             echo "ERROR: tuned profile '$profile' not found"
             exit 1
         fi
