@@ -85,7 +85,7 @@ OFI, hardening, and system-node-settings are **not** included.
 
 For `service=aks` the apply step currently runs:
 
-1. **configure_ib_rdma** – writes IB module-load config (`/etc/modules-load.d/ib-umad.conf`), memlock limits (`/etc/security/limits.d/99-ib-memlock.conf`), and containerd/kubelet systemd drop-ins setting `LimitMEMLOCK=infinity`. Loads the `ib_umad` kernel module (and best-effort `rdma_ucm`, `ib_ucm`). Does **not** run `systemctl daemon-reload` or restart any services — see the AKS usage example below for how Skyhook handles that via a service interrupt.
+1. **configure_ib_rdma** – writes IB module-load config (`/etc/modules-load.d/ib-umad.conf`), memlock limits (`/etc/security/limits.d/99-ib-memlock.conf`), and containerd/kubelet systemd drop-ins setting `LimitMEMLOCK=infinity`. Loads the `ib_umad` kernel module (and best-effort `rdma_ucm`, `ib_ucm`). Does **not** run `systemctl daemon-reload` or restart any services; see the AKS usage example below for how Skyhook handles that via a service interrupt.
 
 Kernel install/upgrade, EFA, Lustre, chrony, and local disks do not apply to AKS today (AKS ships its own Ubuntu kernel; IB/RDMA is handled by the step above).
 
