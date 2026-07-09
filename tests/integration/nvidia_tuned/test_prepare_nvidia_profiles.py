@@ -112,7 +112,7 @@ def verify_tuned_version(runner: DockerTestRunner, base_image: str):
         case img if _matches_any(img, "ubuntu:22.04", "debian:11"):
             # OS versions requiring tuned >= 2.15
             required_major, required_minor = (2, 15)
-        case img if _matches_any(img, "ubuntu:24.04", "debian:12", "rocky:9", "rockylinux:9"):
+        case img if _matches_any(img, "ubuntu:24.04", "ubuntu:26.04", "debian:12", "rocky:9", "rockylinux:9"):
             # OS versions requiring tuned >= 2.19
             required_major, required_minor = (2, 19)
         case _:
@@ -867,5 +867,80 @@ def test_prepare_nvidia_profiles_common_profiles_deployed(base_image):
         nvidia_acs_disable_exists = runner.file_exists(f"{profiles_dir}/nvidia-acs-disable/tuned.conf")
         assert nvidia_acs_disable_exists, f"nvidia-acs-disable profile was not deployed to {profiles_dir}/"
 
+    finally:
+        runner.cleanup()
+
+
+def _require_ubuntu_2604(base_image):
+    """vr200 is supported on Ubuntu 26.04 only; skip elsewhere."""
+    if "ubuntu" not in base_image or "26.04" not in base_image:
+        pytest.skip(f"vr200 is Ubuntu 26.04 only; skipping for base image {base_image}")
+
+
+@pytest.mark.parametrize("intent", ["performance", "inference", "multiNodeTraining"])
+def test_prepare_nvidia_profiles_vr200_no_service(base_image, intent):
+    """vr200 (no service) builds nvidia-vr200-<intent> on 26.04."""
+    _require_ubuntu_2604(base_image)
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        configmaps = {"accelerator": "vr200", "intent": intent}
+        create_container_for_testing(runner, configmaps)
+        install_tuned_in_container(runner, base_image)
+        result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
+
+        assert_exit_code(result, 0)
+        expected_profile = f"nvidia-vr200-{intent}"
+        profiles_dir = expected_profiles_dir(runner)
+        assert runner.file_exists(f"{profiles_dir}/{expected_profile}/tuned.conf"), \
+            f"vr200 profile {expected_profile} was not deployed to {profiles_dir}/"
+    finally:
+        runner.cleanup()
+
+
+@pytest.mark.parametrize("intent", ["performance", "inference", "multiNodeTraining"])
+def test_prepare_nvidia_profiles_vr200_base_keeps_bootloader(base_image, intent):
+    """vr200 base (no service) profile chain retains [bootloader] tuning (gb200-faithful)."""
+    _require_ubuntu_2604(base_image)
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        configmaps = {"accelerator": "vr200", "intent": intent}
+        create_container_for_testing(runner, configmaps)
+        install_tuned_in_container(runner, base_image)
+        result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
+
+        assert_exit_code(result, 0)
+        # The vr200-performance base (in the chain) carries [bootloader].
+        profiles_dir = expected_profiles_dir(runner)
+        perf = runner.get_file_contents(f"{profiles_dir}/nvidia-vr200-performance/tuned.conf")
+        assert "[bootloader]" in perf, "vr200 performance base should keep [bootloader]"
+    finally:
+        runner.cleanup()
+
+
+@pytest.mark.parametrize("intent", ["performance", "inference", "multiNodeTraining"])
+def test_prepare_nvidia_profiles_vr200_bcm_no_bootloader(base_image, intent):
+    """bcm-vr200 active chain contains NO [bootloader] stanza (applies without reboot)."""
+    _require_ubuntu_2604(base_image)
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        configmaps = {"accelerator": "vr200", "intent": intent, "service": "bcm"}
+        create_container_for_testing(runner, configmaps)
+        install_tuned_in_container(runner, base_image)
+        result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
+
+        assert_exit_code(result, 0)
+        profiles_dir = expected_profiles_dir(runner)
+        final_profile = f"bcm-vr200-{intent}"
+        assert runner.file_exists(f"{profiles_dir}/{final_profile}/tuned.conf"), \
+            f"bcm service profile {final_profile} was not deployed to {profiles_dir}/"
+        # The bcm override re-roots the workload profile on the bootloader-free base.
+        workload = runner.get_file_contents(f"{profiles_dir}/nvidia-vr200-{intent}/tuned.conf")
+        assert "include=nvidia-vr200-noreboot-base" in workload, \
+            "bcm vr200 workload profile must include the bootloader-free base"
+        assert "[bootloader]" not in workload, "bcm vr200 workload profile must not have [bootloader]"
+        noreboot = runner.get_file_contents(
+            f"{profiles_dir}/nvidia-vr200-noreboot-base/tuned.conf"
+        )
+        assert "[bootloader]" not in noreboot, "noreboot base must not have [bootloader]"
     finally:
         runner.cleanup()

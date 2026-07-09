@@ -25,6 +25,7 @@ Each entry can be a string (base image name) or a dict with additional config.
 
 # Test matrix: list of base images to test against
 TEST_MATRIX = [
+    "ubuntu:26.04",  # Resolute (vr200 is 26.04-only)
     "ubuntu:24.04",  # Noble
     "ubuntu:22.04",  # Jammy
     "debian:12",     # Bookworm

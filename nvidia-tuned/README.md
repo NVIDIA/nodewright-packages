@@ -16,6 +16,12 @@ The configmap uses an **intent-based** model where you specify **what** you want
 
 This package requires **tuned >= 2.19**. The following operating systems are supported:
 
+> **vr200:** The `vr200` accelerator is supported on **Ubuntu 26.04 only**. Its
+> profiles live under `profiles/os/ubuntu/26.04/`. The base profiles keep the
+> reboot-requiring `[bootloader]` tuning (same as gb200); with `service=bcm`, vr200
+> uses a bootloader-free profile chain (`nvidia-vr200-noreboot-base`) so the tuning
+> applies without a reboot. There is no `service=eks` vr200 profile yet.
+
 | OS | Version | Status | Notes |
 |----|---------|--------|-------|
 | **Ubuntu** | 22.04 (Jammy) | ✅ Tested | Uses a min of OS-specific and common profiles |
@@ -103,6 +109,9 @@ Examples:
 | `gb200` | `performance` | `nvidia-gb200-performance` |
 | `gb200` | `inference` | `nvidia-gb200-inference` |
 | `gb200` | `multiNodeTraining` | `nvidia-gb200-multiNodeTraining` |
+| `vr200` | `performance` | `nvidia-vr200-performance` |
+| `vr200` | `inference` | `nvidia-vr200-inference` |
+| `vr200` | `multiNodeTraining` | `nvidia-vr200-multiNodeTraining` |
 
 When `accelerator=generic`, the `nvidia-generic` profile is selected directly. The `intent` and `service` fields are ignored. This profile is self-contained (no include chain) and provides universally safe GPU tuning suitable for any NVIDIA GPU.
 
