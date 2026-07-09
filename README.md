@@ -118,8 +118,18 @@ A temporary mitigation package for **CVE-2026-31431 ("Copy Fail")** that disable
 
 **Key features:**
 - Distro-agnostic (works anywhere `kmod`/`modprobe` is honored)
-- No reboot, no configmap, no interrupts — minimal surface area
+- No reboot, no configmap, no interrupts: minimal surface area
 - Designed to be retired once distros ship a fixed kernel
+
+### 8. Bind Mount Package (`bind-mount/`)
+
+A fail-closed package that exposes an existing host mount at a stable second path through a persistent systemd bind mount.
+
+**Capabilities:**
+- Validates the exact source mount, filesystem type, device prefix, and read-write state
+- Refuses to hide nonempty target data or replace foreign mount definitions
+- Activates through a controlled NodeWright interrupt and verifies the host mount afterward
+- Removes persistence on uninstall without live-unmounting active workloads
 
 ## Package Structure
 
@@ -261,6 +271,7 @@ This validation step is crucial as the agent uses JSON schema validation to ensu
 
 1. **Choose a package** that fits your use case:
    - `shellscript` for custom scripts and automation
+   - `bind-mount` for a persistent alias to an existing host filesystem
    - `tuning` for system-level configuration management  
    - `tuned` for automated performance tuning with the tuned daemon
    - `kdump` for kernel crash dump collection and debugging
@@ -278,6 +289,7 @@ This validation step is crucial as the agent uses JSON schema validation to ensu
 - [Kdump Package](./kdump/README.md) - Usage guide for the kdump package
 - [NVIDIA Setup Package](./nvidia-setup/README.md) - Node setup (EFA, Lustre, chrony, local disks) per service/accelerator
 - [Copy-Fail Package](./copy-fail/README.md) - CVE-2026-31431 modprobe-blacklist mitigation
+- [Bind Mount Package](./bind-mount/README.md) - Persistent, fail-closed bind mounts for existing host storage
 - [NVIDIA NodeWright Documentation](https://github.com/NVIDIA/skyhook) - Main NodeWright operator documentation
 
 ## Contributing
