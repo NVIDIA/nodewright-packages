@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
@@ -21,7 +21,7 @@
 # of containerd/kubelet. Verifies both services are active and that
 # LimitMEMLOCK is infinity on each.
 
-set -e
+set -euo pipefail
 
 if [ -n "${SKIP_SYSTEM_OPERATIONS:-}" ]; then
   echo "SKIP_SYSTEM_OPERATIONS set: skipping memlock check"

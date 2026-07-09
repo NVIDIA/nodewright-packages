@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
@@ -26,7 +26,7 @@
 #
 # Replaces the privileged ib-node-config-aks DaemonSet from aicr.
 
-set -e
+set -euo pipefail
 
 MODULES_LOAD_FILE="/etc/modules-load.d/ib-umad.conf"
 MEMLOCK_LIMITS_FILE="/etc/security/limits.d/99-ib-memlock.conf"

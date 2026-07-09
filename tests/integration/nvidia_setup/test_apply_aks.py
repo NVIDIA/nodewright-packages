@@ -162,6 +162,7 @@ def test_apply_aks_h100_idempotent(base_image):
             workdir="/skyhook-package",
             environment={
                 "SKYHOOK_DIR": "/skyhook-package",
+                "STEP_ROOT": "/skyhook-package/skyhook_dir",
                 "SKIP_SYSTEM_OPERATIONS": "true",
             }
         )

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
@@ -20,7 +20,7 @@
 # Verifies the four config files exist and (unless SKIP_SYSTEM_OPERATIONS is set)
 # the ib_umad kernel module is loaded.
 
-set -e
+set -euo pipefail
 
 REQUIRED_FILES=(
   "/etc/modules-load.d/ib-umad.conf"

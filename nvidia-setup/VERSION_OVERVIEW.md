@@ -33,3 +33,15 @@ Bumps EKS defaults to kernel `6.17.0-1019-aws` and EFA `1.48.0`. `resolve_full_k
 | eks     | gb200       | 6.17.0-1019-aws-64k | 1.48.0      |  Y     |  Y    |  Y  |  N                |
 | bcm     | h100        | n/a                 | n/a         |  N     |  N    |  N  |  Y                |
 | bcm     | gb200       | n/a                 | n/a         |  N     |  N    |  N  |  Y                |
+
+# 0.5.x
+
+Adds the `aks` service with the `aks-h100` combination. For `service=aks` the apply stage runs a single `configure_ib_rdma` step that loads the InfiniBand kernel modules (`ib_umad`, best-effort `rdma_ucm`/`ib_ucm`), persists them via `/etc/modules-load.d/ib-umad.conf`, writes memlock limits to `/etc/security/limits.d/99-ib-memlock.conf`, and sets `LimitMEMLOCK=infinity` on containerd and kubelet through systemd drop-ins. Service restarts are handled by the Skyhook interrupt declared in the CR, not by the package. The kernel/EFA pipeline does not run on AKS (AKS manages its own Ubuntu kernel), and `ensure_kernel` no-ops when `KERNEL` is unset.
+
+| service | accelerator | kernel              | efa         | chrony | raid0 | OFI | bcm headers alias | ib rdma memlock |
+|---------|-------------|---------------------|-------------|--------|-------|-----|-------------------|-----------------|
+| eks     | h100        | 6.17.0-1019-aws     | 1.48.0      |  Y     |  Y    |  Y  |  N                |  N              |
+| eks     | gb200       | 6.17.0-1019-aws-64k | 1.48.0      |  Y     |  Y    |  Y  |  N                |  N              |
+| aks     | h100        | (AKS-managed)       | n/a         |  N     |  N    |  N  |  N                |  Y              |
+| bcm     | h100        | n/a                 | n/a         |  N     |  N    |  N  |  Y                |  N              |
+| bcm     | gb200       | n/a                 | n/a         |  N     |  N    |  N  |  Y                |  N              |

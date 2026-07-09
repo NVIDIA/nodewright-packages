@@ -199,7 +199,7 @@ spec:
   packages:
     nvidia-setup:
       image: ghcr.io/nvidia/skyhook-packages/nvidia-setup
-      version: 0.2.3
+      version: 0.5.0
       resources:
         cpuLimit: 1000m
         cpuRequest: 500m
