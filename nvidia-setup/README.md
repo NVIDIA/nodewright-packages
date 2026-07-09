@@ -23,6 +23,7 @@ See [VERSION_OVERVIEW.md](VERSION_OVERVIEW.md) for more information about what i
 | aks     | h100        | (AKS-managed)       |  n/a         |
 | bcm     | h100        | n/a                 |  n/a         |
 | bcm     | gb200       | n/a                 |  n/a         |
+| bcm     | vr200       | n/a                 |  n/a         |
 
 Defaults are defined in `skyhook_dir/defaults/eks-h100.conf`, `eks-gb200.conf`, and `aks-h100.conf`. The `bcm-*` defaults files are intentionally empty: the `bcm` service only runs the kernel-headers alias and does not bake in any kernel/EFA/lustre versions. Keep this table in sync when adding or changing defaults.
 

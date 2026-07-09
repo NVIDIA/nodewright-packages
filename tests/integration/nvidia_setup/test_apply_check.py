@@ -70,6 +70,20 @@ def test_apply_check_eks_gb200(base_image):
         runner.cleanup()
 
 
+def test_apply_check_bcm_vr200_is_supported():
+    """bcm-vr200 must be a recognized combination in apply_check (not rejected)."""
+    runner = DockerTestRunner(package="nvidia-setup")
+    try:
+        result = runner.run_script(
+            script="apply_check.sh",
+            configmaps={"service": "bcm", "accelerator": "vr200"}
+        )
+
+        assert result.exit_code is not None
+    finally:
+        runner.cleanup()
+
+
 def test_apply_check_with_env_overrides(base_image):
     """Test apply_check.sh with environment variable overrides."""
     runner = DockerTestRunner(package="nvidia-setup", base_image=base_image)
