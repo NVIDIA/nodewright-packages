@@ -76,6 +76,7 @@ jobs:
               'nvidia-setup',
               'copy-fail',
               'shellscript',
+              'bind-mount',
               'kdump',
               'tuned',
               'tuning',

@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+set -euo pipefail
+
+readonly STATE_DIR=/tmp/fake-systemctl
+mkdir -p "${STATE_DIR}"
+action="${1:-}"
+shift || true
+
+while [[ "${1:-}" == --* ]]; do
+    shift
+done
+unit="${1:-}"
+
+case "${action}" in
+    daemon-reload)
+        ;;
+    enable)
+        [[ "${FAKE_ENABLE_FAIL:-false}" != "true" ]] || exit 1
+        touch "${STATE_DIR}/enabled-${unit}"
+        ;;
+    disable)
+        [[ "${FAKE_DISABLE_FAIL:-false}" != "true" ]] || exit 1
+        rm -f "${STATE_DIR}/enabled-${unit}"
+        ;;
+    show)
+        [[ "${FAKE_SHOW_FAIL:-false}" != "true" ]] || exit 1
+        if [[ -n "${FAKE_FRAGMENT_PATH:-}" ]]; then
+            load_state="${FAKE_LOAD_STATE:-loaded}"
+            fragment_path="${FAKE_FRAGMENT_PATH}"
+        elif [[ -f "/etc/systemd/system/${unit}" ]]; then
+            load_state="${FAKE_LOAD_STATE:-loaded}"
+            fragment_path="/etc/systemd/system/${unit}"
+        else
+            load_state="${FAKE_LOAD_STATE:-not-found}"
+            fragment_path=""
+        fi
+        printf 'LoadState=%s\nFragmentPath=%s\n' "${load_state}" "${fragment_path}"
+        ;;
+    is-enabled)
+        [[ -f "${STATE_DIR}/enabled-${unit}" ]]
+        ;;
+    is-active)
+        [[ "${FAKE_TARGET_ACTIVE:-false}" == "true" ]]
+        ;;
+    *)
+        echo "unsupported fake systemctl action: ${action}" >&2
+        exit 2
+        ;;
+esac

@@ -15,11 +15,11 @@ This repo holds the pre-built **packages** consumed by the [NVIDIA NodeWright op
 
 This repo does **not** contain the operator, the agent, or any Go code. It is shell scripts (could be python, or any executable, but currently is all shell), `Dockerfile`s, package config, and Python-based tests/tooling.
 
-**Rename status (Skyhook to NodeWright):** the project is being renamed from Skyhook to NodeWright. Many public names still use `skyhook` on purpose: the published image path (`ghcr.io/nvidia/skyhook-packages/...`), the CRD group (`skyhook.nvidia.com/v1alpha1`), the on-host `SKYHOOK_DIR`/`skyhook_dir` names, and the CLI. The GitHub repo itself is now `nodewright-packages` (with `skyhook-packages` redirecting). Do not "fix" `skyhook` to `nodewright` or vice versa; match whatever the surrounding code already uses.
+**Rename status (Skyhook to NodeWright):** the project is being renamed from Skyhook to NodeWright. New package releases publish at `ghcr.io/nvidia/nodewright-packages/...`; older package versions may still exist only under the legacy `ghcr.io/nvidia/skyhook-packages/...` namespace. The CRD group (`skyhook.nvidia.com/v1alpha1`), the on-host `SKYHOOK_DIR`/`skyhook_dir` names, and the CLI still use `skyhook` on purpose. The GitHub repo itself is now `nodewright-packages` (with `skyhook-packages` redirecting). Do not rename remaining `skyhook` references without checking their specific compatibility contract.
 
 ## Repository layout
 
-- **Each top-level directory that contains a `Dockerfile` is a package.** Current packages: `shellscript`, `tuning`, `tuned`, `kdump`, `nvidia-setup`, `nvidia-tuning-gke`, `nvidia-tuned`, `copy-fail`.
+- **Each top-level directory that contains a `Dockerfile` is a package.** Current packages: `shellscript`, `tuning`, `tuned`, `kdump`, `nvidia-setup`, `nvidia-tuning-gke`, `nvidia-tuned`, `copy-fail`, `bind-mount`.
 - `scripts/`: repo tooling (`validate.py`, `sync_labels.py`).
 - `tests/integration/`: Docker-based pytest suites, one subdir per package that has tests (with hyphens converted to underscores, e.g. `nvidia-setup` to `nvidia_setup`; not every package has a subdir).
 - `.github/`: workflows, the `build-package` composite action, issue/PR templates, `labels.yml`, `CODEOWNERS`.
@@ -105,7 +105,7 @@ Almost all package logic is bash. The existing scripts are not yet consistent (s
 
 - **On PR (`pr_build.yaml`):** detects which package directories changed, then for each changed package runs validate, test, and a dev build tagged `<version>-dev.sha<short>`. Changed-package detection keys on a directory having a `Dockerfile`; `scripts/` and hidden dirs are skipped.
 - **On tag push `<package>/<version>`:** two independent workflows run. `build_container.yaml` builds and pushes the multi-arch image (`linux/amd64,linux/arm64`) with a build-provenance attestation; `release.yml` creates the GitHub Release with `git-cliff` notes scoped to that package. The image build (here and in `pr_build.yaml`) goes through the `.github/actions/build-package` composite action. (`build_package.yml` is a reusable `workflow_call` workflow that exists but is not currently wired up.)
-- **Published image path:** `ghcr.io/nvidia/skyhook-packages/<package>:<version>` (the `skyhook-packages` segment is retained pending the rename).
+- **Published image path for new releases:** `ghcr.io/nvidia/nodewright-packages/<package>:<version>`. Verify legacy versions before changing an existing consumer because some older tags remain only under `ghcr.io/nvidia/skyhook-packages/`.
 - An optional `<package>/preprocess.sh` is run before the image build and can emit `BUILD_ARGS`.
 
 ## Code review (CodeRabbit)
