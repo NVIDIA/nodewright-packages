@@ -25,7 +25,6 @@ import pytest
 from tests.helpers.assertions import (
     assert_exit_code,
     assert_output_contains,
-    assert_output_not_contains,
 )
 from tests.helpers.docker_test import DockerTestRunner
 
@@ -123,11 +122,11 @@ def test_apply_dynamic_supported_listing(base_image):
             script="apply.sh",
             configmaps={"service": "invalid", "accelerator": "invalid"}
         )
-        
+
         assert_exit_code(result, 1)
-        # Should contain at least eks-h100 and eks-gb200 in the supported list
         assert_output_contains(result.stdout, "eks-h100")
         assert_output_contains(result.stdout, "eks-gb200")
+        assert_output_contains(result.stdout, "aks-h100")
     finally:
         runner.cleanup()
 

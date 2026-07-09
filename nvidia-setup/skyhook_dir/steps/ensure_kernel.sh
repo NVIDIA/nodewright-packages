@@ -70,6 +70,11 @@ check_kernel_exact() {
 
 # When TEST_CHECK_KERNEL_AT_LEAST is set, skip normal execution so tests can source this file and call check_kernel_at_least.
 if [ -z "${TEST_CHECK_KERNEL_AT_LEAST:-}" ]; then
+  if [ -z "${KERNEL:-}" ]; then
+    echo "No KERNEL configured for combination ${COMBINATION}; skipping kernel handling"
+    exit 0
+  fi
+
   if [ "${NVIDIA_SETUP_INSTALL_KERNEL:-false}" = "true" ]; then
     install_kernel
     exit 0

@@ -16,10 +16,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Post-interrupt check: after reboot from kernel-only install, verify running kernel
-# matches the expected version (set when NVIDIA_SETUP_INSTALL_KERNEL=true).
+# Post-interrupt check: runs after Skyhook completes the package's declared
+# interrupt. The check dispatches by combination, because the EKS path uses a
+# reboot interrupt (verify kernel) and the AKS path uses a service interrupt
+# (verify LimitMEMLOCK).
 set -e
 
 STEPS_CHECK_DIR="${SKYHOOK_DIR}/skyhook_dir/steps_check"
 
-"${STEPS_CHECK_DIR}/kernel_install_check.sh"
+# shellcheck source=load_defaults.sh
+. "${SKYHOOK_DIR}/skyhook_dir/load_defaults.sh"
+
+case "${COMBINATION}" in
+  eks-h100|eks-gb200)
+    "${STEPS_CHECK_DIR}/kernel_install_check.sh"
+    ;;
+  aks-h100)
+    "${STEPS_CHECK_DIR}/check_memlock.sh"
+    ;;
+  *)
+    echo "Unsupported combination: ${COMBINATION}" >&2
+    echo "Supported: $(find "${DEFAULTS_DIR}" -maxdepth 1 -name '*.conf' -exec basename {} .conf \; 2>/dev/null | tr '\n' ' ')" >&2
+    exit 1
+    ;;
+esac
