@@ -27,6 +27,11 @@ package/copy-fail:
       - any-glob-to-any-file:
           - 'copy-fail/**'
 
+package/bind-mount:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'bind-mount/**'
+
 package/kdump:
   - changed-files:
       - any-glob-to-any-file:

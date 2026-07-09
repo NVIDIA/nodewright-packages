@@ -1,0 +1,131 @@
+{
+    "schema_version": "v1",
+    "package_name": "bind-mount",
+    "package_version": "0.1.0",
+    "expected_config_files": [
+        "source",
+        "target"
+    ],
+    "modes": {
+        "apply": [
+            {
+                "name": "install",
+                "path": "install.sh",
+                "arguments": [],
+                "returncodes": [0],
+                "on_host": true,
+                "env": {},
+                "idempotence": true,
+                "upgrade_step": false
+            }
+        ],
+        "apply-check": [
+            {
+                "name": "prepared-check",
+                "path": "install_check.sh",
+                "arguments": [],
+                "returncodes": [0],
+                "on_host": true,
+                "env": {},
+                "idempotence": true,
+                "upgrade_step": false
+            }
+        ],
+        "config": [
+            {
+                "name": "configure",
+                "path": "install.sh",
+                "arguments": [],
+                "returncodes": [0],
+                "on_host": true,
+                "env": {},
+                "idempotence": true,
+                "upgrade_step": false
+            }
+        ],
+        "config-check": [
+            {
+                "name": "config-check",
+                "path": "install_check.sh",
+                "arguments": [],
+                "returncodes": [0],
+                "on_host": true,
+                "env": {},
+                "idempotence": true,
+                "upgrade_step": false
+            }
+        ],
+        "post-interrupt": [
+            {
+                "name": "post-interrupt",
+                "path": "post_interrupt.sh",
+                "arguments": [],
+                "returncodes": [0],
+                "on_host": true,
+                "env": {},
+                "idempotence": true,
+                "upgrade_step": false
+            }
+        ],
+        "post-interrupt-check": [
+            {
+                "name": "active-check",
+                "path": "post_interrupt_check.sh",
+                "arguments": [],
+                "returncodes": [0],
+                "on_host": true,
+                "env": {},
+                "idempotence": true,
+                "upgrade_step": false
+            }
+        ],
+        "upgrade": [
+            {
+                "name": "upgrade",
+                "path": "install.sh",
+                "arguments": [],
+                "returncodes": [0],
+                "on_host": true,
+                "env": {},
+                "idempotence": true,
+                "upgrade_step": false
+            }
+        ],
+        "upgrade-check": [
+            {
+                "name": "upgrade-check",
+                "path": "install_check.sh",
+                "arguments": [],
+                "returncodes": [0],
+                "on_host": true,
+                "env": {},
+                "idempotence": true,
+                "upgrade_step": false
+            }
+        ],
+        "uninstall": [
+            {
+                "name": "uninstall",
+                "path": "uninstall.sh",
+                "arguments": [],
+                "returncodes": [0],
+                "on_host": true,
+                "env": {},
+                "idempotence": true,
+                "upgrade_step": false
+            }
+        ],
+        "uninstall-check": [
+            {
+                "name": "uninstall-check",
+                "path": "uninstall_check.sh",
+                "arguments": [],
+                "returncodes": [0],
+                "on_host": true,
+                "env": {},
+                "idempotence": true,
+                "upgrade_step": false
+            }
+        ]
+    }
+}

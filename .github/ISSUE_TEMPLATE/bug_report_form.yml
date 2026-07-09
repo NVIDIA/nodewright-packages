@@ -39,6 +39,7 @@ body:
     attributes:
       label: Which package does this relate to?
       options:
+        - bind-mount
         - shellscript
         - tuning
         - tuned

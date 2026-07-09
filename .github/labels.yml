@@ -130,6 +130,10 @@
   color: "1d76db"
   description: "Relates to the copy-fail package"
 
+- name: "package/bind-mount"
+  color: "1d76db"
+  description: "Relates to the bind-mount package"
+
 - name: "package/kdump"
   color: "1d76db"
   description: "Relates to the kdump package"

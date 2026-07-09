@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+set -euo pipefail
+
+fields=""
+path=""
+
+while (($# > 0)); do
+    case "$1" in
+        -r|-n|-rn|-nr)
+            shift
+            ;;
+        -o|--output)
+            (($# >= 2)) || { echo "fake findmnt: missing output fields" >&2; exit 2; }
+            fields="$2"
+            shift 2
+            ;;
+        -T|--target)
+            (($# >= 2)) || { echo "fake findmnt: missing target path" >&2; exit 2; }
+            path="$2"
+            shift 2
+            ;;
+        *)
+            echo "fake findmnt: unsupported argument '$1'" >&2
+            exit 2
+            ;;
+    esac
+done
+
+[[ -n "${fields}" && -n "${path}" ]] || {
+    echo "fake findmnt: both output fields and target path are required" >&2
+    exit 2
+}
+
+mount_target="/"
+mount_source="/dev/root"
+mount_type="ext4"
+mount_options="${FAKE_COVERING_OPTIONS:-rw,relatime}"
+
+if [[ "${path}" == "${FAKE_SOURCE}" && "${FAKE_SOURCE_MOUNTED:-false}" == "true" ]]; then
+    mount_target="${FAKE_SOURCE}"
+    mount_source="${FAKE_SOURCE_DEVICE}"
+    mount_type="${FAKE_SOURCE_FSTYPE}"
+    mount_options="${FAKE_SOURCE_OPTIONS:-rw,relatime}"
+elif [[ "${path}" == "${FAKE_TARGET}" && "${FAKE_TARGET_ACTIVE:-false}" == "true" ]]; then
+    mount_target="${FAKE_TARGET}"
+    mount_source="${FAKE_SOURCE}"
+    mount_type="none"
+    mount_options="${FAKE_TARGET_OPTIONS:-rw,relatime}"
+fi
+
+output=()
+IFS=, read -r -a requested_fields <<<"${fields}"
+for field in "${requested_fields[@]}"; do
+    case "${field}" in
+        TARGET)
+            output+=("${mount_target}")
+            ;;
+        SOURCE)
+            output+=("${mount_source}")
+            ;;
+        FSTYPE)
+            output+=("${mount_type}")
+            ;;
+        OPTIONS)
+            output+=("${mount_options}")
+            ;;
+        *)
+            echo "fake findmnt: unsupported output field '${field}'" >&2
+            exit 2
+            ;;
+    esac
+done
+
+printf '%s\n' "${output[*]}"

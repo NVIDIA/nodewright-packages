@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+set -euo pipefail
+
+[[ "$#" == 2 && "$1" == "verify" ]] || {
+    echo "fake systemd-analyze: expected 'verify <unit>'" >&2
+    exit 2
+}
+[[ "${2##*/}" == *.mount ]] || {
+    echo "fake systemd-analyze: mount unit must have a .mount basename" >&2
+    exit 2
+}
+if [[ -n "${FAKE_VERIFY_DELAY:-}" ]]; then
+    if [[ -n "${FAKE_VERIFY_STARTED_FILE:-}" ]]; then
+        : >"${FAKE_VERIFY_STARTED_FILE}"
+    fi
+    sleep "${FAKE_VERIFY_DELAY}"
+fi
+[[ "${FAKE_VERIFY_FAIL:-false}" != "true" ]]
