@@ -1,105 +1,127 @@
 # Changelog
 
+<!-- DO NOT EDIT. Generated from git commit history by scripts/gen-changelog.sh.
+     Hand-authored behavior/upgrade notes live in RELEASE_NOTES.md (same directory). -->
+
 All notable changes to this package will be documented in this file.
 
-## [0.4.0]
+## [0.5.0] - 2026-07-09
 
 ### New Features
 
-- *(nvidia-setup)* Bump EKS h100/gb200 defaults to kernel `6.17.0-1019-aws` and EFA `1.48.0` by [@ayuskauskas](https://github.com/ayuskauskas)
+- *(nvidia-setup)* Add aks-h100 combination for IB RDMA + memlock 
 
-### Bug Fixes
 
-- *(nvidia-setup)* Resolve the 64k-page kernel for arm64: `resolve_full_kernel` now appends `-64k` on aarch64 (e.g. GB200 installs `6.17.0-1019-aws-64k`) instead of the non-64k flavor by [@ayuskauskas](https://github.com/ayuskauskas)
-- *(nvidia-setup)* Self-heal the kernel install when dpkg is left half-configured: on a dpkg error the apt-get install now runs `dpkg --configure -a` and retries once instead of failing the step by [@ayuskauskas](https://github.com/ayuskauskas)
+## [0.4.0] - 2026-07-02
+
+### New Features
+
+- *(changelog)* Tag-range generator, split CHANGELOG/RELEASE_NOTES, release helper
+- *(nvidia-setup)* EKS h100/gb200 → 6.17.0-1019-aws kernel + EFA 1.48.0 
+
+### Other Tasks
+
+- *(nvidia-setup)* Update config.json version to 0.4.0 
 
 ## [0.3.0] - 2026-05-29
 
+### Bug Fixes
+
+- *(nvidia-setup)* Warn but exit 0 when /usr/src/linux-$(uname -r) is a real dir
+
 ### New Features
 
-- *(nvidia-setup)* Add `bcm` service that aliases `/usr/src/linux-$(uname -r)` to Ubuntu's `linux-headers-$(uname -r)` tree so `aicr validate` finds `.config` ([AICR #1093](https://github.com/NVIDIA/aicr/issues/1093)) by [@ayuskauskas](https://github.com/ayuskauskas)
+- *(nvidia-setup)* Add bcm service that aliases kernel headers 
+
+### Other Tasks
+
+- *(nvidia-setup)* Downgrade refuse-to-replace log from ERROR to WARNING
+- Merge pull request #48 from NVIDIA/feat/nvidia-setup-bcm-service
+
+feat(nvidia-setup): add bcm service that aliases kernel headers 
 
 ## [0.2.2] - 2026-04-27
 
 ### Bug Fixes
 
-- *(nvidia-setup)* Remove sudo as we are root already by [@ayuskauskas](https://github.com/ayuskauskas)
-- *(nvidia-setup)* Pass dpkg force-conf{def,old} to silence conffile prompts by [@ayuskauskas](https://github.com/ayuskauskas)
+- *(nvidia-setup)* Remove sudo as we are root already
+- *(nvidia-setup)* Pass dpkg force-conf{def,old} to silence conffile prompts
 
 ### Other Tasks
 
 - Merge pull request #33 from NVIDIA/fix/no-sudo
 
-fix(nvidia-setup): remove sudo as we are root already by [@ayuskauskas](https://github.com/ayuskauskas)
-- Update project to follow the template by [@lockwobr](https://github.com/lockwobr)
+fix(nvidia-setup): remove sudo as we are root already
+- Update project to follow the template
 - Merge pull request #40 from NVIDIA/fix/tuned
 
-Fix nvidia-tuned and nvidia-setup for eks-gb200 by [@ayuskauskas](https://github.com/ayuskauskas)
+Fix nvidia-tuned and nvidia-setup for eks-gb200
+- *(nvidia-setup)* Bump changelog and version for release
 
 ## [0.2.1] - 2026-03-09
 
 ### New Features
 
-- *(nvidia-setup)* Change expected service to aws from eks to align with nvidia-tuned by [@ayuskauskas](https://github.com/ayuskauskas)
-- *(nvidia-setup)* Update service to be eks to match aicr by [@ayuskauskas](https://github.com/ayuskauskas)
+- *(nvidia-setup)* Change expected service to aws from eks to align with nvidia-tuned
+- *(nvidia-setup)* Update service to be eks to match aicr
 
 ### Other Tasks
 
 - Merge pull request #27 from NVIDIA/feat/nvidia-tuned/fix-containerd
 
-feat(nvidia-tuned): change containerd drop to be a script by [@ayuskauskas](https://github.com/ayuskauskas)
+feat(nvidia-tuned): change containerd drop to be a script
 - Merge pull request #29 from NVIDIA/fix/nvidia-
 
-Fix/nvidia by [@ayuskauskas](https://github.com/ayuskauskas)
+Fix/nvidia
 
 ## [0.2.0] - 2026-03-04
 
 ### Bug Fixes
 
-- *(nvidia-setup)* Remove the running in a temp dir for efa install by [@ayuskauskas](https://github.com/ayuskauskas)
+- *(nvidia-setup)* Remove the running in a temp dir for efa install
 
 ### New Features
 
-- *(nvidia-setup)* Add ofi setup by [@ayuskauskas](https://github.com/ayuskauskas)
+- *(nvidia-setup)* Add ofi setup
 
 ### Other Tasks
 
 - Merge pull request #26 from NVIDIA/feat/nvidia-setup-ofi
 
-feat(nvidia-setup): add ofi setup by [@ayuskauskas](https://github.com/ayuskauskas)
+feat(nvidia-setup): add ofi setup
 
-## [0.1.1] - 2026-03-03
+## [0.1.1] - 2026-03-02
 
 ### New Features
 
-- *(nvidia-setup)* Can use NVIDIA_SETUP_KERNEL_ALLOW_NEWER to set if…  by [@ayuskauskas](https://github.com/ayuskauskas)
+- *(nvidia-setup)* Can use NVIDIA_SETUP_KERNEL_ALLOW_NEWER to set if… 
 
 ## [0.1.0] - 2026-03-02
 
 ### Bug Fixes
 
-- *(nvidia-setup)* Renable the checks for chrony and raid by [@ayuskauskas](https://github.com/ayuskauskas)
-- *(nvidia-setup)* Remove kernel check from apply_check as this hasn't restarted yet so won't pass by [@ayuskauskas](https://github.com/ayuskauskas)
-- *(nvidia-setup)* Move tests by [@ayuskauskas](https://github.com/ayuskauskas)
-- *(nvidia-setup)* Bad call to the memory check by [@ayuskauskas](https://github.com/ayuskauskas)
-- Add install of pkgs to support setup_local_disks by [@ayuskauskas](https://github.com/ayuskauskas)
+- *(nvidia-setup)* Renable the checks for chrony and raid
+- *(nvidia-setup)* Remove kernel check from apply_check as this hasn't restarted yet so won't pass
+- *(nvidia-setup)* Move tests
+- *(nvidia-setup)* Bad call to the memory check
+- Add install of pkgs to support setup_local_disks
 
 ### New Features
 
-- Add nvidia-setup package for bringing a node up to ai runtime spec by [@ayuskauskas](https://github.com/ayuskauskas)
-- Add basic testing of packages via containers by [@ayuskauskas](https://github.com/ayuskauskas)
-- *(nvidia-setup)* Kernel install flow, shared defaults, EFA resilience by [@ayuskauskas](https://github.com/ayuskauskas)
-- *(nvidia-setup)* Turn chrony and raid string change back on by [@ayuskauskas](https://github.com/ayuskauskas)
-- *(nvidia-setup)* Change that pinning is optional by [@ayuskauskas](https://github.com/ayuskauskas)
-- *(nvidia-setup)* Tests for kernel checks by [@ayuskauskas](https://github.com/ayuskauskas)
+- Add nvidia-setup package for bringing a node up to ai runtime spec
+- Add basic testing of packages via containers
+- *(nvidia-setup)* Kernel install flow, shared defaults, EFA resilience
+- *(nvidia-setup)* Turn chrony and raid string change back on
+- *(nvidia-setup)* Change that pinning is optional
+- *(nvidia-setup)* Tests for kernel checks
 
 ### Other Tasks
 
 - Merge pull request #21 from NVIDIA/testing
 
-Add nvidia-tuned and unit-like integration tests for packages by [@ayuskauskas](https://github.com/ayuskauskas)
+Add nvidia-tuned and unit-like integration tests for packages
 - Merge pull request #23 from NVIDIA/nvidia-tuned-fix
 
-feat(nvidia-setup): kernel install flow, shared defaults, EFA resilience by [@ayuskauskas](https://github.com/ayuskauskas)
+feat(nvidia-setup): kernel install flow, shared defaults, EFA resilience
 
 <!-- Generated by git-cliff -->

@@ -19,3 +19,13 @@ example is not itself picked up as release notes):
 
     - Notable behavior change worth calling out.
 -->
+
+## 0.5.0
+
+Adds the `aks-h100` combination: host-level InfiniBand RDMA and memlock setup for AKS ND H100 nodes, replacing the privileged `ib-node-config-aks` DaemonSet that aicr ships today.
+
+- The package writes the config files and loads the IB modules but does **not** restart containerd or kubelet. Declare an interrupt in the Skyhook CR (`interrupt: {type: service, services: [containerd, kubelet]}` or `{type: reboot}`); the post-interrupt check verifies `LimitMEMLOCK=infinity` is in effect on both services.
+- Only pods created after the containerd restart inherit the unlimited memlock. Long-running pods keep the old limit until they are recreated (not applicable when using a reboot interrupt).
+- Module loading persists across reboots via `/etc/modules-load.d/ib-umad.conf`; no keepalive DaemonSet is needed.
+- `ensure_kernel` now no-ops when `KERNEL` is unset, which the `aks-h100` defaults rely on (AKS manages its own Ubuntu kernel).
+- Verified end to end on AKS v1.35.5 with Standard_ND96isr_H100_v5 nodes; see the evidence in PR #42.
