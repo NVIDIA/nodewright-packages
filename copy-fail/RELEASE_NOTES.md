@@ -19,3 +19,7 @@ example is not itself picked up as release notes):
 
     - Notable behavior change worth calling out.
 -->
+
+## 1.0.0
+
+Initial release: temporary mitigation for CVE-2026-31431 ("Copy Fail") via modprobe blacklist of `algif_aead`.

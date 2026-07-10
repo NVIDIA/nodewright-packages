@@ -1,6 +1,36 @@
 # Changelog
 
+<!-- DO NOT EDIT. Generated from git commit history by scripts/gen-changelog.sh.
+     Hand-authored behavior/upgrade notes live in RELEASE_NOTES.md (same directory). -->
+
 All notable changes to this package will be documented in this file.
+
+## [Unreleased]
+
+### Bug Fixes
+
+- *(general)* Replace license formatter with addlicense and normalize headers 
+
+### New Features
+
+- *(changelog)* Tag-range generator, split CHANGELOG/RELEASE_NOTES, release helper
+
+
+## [0.1.2] - 2026-05-20
+
+### Bug Fixes
+
+- *(nvidia-tuning-gke)* Drop deprecated CFS sysctls from inference profiles
+- *(nvidia-tuning-gke)* Point FROM at nodewright-packages registry
+
+### Other Tasks
+
+- Update project to follow the template
+- *(nvidia-tuning-gke)* Bump default TUNING_VERSION to 1.1.5
+- *(nvidia-tuning-gke)* Bump default TUNING_VERSION to 1.1.6
+- Merge pull request #44 from NVIDIA/fix/gke-remove-deprecated-cfs-sysctls
+
+nvidia-tuning-gke: drop deprecated CFS sysctls + fix base image registry + bump TUNING_VERSION to 1.1.6 + permissive CI guard
 
 ## [0.1.1] - 2026-03-12
 

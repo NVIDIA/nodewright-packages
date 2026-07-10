@@ -1,5 +1,8 @@
 # Changelog
 
+<!-- DO NOT EDIT. Generated from git commit history by scripts/gen-changelog.sh.
+     Hand-authored behavior/upgrade notes live in RELEASE_NOTES.md (same directory). -->
+
 All notable changes to this package will be documented in this file.
 
 ## [Unreleased]
@@ -7,12 +10,15 @@ All notable changes to this package will be documented in this file.
 ### New Features
 
 - Add check for executable bit and make all existing script have that set
+- *(changelog)* Tag-range generator, split CHANGELOG/RELEASE_NOTES, release helper
 
 ### Other Tasks
 
 - Merge pull request #19 from NVIDIA/add_validation
 
 feat: add package validation for local and ci and developer docs
+- Update project to follow the template
+
 
 ## [1.1.0] - 2025-09-30
 
