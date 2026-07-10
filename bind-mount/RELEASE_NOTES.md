@@ -8,4 +8,6 @@ package release.
 
 ## 0.1.0
 
+Initial release of a fail-closed, systemd-managed bind mount package.
+
 Uninstall removes persistence without unmounting a live target. Recycle the node to complete rollback.

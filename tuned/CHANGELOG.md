@@ -1,18 +1,32 @@
 # Changelog
 
+<!-- DO NOT EDIT. Generated from git commit history by scripts/gen-changelog.sh.
+     Hand-authored behavior/upgrade notes live in RELEASE_NOTES.md (same directory). -->
+
 All notable changes to this package will be documented in this file.
 
 ## [Unreleased]
 
+
+## [1.3.1] - 2026-07-07
+
+### Bug Fixes
+
+- *(tuned)* Match summary-bearing profiles in tuned-adm list validation 
+
+## [1.3.0] - 2026-07-07
+
 ### Bug Fixes
 
 - *(tuned)* Remove sudo it is already root
+- *(tuned)* Version-aware profile directory 
 
 ### New Features
 
 - *(tuned)* Allow multiple profiles to be specified
 - *(tuned)* Create a pattern for nvidia_tuned to compose profiles together
 - Add check for executable bit and make all existing script have that set
+- *(changelog)* Tag-range generator, split CHANGELOG/RELEASE_NOTES, release helper
 
 ### Other Tasks
 
@@ -22,6 +36,7 @@ Add a package for nvidia hardware tunings
 - Merge pull request #19 from NVIDIA/add_validation
 
 feat: add package validation for local and ci and developer docs
+- Update project to follow the template
 
 ## [1.2.0] - 2025-10-20
 
