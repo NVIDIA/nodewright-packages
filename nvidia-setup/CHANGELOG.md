@@ -5,7 +5,15 @@
 
 All notable changes to this package will be documented in this file.
 
-## [Unreleased]
+## [0.5.1] - 2026-07-13
+
+### Bug Fixes
+
+- *(nvidia-setup)* Eks-gb200 EFA on 6.17 (efa 1.49.0 + kernel prune)
+
+### Other Tasks
+
+- *(general)* Regenerate package changelogs to current tags 
 
 
 ## [0.5.0] - 2026-07-09

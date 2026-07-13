@@ -19,3 +19,34 @@ example is not itself picked up as release notes):
 
     - Notable behavior change worth calling out.
 -->
+
+## 0.5.1
+
+EFA fix (eks-gb200): bump the EFA installer from 1.48.0 to 1.49.0. EFA installer
+1.48.0's `efa` DKMS module fails to build against the 6.17 arm64 kernel in the
+apply flow: its kernel autoconf misdetects the kernel and falls back to a
+pre-4.20 RDMA API (direct `ib_device` function-pointer assignment, single-arg
+`ib_alloc_device`) that does not compile on 6.17, which aborts the EFA install.
+1.49.0 builds cleanly. H100 (x86_64) stays on 1.48.0.
+
+Behavior change (eks): apply now removes every installed kernel except the
+running one before installing the EFA driver. The EFA `.deb` post-install builds
+its `efa` DKMS module against every installed kernel that still has headers, and
+a single failed build returns a dpkg error that aborts the whole EFA install. A
+non-running `*-aws` kernel left behind by the base AMI (or re-pulled by
+`apt-get upgrade`) triggered exactly that on Grace/arm64 nodes: EFA built cleanly
+for the booted `-64k` kernel but failed for the stray 4k kernel. Pruning
+non-running kernels leaves DKMS only the booted/target kernel to build against.
+
+On a 64k (Grace/arm64) node the prune also purges the 4k page-size sibling
+flavour's meta packages (`linux-aws`, `linux-image-aws`, `linux-headers-aws`,
+`linux-tools-aws`) in the same transaction. Removing only the concrete 4k kernel
+is not enough: its meta package makes apt upgrade the meta and re-pull a fresh 4k
+kernel to satisfy it, so the failing DKMS build target reappears. The running
+flavour's own metas are always kept.
+
+Operator impact: on eks nodes there is no longer a spare (fallback) kernel after
+apply; only the running/target kernel and its flavour remain. The running kernel
+is never removed. The kernel-only install pass (`NVIDIA_SETUP_INSTALL_KERNEL=true`)
+additionally keeps the freshly installed target that is not yet booted; the
+previous running kernel is pruned on the next, post-reboot apply.

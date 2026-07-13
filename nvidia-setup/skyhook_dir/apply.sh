@@ -21,6 +21,8 @@ STEPS_DIR="${SKYHOOK_DIR}/skyhook_dir/steps"
 
 # shellcheck source=load_defaults.sh
 . "${SKYHOOK_DIR}/skyhook_dir/load_defaults.sh"
+# shellcheck source=utilities.sh
+. "${SKYHOOK_DIR}/skyhook_dir/utilities.sh"
 
 NVIDIA_SETUP_INSTALL_KERNEL="${NVIDIA_SETUP_INSTALL_KERNEL:-false}"
 export NVIDIA_SETUP_INSTALL_KERNEL SKYHOOK_DIR
@@ -43,6 +45,9 @@ fi
 
 run_eks_h100() {
   "${STEPS_DIR}/upgrade.sh"
+  # Drop any non-running kernel before EFA so its DKMS build only ever targets
+  # the booted/target kernel (see prune_foreign_kernels in utilities.sh).
+  prune_foreign_kernels
   "${STEPS_DIR}/install-efa-driver.sh" "${EFA}"
   "${STEPS_DIR}/install_ofi.sh"
   # "${STEPS_DIR}/install-lustre.sh" "${KERNEL}" "${LUSTRE}"
@@ -52,6 +57,9 @@ run_eks_h100() {
 
 run_eks_gb200() {
   "${STEPS_DIR}/upgrade.sh"
+  # Drop any non-running kernel before EFA so its DKMS build only ever targets
+  # the booted/target kernel (see prune_foreign_kernels in utilities.sh).
+  prune_foreign_kernels
   "${STEPS_DIR}/install-efa-driver.sh" "${EFA}"
   "${STEPS_DIR}/install_ofi.sh"
   # "${STEPS_DIR}/install-lustre.sh" "${KERNEL}" "${LUSTRE}"

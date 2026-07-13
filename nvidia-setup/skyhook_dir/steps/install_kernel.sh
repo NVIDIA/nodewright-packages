@@ -112,14 +112,20 @@ EOF
     if [[ $CURRENT_KERNEL_VERSION != "${full_kernel_ver}" ]]; then
       # Hold the Kernel packages
       apt-mark hold \
-        linux-image-$full_kernel_ver \
-        linux-headers-$full_kernel_ver \
-        linux-modules-$full_kernel_ver \
-        linux-modules-extra-$full_kernel_ver
+        "linux-image-${full_kernel_ver}" \
+        "linux-headers-${full_kernel_ver}" \
+        "linux-modules-${full_kernel_ver}" \
+        "linux-modules-extra-${full_kernel_ver}"
     fi
 
   fi
 
+  # Remove any kernel other than the one running now and the target just
+  # installed, so out-of-tree DKMS modules (EFA) never build against a stray
+  # kernel. The still-running pre-reboot kernel is preserved here (it cannot be
+  # removed while booted) and is pruned on the next, post-reboot apply, when it
+  # is no longer running.
+  prune_foreign_kernels "${full_kernel_ver}"
 }
 
 if [ -n "${SKIP_SYSTEM_OPERATIONS:-}" ]; then

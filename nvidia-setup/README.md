@@ -16,15 +16,19 @@ A NodeWright package that applies node setup steps for selected (service, accele
 
 See [VERSION_OVERVIEW.md](VERSION_OVERVIEW.md) for more information about what is set in each version of the package.
 
-| service | accelerator | default kernel      |  default efa |
-|---------|-------------|---------------------|--------------|
-| eks     | h100        | 6.17.0-1019-aws     |  1.48.0      |
-| eks     | gb200       | 6.17.0-1019-aws     |  1.48.0      |
-| aks     | h100        | (AKS-managed)       |  n/a         |
-| bcm     | h100        | n/a                 |  n/a         |
-| bcm     | gb200       | n/a                 |  n/a         |
+| service | accelerator | default kernel      |  default efa | efa-build pod resources |
+|---------|-------------|---------------------|--------------|-------------------------|
+| eks     | h100        | 6.17.0-1019-aws     |  1.48.0      | 8 CPU / 16Gi (min)      |
+| eks     | gb200       | 6.17.0-1019-aws-64k |  1.49.0      | 8 CPU / 16Gi (min)      |
+| aks     | h100        | (AKS-managed)       |  n/a         | default (no EFA build)  |
+| bcm     | h100        | n/a                 |  n/a         | default (no EFA build)  |
+| bcm     | gb200       | n/a                 |  n/a         | default (no EFA build)  |
 
 Defaults are defined in `skyhook_dir/defaults/eks-h100.conf`, `eks-gb200.conf`, and `aks-h100.conf`. The `bcm-*` defaults files are intentionally empty: the `bcm` service only runs the kernel-headers alias and does not bake in any kernel/EFA/lustre versions. Keep this table in sync when adding or changing defaults.
+
+GB200 (Grace) is arm64, so it always runs the `-64k` page-size kernel: the conf stores the base version (`KERNEL=6.17.0-1019-aws`) and `resolve_full_kernel` appends `-64k` at apply time. H100 (x86_64) uses the flavour as-is.
+
+**EFA-build pod resources:** the `nvidia-setup-full` package builds the EFA kernel module via DKMS, whose `efa_installer.sh` "Inspecting kernel" step is a highly parallel kernel-module autoconf. Inside the skyhook chroot `nproc` reports the host core count, so `make -j` oversubscribes the pod cgroup. Under tight limits (for example 4 CPU / 8Gi) the build is CFS-throttled and its feature probes are starved or OOM-killed, which makes `efa` misdetect the kernel and emit compat shims that fail to compile (DKMS build error 2, aborting the apply). Give the `nvidia-setup-full` package pod **at least 8 CPU / 16Gi** via `spec.packages.nvidia-setup-full.resources` in the NodeWright Custom Resource. The kernel-only `nvidia-setup-kernel` package does not build EFA and does not need the extra headroom.
 
 ## Configuration
 
@@ -75,7 +79,8 @@ For `service=eks` the apply step currently runs, in order:
 
 1. **ensure_kernel** – if `NVIDIA_SETUP_INSTALL_KERNEL=false`: verify running kernel meets requirement (exact match by default; allow newer if `NVIDIA_SETUP_KERNEL_ALLOW_NEWER=true`); if `true`: install exact kernel only (then exit; reboot required).
 2. **upgrade** – `apt-get update && apt-get upgrade -y`
-3. **install-efa-driver** – download and run AWS EFA installer
+3. **prune non-running kernels** – remove every installed kernel except the running one (`prune_foreign_kernels` in `utilities.sh`), so the EFA DKMS build only ever targets the booted/target kernel. A stray non-running kernel left by the base AMI would otherwise fail the DKMS build and abort the EFA install. On a 64k node it also purges the 4k page-size sibling flavour's meta packages (`linux-image-aws` etc.) so apt cannot re-pull a 4k kernel to satisfy them. The running kernel and its flavour metas are never removed.
+4. **install-efa-driver** – download and run AWS EFA installer
 
 The following steps exist in the codebase but are **commented out** in `apply.sh` for now: **install-lustre** Re-enable them in `apply.sh` when needed.
 
