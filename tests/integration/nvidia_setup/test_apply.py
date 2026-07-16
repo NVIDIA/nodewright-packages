@@ -25,6 +25,7 @@ import pytest
 from tests.helpers.assertions import (
     assert_exit_code,
     assert_output_contains,
+    assert_output_not_contains,
 )
 from tests.helpers.docker_test import DockerTestRunner
 
@@ -72,6 +73,23 @@ def test_apply_eks_gb200(base_image):
         )
         
         assert_exit_code(result, 0)
+    finally:
+        runner.cleanup()
+
+
+def test_apply_bcm_vr200_is_supported():
+    """bcm-vr200 must be a recognized combination (defaults file exists), not rejected."""
+    runner = DockerTestRunner(package="nvidia-setup")
+    try:
+        result = runner.run_script(
+            script="apply.sh",
+            configmaps={"service": "bcm", "accelerator": "vr200"},
+            skip_system_operations=True
+        )
+
+        # Whatever the kernel-headers step does in-container, load_defaults must NOT
+        # reject the combination as unsupported.
+        assert_output_not_contains(result.stdout, "Unsupported combination")
     finally:
         runner.cleanup()
 
