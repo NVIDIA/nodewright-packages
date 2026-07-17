@@ -60,6 +60,24 @@ Use your real name (sorry, no pseudonyms or anonymous contributions.)
 If you set your `user.name` and `user.email` git configs, you can sign your
 commit automatically with `git commit -s`.
 
+## Claiming an Issue
+
+Want to work on an issue? Claim it so others know it is taken. Comment on the issue and a bot will handle the assignment:
+
+- `/assign`: assign the issue to yourself (only if it is currently unassigned).
+- `/assign @user`: assign one other person (only if the issue is unassigned).
+- `/unassign`: release your claim on the issue.
+
+We use a single-owner model: an issue is assigned to at most one person. `/assign` is refused while the issue already has an assignee, and `/unassign` only ever removes your own claim, so nobody can drop someone else's. GitHub only lets you assign the commenter/self, someone who has commented on the issue, a user with write access, or an org member with read access; if a requested user cannot be assigned, the bot replies to say so.
+
+## AI-Assisted Contributions Policy
+
+We welcome the use of AI tools (e.g., Claude, GitHub Copilot, ChatGPT) to help you write code, brainstorm, or refactor. However, we maintain a strict human-in-the-loop policy for all submissions:
+
+- **Full accountability**: By submitting a PR, you (the human author) accept full responsibility for the code: its correctness, security, maintainability, and license compliance. "The AI wrote it" is not an acceptable explanation for bugs or security flaws.
+- **Understand what you submit**: Do not submit AI-generated code you do not fully understand. Reviewers expect you to explain and defend every line of code in your PR.
+- **Follow the project rules**: Coding assistants must follow the guidance in [`AGENTS.md`](AGENTS.md), including running the linters and keeping docs in sync.
+
 ## Code Style
 
 We use [Conventional Commits](https://www.conventionalcommits.org/) for our commit messages.
