@@ -15,7 +15,8 @@
 # limitations under the License.
 
 # Assigns the author to their own PR on open, so every PR has a clear owner.
-# Contributors can still hand a PR off with /assign (see assign.yaml).
+# A maintainer can reassign later from the GitHub UI. (The /assign comment
+# command in assign.yaml is for issues, not PRs.)
 #
 # pull_request_target runs in the base-repo context with a token that can write,
 # which is required to assign fork PRs. This is safe here: the job never checks
