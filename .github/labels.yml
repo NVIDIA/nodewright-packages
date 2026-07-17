@@ -169,3 +169,7 @@
 - name: "tests"
   color: "fef2c0"
   description: "Relates to the test suite (tests/)"
+
+- name: "needs-rebase"
+  color: "b60205"
+  description: "PR has merge conflicts with main and needs a rebase"
