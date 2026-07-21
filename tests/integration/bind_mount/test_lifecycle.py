@@ -29,12 +29,14 @@ SCRIPT = "/skyhook-package/skyhook_dir/bind_mount.sh"
 SOURCE = "/mnt/k8s-disks/0"
 TARGET = "/mnt/data"
 SECOND_TARGET = "/mnt/log"
+UNIT_NAME = "mnt-data.mount"
 UNIT_FILE = "/etc/systemd/system/mnt-data.mount"
+KUBELET_UNITS = ("kubelet.service", "snap.kubelet-eks.daemon.service")
 SECOND_UNIT_FILE = "/etc/systemd/system/mnt-log.mount"
 SKYHOOK_NAME = "local-data-bind"
 SKYHOOK_UID = "11111111-2222-3333-4444-555555555555"
 PACKAGE_KEY = "bind-data"
-PACKAGE_VERSION = "0.1.0"
+PACKAGE_VERSION = "0.1.1"
 STATE_ROOT = "/var/lib/nodewright-packages/bind-mount"
 FAKES = Path(__file__).parent / "fakes"
 EXTRA_FILES = [(path, f"test-bin/{path.name}") for path in FAKES.iterdir()]
@@ -171,8 +173,16 @@ def test_install_prepares_owned_unit_without_activating_it(base_image):
         assert "# Managed by NodeWright package bind-mount" in unit
         assert f"What={SOURCE}" in unit
         assert f"Where={TARGET}" in unit
+        assert f"AssertPathIsMountPoint={SOURCE}" in unit
+        assert f"AssertPathIsReadWrite={SOURCE}" in unit
         assert f"AssertDirectoryNotEmpty=!{TARGET}" in unit
         assert "Before=local-fs.target kubelet.service snap.kubelet-eks.daemon.service" in unit
+        assert "RequiredBy=kubelet.service snap.kubelet-eks.daemon.service" in unit
+        for kubelet_unit in KUBELET_UNITS:
+            requires_link = f"/etc/systemd/system/{kubelet_unit}.requires/{UNIT_NAME}"
+            resolved = runner.container.exec_run(["readlink", "-f", requires_link])
+            assert resolved.exit_code == 0, resolved.output.decode("utf-8", errors="replace")
+            assert resolved.output.decode().strip() == UNIT_FILE
         assert_no_staging_directories(runner)
     finally:
         runner.cleanup()
@@ -187,6 +197,47 @@ def test_install_and_prepared_check_are_idempotent(base_image):
         exit_code, output = exec_mode(runner, "prepared-check")
         assert exit_code == 0, output
         assert "Prepared mount definition" in output
+    finally:
+        runner.cleanup()
+
+
+def test_prepared_check_rejects_missing_kubelet_dependency_link(base_image):
+    runner, result = start_runner(base_image)
+    try:
+        assert_exit_code(result, 0)
+        requires_link = (
+            f"/etc/systemd/system/{KUBELET_UNITS[0]}.requires/{UNIT_NAME}"
+        )
+        removed = runner.container.exec_run(["rm", "-f", requires_link])
+        assert removed.exit_code == 0, removed.output.decode(
+            "utf-8", errors="replace"
+        )
+
+        exit_code, output = exec_mode(runner, "prepared-check")
+        assert exit_code == 1
+        assert f"required dependency link '{requires_link}' is missing" in output
+    finally:
+        runner.cleanup()
+
+
+def test_prepared_check_rejects_misdirected_kubelet_dependency_link(base_image):
+    runner, result = start_runner(base_image)
+    try:
+        assert_exit_code(result, 0)
+        requires_link = (
+            f"/etc/systemd/system/{KUBELET_UNITS[1]}.requires/{UNIT_NAME}"
+        )
+        replaced = runner.container.exec_run(
+            ["ln", "-sfn", "/tmp/foreign.mount", requires_link]
+        )
+        assert replaced.exit_code == 0, replaced.output.decode(
+            "utf-8", errors="replace"
+        )
+
+        exit_code, output = exec_mode(runner, "prepared-check")
+        assert exit_code == 1
+        assert f"required dependency link '{requires_link}' resolves" in output
+        assert "expected '/etc/systemd/system/mnt-data.mount'" in output
     finally:
         runner.cleanup()
 
@@ -904,6 +955,61 @@ def test_failed_enable_retains_cleanup_receipt(base_image):
         assert not runner.file_exists(UNIT_FILE)
         assert not runner.file_exists(STATE_FILE)
         assert runner.file_exists(UNINSTALL_STATE_FILE)
+    finally:
+        runner.cleanup()
+
+
+def test_failed_dependency_parser_does_not_mark_unit_enabled(base_image):
+    runner, result = start_runner(
+        base_image, env={"FAKE_REQUIRED_BY_PARSE_FAIL": "true"}
+    )
+    try:
+        assert_exit_code(result, 1)
+        assert runner.file_exists(UNIT_FILE)
+        assert runner.file_exists(STATE_FILE)
+        assert not runner.file_exists("/tmp/fake-systemctl/enabled-mnt-data.mount")
+        for kubelet_unit in KUBELET_UNITS:
+            requires_link = (
+                f"/etc/systemd/system/{kubelet_unit}.requires/{UNIT_NAME}"
+            )
+            assert not runner.file_exists(requires_link)
+    finally:
+        runner.cleanup()
+
+
+def test_failed_dependency_link_does_not_mark_unit_enabled(base_image):
+    runner, result = start_runner(
+        base_image, env={"FAKE_REQUIRED_BY_LINK_FAIL": KUBELET_UNITS[1]}
+    )
+    try:
+        assert_exit_code(result, 1)
+        assert runner.file_exists(UNIT_FILE)
+        assert runner.file_exists(STATE_FILE)
+        assert not runner.file_exists("/tmp/fake-systemctl/enabled-mnt-data.mount")
+        for kubelet_unit in KUBELET_UNITS:
+            requires_link = (
+                f"/etc/systemd/system/{kubelet_unit}.requires/{UNIT_NAME}"
+            )
+            assert not runner.file_exists(requires_link)
+    finally:
+        runner.cleanup()
+
+
+def test_install_rejects_successful_enable_with_missing_dependency_link(base_image):
+    runner, result = start_runner(
+        base_image, env={"FAKE_REQUIRED_BY_LINK_SKIP": KUBELET_UNITS[1]}
+    )
+    try:
+        assert_exit_code(result, 1)
+        assert_output_contains(result.stdout, "required dependency link")
+        assert_output_contains(result.stdout, "is missing or is not a symlink")
+        assert not runner.file_exists("/tmp/fake-systemctl/enabled-mnt-data.mount")
+        assert runner.file_exists(STATE_FILE)
+        for kubelet_unit in KUBELET_UNITS:
+            requires_link = (
+                f"/etc/systemd/system/{kubelet_unit}.requires/{UNIT_NAME}"
+            )
+            assert not runner.file_exists(requires_link)
     finally:
         runner.cleanup()
 
