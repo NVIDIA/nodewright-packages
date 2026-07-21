@@ -281,8 +281,10 @@ target_is_empty_directory() {
         [[ -z "$(find "${TARGET}" -mindepth 1 -maxdepth 1 -print -quit)" ]]
 }
 
-# The kubelet units in Before= are ordering hygiene for Kubernetes hosts
-# (mount before workloads start on reboot); systemd ignores absent units.
+# RequiredBy= makes successful mount activation a kubelet start requirement on
+# Kubernetes hosts. Together with Before=, this fails closed when the source is
+# unavailable during boot: kubelet stays down instead of admitting workloads
+# onto an unmounted target. systemd tolerates the absent alternate unit name.
 render_unit() {
     local output="$1"
 
@@ -291,6 +293,8 @@ ${OWNER_MARKER}
 [Unit]
 Description=Bind ${SOURCE} at ${TARGET}
 RequiresMountsFor=${SOURCE}
+AssertPathIsMountPoint=${SOURCE}
+AssertPathIsReadWrite=${SOURCE}
 AssertDirectoryNotEmpty=!${TARGET}
 Before=local-fs.target kubelet.service snap.kubelet-eks.daemon.service
 
@@ -302,7 +306,26 @@ Options=bind
 
 [Install]
 WantedBy=local-fs.target
+RequiredBy=kubelet.service snap.kubelet-eks.daemon.service
 EOF
+}
+
+validate_kubelet_dependency_links() {
+    local kubelet_unit requires_link resolved
+
+    for kubelet_unit in kubelet.service snap.kubelet-eks.daemon.service; do
+        requires_link="${SYSTEMD_DIR}/${kubelet_unit}.requires/${UNIT_NAME}"
+        if [[ ! -L "${requires_link}" ]]; then
+            printf "required dependency link '%s' is missing or is not a symlink" "${requires_link}"
+            return 1
+        fi
+        resolved="$(readlink -f -- "${requires_link}" 2>/dev/null || true)"
+        if [[ "${resolved}" != "${UNIT_FILE}" ]]; then
+            printf "required dependency link '%s' resolves to '%s', expected '%s'" \
+                "${requires_link}" "${resolved:-<unresolved>}" "${UNIT_FILE}"
+            return 1
+        fi
+    done
 }
 
 write_state_file() {
@@ -545,6 +568,8 @@ check_no_fstab_owner() {
 }
 
 install_mount() {
+    local dependency_error
+
     load_desired_config
     validate_source_mount
     prepare_previous_state_reconciliation
@@ -596,7 +621,16 @@ install_mount() {
     require_exact_systemd_fragment "${UNIT_NAME}" "${UNIT_FILE}"
     [[ "${SYSTEMD_LOAD_STATE}" == "loaded" ]] || \
         fail "owned unit '${UNIT_NAME}' has load state '${SYSTEMD_LOAD_STATE}' after daemon-reload"
-    systemctl enable "${UNIT_NAME}"
+    if ! systemctl enable "${UNIT_NAME}"; then
+        systemctl disable "${UNIT_NAME}" || \
+            fail "enable failed for '${UNIT_NAME}' and its systemd side effects could not be rolled back"
+        fail "could not enable unit '${UNIT_NAME}'"
+    fi
+    if ! dependency_error="$(validate_kubelet_dependency_links)"; then
+        systemctl disable "${UNIT_NAME}" || \
+            fail "${dependency_error}; systemd side effects could not be rolled back"
+        fail "${dependency_error}"
+    fi
     if [[ -n "${TEMPORARY_FILE}" ]]; then
         rm -f -- "${TEMPORARY_FILE}"
         TEMPORARY_FILE=""
@@ -607,6 +641,8 @@ install_mount() {
 }
 
 prepared_check() {
+    local dependency_error
+
     load_desired_config
     validate_source_mount
     read_state || fail "state file '${STATE_FILE}' is missing"
@@ -620,6 +656,9 @@ prepared_check() {
     rm -f -- "${TEMPORARY_FILE}"
     TEMPORARY_FILE=""
     systemctl is-enabled --quiet "${UNIT_NAME}" || fail "unit '${UNIT_NAME}' is not enabled"
+    if ! dependency_error="$(validate_kubelet_dependency_links)"; then
+        fail "${dependency_error}"
+    fi
 
     if exact_mount_target "${TARGET}"; then
         same_bind_mount || fail "active target '${TARGET}' does not bind the desired source"

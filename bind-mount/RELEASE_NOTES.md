@@ -6,6 +6,16 @@ scripts/gen-changelog.sh and must not be edited by hand after the initial
 package release.
 -->
 
+## 0.1.1
+
+Kubelet now requires successful bind-mount activation during boot. If the
+source filesystem is unavailable, the node remains NotReady instead of
+admitting workloads onto the unmounted target path.
+
+The generated unit also asserts that the source remains a read-write mount
+point, and lifecycle checks verify that both supported kubelet dependency links
+resolve to the owned mount unit.
+
 ## 0.1.0
 
 Initial release of a fail-closed, systemd-managed bind mount package.

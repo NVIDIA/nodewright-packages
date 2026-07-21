@@ -17,7 +17,7 @@ spec:
     count: 1
   packages:
     bind-mount:
-      version: 0.1.0
+      version: 0.1.1
       image: ghcr.io/nvidia/nodewright-packages/bind-mount
       interrupt:
         type: reboot
@@ -48,6 +48,8 @@ closed rather than sharing or replacing it.
 - Uninstall disables and removes the persistent unit but deliberately does not unmount a live target. Recycle the node to complete rollback safely.
 - A root-only ownership receipt supports ConfigMap-less uninstall on operators older than v0.16.0 and preserves cleanup after an interrupted install on newer operators. The receipt is removed after `uninstall-check` confirms that no owned unit remains.
 - Uninstall of a package instance that never installed succeeds as a clean no-op, even when the uninstall runs without a ConfigMap. It only sweeps units carrying that exact Skyhook-resource/package-key owner marker and cannot remove another instance's unit.
-- The mount unit orders before `local-fs.target` and the kubelet units (`kubelet.service`, `snap.kubelet-eks.daemon.service`) so a rebooting node mounts the target before workloads start. Ordering is hygiene, not a success gate; the post-interrupt check is the gate.
+- The mount unit rechecks during boot that the source is itself a read-write mount point. This prevents an existing source directory on the root filesystem from being accepted when the source mount definition is missing or fails.
+- The mount unit is installed as a required dependency of `kubelet.service` and `snap.kubelet-eks.daemon.service`, and it orders before both. The lifecycle checks verify that both dependency links resolve to the owned mount unit. If the mount cannot start during boot, kubelet remains down instead of admitting workloads onto the unmounted target. The post-interrupt check remains the controlled-activation gate.
+- The kubelet dependency is a start-up gate, not a continuous runtime binding. An unexpected unmount after kubelet has started requires external invariant monitoring and immediate workload containment; consumers should alert whenever a Ready node no longer has the expected target mount.
 
 The apply and config checks validate the prepared unit before an interrupt. The post-interrupt check validates the active host mount. Consumers should use `runtimeRequired: true` and a bounded interruption budget.

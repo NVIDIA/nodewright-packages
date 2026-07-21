@@ -33,11 +33,35 @@ case "${action}" in
         ;;
     enable)
         [[ "${FAKE_ENABLE_FAIL:-false}" != "true" ]] || exit 1
+        unit_file="/etc/systemd/system/${unit}"
+        required_by_units="$(
+            [[ "${FAKE_REQUIRED_BY_PARSE_FAIL:-false}" != "true" ]] || exit 1
+            awk '
+                $0 == "[Install]" { in_install = 1; next }
+                /^\[/ { in_install = 0 }
+                in_install && /^RequiredBy=/ {
+                    sub(/^RequiredBy=/, "")
+                    for (i = 1; i <= NF; i++) print $i
+                }
+            ' "${unit_file}"
+        )"
+        while IFS= read -r required_by; do
+            [[ -n "${required_by}" ]] || continue
+            [[ "${FAKE_REQUIRED_BY_LINK_FAIL:-}" != "${required_by}" ]] || exit 1
+            [[ "${FAKE_REQUIRED_BY_LINK_SKIP:-}" != "${required_by}" ]] || continue
+            requires_dir="/etc/systemd/system/${required_by}.requires"
+            mkdir -p "${requires_dir}"
+            ln -sfn "../${unit}" "${requires_dir}/${unit}"
+        done <<<"${required_by_units}"
         touch "${STATE_DIR}/enabled-${unit}"
         ;;
     disable)
         [[ "${FAKE_DISABLE_FAIL:-false}" != "true" ]] || exit 1
         rm -f "${STATE_DIR}/enabled-${unit}"
+        for requires_dir in /etc/systemd/system/*.requires; do
+            [[ -d "${requires_dir}" ]] || continue
+            rm -f "${requires_dir}/${unit}"
+        done
         ;;
     show)
         [[ "${FAKE_SHOW_FAIL:-false}" != "true" ]] || exit 1
