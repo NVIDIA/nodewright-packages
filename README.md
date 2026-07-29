@@ -294,7 +294,14 @@ This validation step is crucial as the agent uses JSON schema validation to ensu
 
 ## Contributing
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines on contributing to this repository.
+- Start here: [CONTRIBUTING.md](./CONTRIBUTING.md)
+- Code of Conduct: [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)
+
+## Governance & Maintainers
+
+- Governance: [GOVERNANCE.md](./GOVERNANCE.md) - roles, how decisions get made, how maintainers join and leave
+- Maintainers: [MAINTAINERS.md](./MAINTAINERS.md) - current roster
+- Review ownership: [`.github/CODEOWNERS`](./.github/CODEOWNERS)
 
 ## License
 

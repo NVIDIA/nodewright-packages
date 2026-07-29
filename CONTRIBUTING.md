@@ -7,6 +7,16 @@
 
 Want to contribute to NodeWright-Packages?
 
+## Code of Conduct
+
+This project is governed by the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md). By participating you are expected to uphold it. Report unacceptable behavior to GitHub_Conduct@nvidia.com. See [Community standards](#community-standards) for how reports are handled.
+
+## Governance
+
+Maintainers, decision-making, and the process for becoming a maintainer are documented in [GOVERNANCE.md](GOVERNANCE.md) and [MAINTAINERS.md](MAINTAINERS.md). Path-level review ownership is in [`.github/CODEOWNERS`](.github/CODEOWNERS).
+
+## Developer Certificate of Origin (DCO)
+
 The sign-off is a simple line at the end of the explanation for the patch. Your
 signature certifies that you wrote the patch or otherwise have the right to pass
 it on as an open-source patch. The rules are pretty simple: if you can certify
@@ -96,3 +106,28 @@ This wraps [`google/addlicense`](https://github.com/google/addlicense) (run via 
 so a local Go toolchain is required); it is idempotent and never duplicates a header.
 Run `make license-check` to verify without modifying files; CI runs the same check on
 every PR.
+
+## Community standards
+
+We enforce the [Code of Conduct](CODE_OF_CONDUCT.md) in every project space: issues, pull requests, discussions, and any venue where someone is representing NodeWright Packages.
+
+### Reporting
+
+Send reports to GitHub_Conduct@nvidia.com. Include what happened, where, when, and links if the incident is public. You do not need to be the target of the behavior to report it.
+
+### Response timeline
+
+- **Acknowledgement within 3 business days.** You get a confirmation that the report was received and who is handling it.
+- **Resolution within 14 business days** for most reports. If an investigation needs longer, we tell you that before day 14 and give an updated estimate.
+- **Immediate action** for ongoing harassment, threats, or doxxing, ahead of the full investigation.
+
+Reporter identity is shared only with the people investigating. Outcomes follow the [Enforcement Guidelines](CODE_OF_CONDUCT.md#enforcement-guidelines) ladder: correction, warning, temporary ban, permanent ban.
+
+### Out of scope
+
+The following are handled elsewhere, not through a conduct report:
+
+- **Security vulnerabilities**: see [SECURITY.md](SECURITY.md). Do not file a public issue.
+- **Technical disagreements**, including rejected pull requests and design decisions you disagree with. Escalate through the process in [GOVERNANCE.md](GOVERNANCE.md#decision-making).
+- **Conduct in venues unrelated to NodeWright**, unless it creates a credible safety risk for someone in this community.
+- **NVIDIA employment or HR matters**, which go through NVIDIA's internal channels.
