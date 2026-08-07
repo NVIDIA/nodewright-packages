@@ -71,10 +71,16 @@ profiles/
     │   ├── script.sh            # Sources common/mac-address-policy.sh, invokes common/bootloader.sh
     │   ├── nvidia-h100-inference.conf   # AWS-compatible inference override
     │   └── nvidia-gb200-inference.conf
-    └── aks/
-        ├── tuned.conf.template
-        ├── script.sh            # Sources common/mac-address-policy.sh, invokes common/bootloader.sh
-        └── nvidia-h100-inference.conf   # AKS-compatible inference override (drops kernel-6.8 EEVDF sysctls)
+    ├── aks/
+    │   ├── tuned.conf.template
+    │   ├── script.sh            # Sources common/mac-address-policy.sh, invokes common/bootloader.sh
+    │   └── nvidia-h100-inference.conf   # AKS-compatible inference override (drops kernel-6.8 EEVDF sysctls)
+    └── oci/
+        ├── tuned.conf.template  # RDMA IPv6 defaults for OCI's IPv6/SLAAC RoCE fabric
+        ├── script.sh            # containerd LimitSTACK drop-in + mlx5 RDMA VF IPv6 re-enable
+        ├── containerd_service.sh
+        ├── nvidia-gb300-performance.conf   # Re-roots gb300 onto the bootloader-free base
+        └── nccl-topo-gb300.xml  # Installed to ${TOPO_PATH} by the write-nccl-topo config step
 ```
 
 Note: Profiles are stored in `profiles/` (not `root_dir/`) to avoid polluting the host filesystem during package extraction. The prepare scripts explicitly copy profiles to the appropriate tuned directories.
@@ -211,6 +217,33 @@ spec:
         service: aks
 ```
 
+**OCI tuning** (GB300 on OCI, applies without a reboot, installs an NCCL topology file):
+
+```yaml
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  name: nvidia-tuned-oci
+spec:
+  nodeSelectors:
+    matchLabels:
+      nvidia.com/gpu.present: "true"
+  packages:
+    nvidia-tuned:
+      image: ghcr.io/nvidia/nodewright-packages/nvidia-tuned
+      version: 0.5.0
+      env:
+        - name: TOPO_PATH
+          value: /etc/nccl/gb300-topo.xml
+      configMap:
+        intent: performance
+        accelerator: gb300
+        service: oci
+```
+
+No `interrupt` is needed: the `oci` gb300 chain carries no `[bootloader]` settings, so
+the profile applies live.
+
 ### ConfigMap Fields
 
 | Field | Required | Default | Description |
@@ -218,6 +251,13 @@ spec:
 | `accelerator` | Yes | — | GPU/accelerator type (e.g., `h100`, `gb200`, `generic`). When set to `generic`, intent and service are ignored |
 | `intent` | No | `performance` | Workload intent (e.g., `inference`, `performance`, `multiNodeTraining`). Ignored when `accelerator=generic` |
 | `service` | No | — | Service name (e.g., `eks`). If specified, service profile wraps the workload profile. Ignored when `accelerator=generic` |
+
+> **gb300 / oci:** `gb300` ships a `performance` profile only. The base
+> `nvidia-gb300-performance` profile keeps the reboot-requiring `[bootloader]` tuning
+> (same as gb200); with `service=oci`, gb300 uses a bootloader-free profile chain
+> (`nvidia-gb300-noreboot-base`) so the tuning applies without a reboot. The `oci`
+> service also sets the RDMA IPv6 defaults that OCI's IPv6/SLAAC RoCE fabric needs, and
+> installs the bundled NCCL topology file (see `TOPO_PATH` below).
 
 ## Available Profiles
 
@@ -236,6 +276,7 @@ spec:
 | `generic` | Baseline tuning for any NVIDIA GPU (self-contained, no intent/service required) |
 | `h100` | NVIDIA H100 GPU |
 | `gb200` | NVIDIA GB200 GPU |
+| `gb300` | NVIDIA GB300 GPU (`performance` intent only) |
 
 ### Services (specify in `service`)
 
@@ -243,6 +284,14 @@ spec:
 |---------|-------------|
 | `eks` | eks-specific settings (MAC address policy for CNI) |
 | `aks` | aks-specific settings (MAC address policy, grub.d bootloader workaround for Ubuntu) |
+| `bcm` | bcm-specific settings (bootloader-free vr200 chain, applies without a reboot) |
+| `oci` | oci-specific settings (RDMA IPv6 defaults, NCCL topology file, applies without a reboot) |
+
+### Environment Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `TOPO_PATH` | No | `/etc/nccl/topo.xml` | Absolute host path the bundled NCCL topology file is written to. Only used when the configured `service`/`accelerator` pair ships one (today `oci` + `gb300`); otherwise the step is a no-op. Point `NCCL_TOPO_FILE` at the same path in your workloads. |
 
 ## Adding OS-Specific Overrides
 
