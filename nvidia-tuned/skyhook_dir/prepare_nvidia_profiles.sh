@@ -238,9 +238,14 @@ write_tuned_profile() {
 # settings take precedence over /etc/sysctl.d (e.g. cloud_customizations.conf).
 set_reapply_sysctl_off() {
     local tuned_main="/etc/tuned/tuned-main.conf"
+    local before=""
+    [[ -f "$tuned_main" ]] && before="$(cat "$tuned_main")"
+
     if [ -f "$tuned_main" ]; then
-        if grep -q '^[[:space:]]*reapply_sysctl[[:space:]]*=' "$tuned_main"; then
-            sed -i 's/^[[:space:]]*reapply_sysctl[[:space:]]*=[[:space:]]*1[[:space:]]*$/reapply_sysctl = 0/' "$tuned_main"
+        if grep -qE '^[[:space:]]*reapply_sysctl[[:space:]]*=' "$tuned_main"; then
+            # Match any value, not just "1": a line like "reapply_sysctl = 1 # note"
+            # or "= 2" matches the grep but not the old sed, silently leaving it on.
+            sed -i -E 's/^[[:space:]]*reapply_sysctl[[:space:]]*=.*$/reapply_sysctl = 0/' "$tuned_main"
             echo "Set reapply_sysctl = 0 in $tuned_main"
         else
             echo "reapply_sysctl = 0" >> "$tuned_main"
@@ -249,6 +254,17 @@ set_reapply_sysctl_off() {
     else
         echo "reapply_sysctl = 0" > "$tuned_main"
         echo "Created $tuned_main with reapply_sysctl = 0"
+    fi
+
+    # tuned reads tuned-main.conf only when the daemon starts (GlobalConfig.load_config
+    # runs from __init__), and `tuned-adm profile` does not re-read it. install_tuned.sh
+    # has already started tuned by this point, so without a restart the running daemon
+    # keeps reapply_sysctl = 1 and re-applies /etc/sysctl.d over the profile's [sysctl]
+    # values: tuned's _apply_sysctl_config_line logs "Overriding sysctl parameter" and
+    # writes the /etc/sysctl.d value anyway rather than skipping options the profile owns.
+    if [[ "$(cat "$tuned_main")" != "$before" ]] && systemctl is-active --quiet tuned; then
+        echo "tuned-main.conf changed; restarting tuned so reapply_sysctl takes effect"
+        systemctl restart tuned
     fi
 }
 
