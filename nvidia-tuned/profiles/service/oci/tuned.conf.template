@@ -1,0 +1,17 @@
+[main]
+summary=NVIDIA OCI service profile (no reboot-requiring settings): RDMA IPv6 defaults
+
+# On OCI shapes with an IPv6/SLAAC RoCE fabric (GB300 today) the base image disables
+# IPv6, so the RDMA VFs come up with no routable GID. The VFs are created post-boot and
+# recreated on every pod handoff, so only the defaults below stick; script.sh fixes up
+# the VFs that already exist when the profile is activated.
+#
+# These live here rather than in /etc/sysctl.d because prepare_nvidia_profiles.sh sets
+# reapply_sysctl = 0, which makes tuned's [sysctl] authoritative over /etc/sysctl.d.
+[sysctl]
+net.ipv6.conf.default.disable_ipv6 = 0
+net.ipv6.conf.all.disable_ipv6 = 0
+net.ipv6.conf.default.accept_ra = 1
+
+[script]
+script=${i:PROFILE_DIR}/script.sh

@@ -20,6 +20,28 @@ example is not itself picked up as release notes):
     - Notable behavior change worth calling out.
 -->
 
+## 0.5.0
+
+Adds the `gb300` accelerator and the `oci` service.
+
+- `accelerator: gb300` ships a `performance` profile only. `inference` and
+  `multiNodeTraining` are not yet defined for gb300.
+- `service: oci` selects a bootloader-free chain
+  (`oci-gb300-performance` -> `nvidia-gb300-performance` -> `nvidia-gb300-noreboot-base`),
+  so the tuning applies without a node reboot. No `interrupt` is required. The
+  standalone `nvidia-gb300-performance` profile (used without `service: oci`) does keep
+  the reboot-requiring `[bootloader]` settings.
+- The `oci` service sets the RDMA IPv6 defaults that OCI's IPv6/SLAAC RoCE fabric needs
+  (`net.ipv6.conf.{default,all}.disable_ipv6 = 0`, `net.ipv6.conf.default.accept_ra = 1`)
+  and re-enables IPv6 on any mlx5 RDMA VFs that already exist when the profile activates.
+  This replaces the standalone `rdma-ipv6` shellscript package for nodes running this
+  profile; remove that package to avoid two owners of the same settings.
+- New `config` step `write-nccl-topo` installs a bundled NCCL topology file to the
+  absolute path in the `TOPO_PATH` env var (default `/etc/nccl/topo.xml`). Point
+  `NCCL_TOPO_FILE` at the same path in your workloads. The step is a no-op for any
+  `service`/`accelerator` pair that does not ship a topology file, so existing eks, aks,
+  and bcm deployments are unaffected.
+
 ## 0.3.1
 
 - NVIDIA tuned profiles are now deployed to the directory the installed tuned

@@ -1,7 +1,7 @@
 {
     "schema_version": "v1",
     "package_name": "nvidia_tuned",
-    "package_version": "0.4.0",
+    "package_version": "0.5.0",
     "expected_config_files": ["accelerator"],
     "modes": {
         "uninstall": [
@@ -107,6 +107,18 @@
                 "upgrade_step": false
             },
             {
+                "name": "write-nccl-topo",
+                "path": "write_nccl_topo.sh",
+                "arguments": [],
+                "returncodes": [
+                    0
+                ],
+                "on_host": true,
+                "env": {},
+                "idempotence": true,
+                "upgrade_step": false
+            },
+            {
                 "name": "config",
                 "path": "apply_tuned_profile.sh",
                 "arguments": [],
@@ -123,6 +135,18 @@
             {
                 "name": "prepare-check",
                 "path": "prepare_nvidia_profiles_check.sh",
+                "arguments": [],
+                "returncodes": [
+                    0
+                ],
+                "on_host": true,
+                "env": {},
+                "idempotence": true,
+                "upgrade_step": false
+            },
+            {
+                "name": "write-nccl-topo-check",
+                "path": "write_nccl_topo_check.sh",
                 "arguments": [],
                 "returncodes": [
                     0
