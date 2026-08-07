@@ -40,7 +40,7 @@ This package requires **tuned >= 2.19**. The following operating systems are sup
 
 ## Directory Structure
 
-```
+```text
 profiles/
 ├── common/                  # Base profiles → tuned profiles dir
 │   ├── nvidia-base/
@@ -77,8 +77,7 @@ profiles/
     │   └── nvidia-h100-inference.conf   # AKS-compatible inference override (drops kernel-6.8 EEVDF sysctls)
     └── oci/
         ├── tuned.conf.template  # RDMA IPv6 defaults for OCI's IPv6/SLAAC RoCE fabric
-        ├── script.sh            # containerd LimitSTACK drop-in + mlx5 RDMA VF IPv6 re-enable
-        ├── containerd_service.sh
+        ├── script.sh            # Re-enables IPv6 on existing mlx5 RDMA VFs
         ├── nvidia-gb300-performance.conf   # Re-roots gb300 onto the bootloader-free base
         └── nccl-topo-gb300.xml  # Installed to ${TOPO_PATH} by the write-nccl-topo config step
 ```
