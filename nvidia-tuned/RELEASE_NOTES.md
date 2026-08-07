@@ -20,6 +20,26 @@ example is not itself picked up as release notes):
     - Notable behavior change worth calling out.
 -->
 
+## 0.5.1
+
+Fixes profile `[sysctl]` values being silently overwritten by `/etc/sysctl.d`.
+
+- `prepare_nvidia_profiles.sh` now restarts tuned after it changes
+  `/etc/tuned/tuned-main.conf`. tuned reads that file only when the daemon starts, and
+  `tuned-adm profile` does not re-read it, so the `reapply_sysctl = 0` written during the
+  config stage never reached the daemon that `install_tuned.sh` had already started. The
+  daemon kept `reapply_sysctl = 1` and re-applied `/etc/sysctl.d` after activating the
+  profile, overwriting the profile's `[sysctl]` values (tuned writes the `/etc/sysctl.d`
+  value even for options the profile owns; it only logs `Overriding sysctl parameter`).
+  The restart is skipped when the file is unchanged, so re-runs do not thrash tuned.
+- The `reapply_sysctl` rewrite now matches any value rather than only a bare `1`. A line
+  such as `reapply_sysctl = 1 # note` or `reapply_sysctl = 2` matched the guard but not
+  the old substitution, which left the setting on while reporting success.
+
+This mainly affects the `oci` service on GB300, where the node image disables IPv6 via
+`/etc/sysctl.d`: the profile's `net.ipv6.conf.*.disable_ipv6 = 0` did not survive, RDMA
+VFs came up with no routable GID, and `config-check` failed.
+
 ## 0.5.0
 
 Adds the `gb300` accelerator and the `oci` service.
