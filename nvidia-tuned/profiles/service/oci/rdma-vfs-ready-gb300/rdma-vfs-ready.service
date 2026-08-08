@@ -1,0 +1,15 @@
+[Unit]
+Description=Wait for OCA to create RDMA VFs before kubelet starts
+Documentation=https://github.com/NVIDIA/nodewright-packages/tree/main/nvidia-tuned
+After=snap.oracle-cloud-agent.oracle-cloud-agent.service
+Wants=snap.oracle-cloud-agent.oracle-cloud-agent.service
+Before=kubelet.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+TimeoutStartSec=300
+ExecStart=/usr/local/sbin/wait-rdma-vfs.sh
+
+[Install]
+WantedBy=multi-user.target

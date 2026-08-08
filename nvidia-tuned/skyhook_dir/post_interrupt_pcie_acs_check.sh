@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Reports whether the corrected PCIe ACS values are live after the reboot interrupt.
+#
+# This check REPORTS, it does not gate. It exits 0 even when ACS is still wrong, and
+# says so loudly instead. Whether the kernel honours `pci=config_acs=` is a property of
+# the node image rather than something this package controls, so failing here would
+# quarantine nodes over an environment mismatch with no path to convergence. The node
+# stays in service without the ACS speedup, and the warning below tells whoever
+# investigates exactly what happened and what to do.
+#
+# The paired config-check is stricter on purpose: it fails when the drop-in was not
+# written, because that is this package not doing its job.
+
+set -uo pipefail
+
+CONFIGMAP_DIR="${SKYHOOK_DIR}/configmaps"
+PROFILES_DIR="${SKYHOOK_DIR}/profiles"
+
+RDMA_TOPO_BIN="${RDMA_TOPO_BIN:-rdma_topo}"
+PROC_CMDLINE="${PROC_CMDLINE:-/proc/cmdline}"
+
+# Mirrors acs_requested() in configure_pcie_acs.sh.
+acs_requested() {
+    local setting
+    setting="$(printf '%s' "${CONFIGURE_PCIE_ACS:-true}" | tr '[:upper:]' '[:lower:]')"
+    case "${setting}" in
+        false | 0 | no | off) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
+# Mirrors acs_enabled() in configure_pcie_acs.sh.
+acs_enabled() {
+    local service accelerator
+
+    [[ -f "${CONFIGMAP_DIR}/service" ]] || return 1
+    service="$(xargs < "${CONFIGMAP_DIR}/service")"
+    [[ -n "${service}" ]] || return 1
+
+    [[ -f "${CONFIGMAP_DIR}/accelerator" ]] || return 1
+    accelerator="$(xargs < "${CONFIGMAP_DIR}/accelerator")"
+    [[ -n "${accelerator}" ]] || return 1
+
+    [[ -f "${PROFILES_DIR}/service/${service}/pcie-acs-${accelerator}.enabled" ]]
+}
+
+main() {
+    if ! acs_enabled; then
+        echo "PCIe ACS correction not enabled for this service/accelerator; nothing to verify"
+        return 0
+    fi
+
+    if ! acs_requested; then
+        echo "PCIe ACS correction switched off via CONFIGURE_PCIE_ACS; nothing to verify"
+        return 0
+    fi
+
+    if ! command -v "${RDMA_TOPO_BIN}" >/dev/null 2>&1; then
+        fail_acs_not_applied "${RDMA_TOPO_BIN} is not installed on this node, so the ACS values cannot be read."
+    fi
+
+    if ! "${RDMA_TOPO_BIN}" check; then
+        if grep -q "config_acs" "${PROC_CMDLINE}"; then
+            fail_acs_not_applied \
+                "The booted kernel command line carries the config_acs argument but the ACS values are still wrong, so the kernel did not act on it. This is what a kernel without pci=config_acs= support looks like."
+        else
+            fail_acs_not_applied \
+                "The booted kernel command line (${PROC_CMDLINE}) carries no config_acs argument, so the generated drop-in never reached the kernel. Check for a later-sorting file in /etc/default/grub.d/ that overwrites GRUB_CMDLINE_LINUX_DEFAULT, and check which entry GRUB_DEFAULT boots."
+        fi
+    fi
+
+    echo "Verified PCIe ACS values are correct after reboot"
+}
+
+# Say clearly what is wrong, what it costs, and what to do, then fail. This is the only
+# place an operator investigating the failure will look, so it must be self-contained.
+fail_acs_not_applied() {
+    cat <<EOF
+ERROR: PCIe ACS correction was requested but did not take effect on this node.
+
+  ${1}
+
+  Impact: peer-to-peer DMA between the GPUs and the RoCE NICs stays blocked, so RDMA
+  throughput is roughly 15% lower and DMA-BUF does not work. Workloads on this node
+  still need nvidia_peermem loaded and NCCL_DMABUF_ENABLE=0 set.
+
+  If this node cannot support the correction (for example its kernel does not honour
+  pci=config_acs=), set CONFIGURE_PCIE_ACS=false in the package env on the custom
+  resource. That skips the correction and this check, and the node proceeds without
+  the ACS speedup.
+EOF
+    exit 1
+}
+
+main "$@"

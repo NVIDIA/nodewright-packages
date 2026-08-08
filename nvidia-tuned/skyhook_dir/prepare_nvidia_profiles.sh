@@ -221,6 +221,7 @@ deploy_service_profile() {
         filename=$(basename "$file")
         [ "$filename" = "tuned.conf.template" ] && continue
         [[ "$filename" == *.conf ]] && continue  # Skip .conf files (they're service-specific profiles)
+        [[ "$filename" == *.enabled ]] && continue  # Skip opt-in markers read by agent steps, not tuned
         cp "$file" "$TUNED_PROFILES_DIR/$final_profile_name/$filename"
         chmod +x "$TUNED_PROFILES_DIR/$final_profile_name/$filename" 2>/dev/null || true
         echo "Copied service file: $filename"
