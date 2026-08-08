@@ -60,7 +60,9 @@ case "${verb}" in
             [[ "${arg}" == "--now" ]] && rm -f "${STATE_DIR}/active.${unit}"
         done
         ;;
-    start)
+    start | restart)
+        # prepare_nvidia_profiles.sh restarts tuned after rewriting tuned-main.conf, so
+        # restart must be modelled or that script would trip the default branch below.
         touch "${STATE_DIR}/active.${unit}"
         ;;
     stop)

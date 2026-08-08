@@ -102,7 +102,18 @@ main() {
 
 # Always exit 0. This unit is ordered Before=kubelet.service, so failing here would
 # delay the node joining the cluster over a wait that is best effort by design.
-if ! main "$@"; then
-    echo "WARNING: RDMA VF wait aborted unexpectedly; releasing kubelet anyway"
-fi
-exit 0
+#
+# The conversion happens in an EXIT trap rather than by calling main in an `if` or `||`
+# condition. Bash suppresses errexit throughout a function invoked as a condition, so
+# `if ! main` would let main run past a failed command, keep advancing `elapsed`, and
+# return success without ever reporting the abort.
+release_kubelet_on_exit() {
+    local status=$?
+    if [[ "${status}" -ne 0 ]]; then
+        echo "WARNING: RDMA VF wait aborted unexpectedly (status ${status}); releasing kubelet anyway"
+    fi
+    exit 0
+}
+trap release_kubelet_on_exit EXIT
+
+main "$@"

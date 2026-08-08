@@ -90,20 +90,22 @@ def node():
     for fake in fakes_dir.iterdir():
         fake.chmod(0o755)
 
-    runner.container = runner.client.containers.run(
-        BASE_IMAGE,
-        command=["/bin/bash", "-c", "tail -f /dev/null"],
-        detach=True,
-        volumes={
-            str(package_dir): {"bind": "/skyhook-package", "mode": "rw"},
-            str(fakes_dir): {"bind": FAKE_BIN, "mode": "ro"},
-        },
-        remove=False,
-        tty=False,
-        stdin_open=False,
-    )
-    # Inside the try so a readiness timeout still tears down the container and tempdir.
+    # The guard opens before container creation, not after: if containers.run raises,
+    # the temp dir would otherwise leak, and if readiness times out the container would.
+    # runner.cleanup() tolerates a container that was never assigned.
     try:
+        runner.container = runner.client.containers.run(
+            BASE_IMAGE,
+            command=["/bin/bash", "-c", "tail -f /dev/null"],
+            detach=True,
+            volumes={
+                str(package_dir): {"bind": "/skyhook-package", "mode": "rw"},
+                str(fakes_dir): {"bind": FAKE_BIN, "mode": "ro"},
+            },
+            remove=False,
+            tty=False,
+            stdin_open=False,
+        )
         _wait_until_ready(runner)
         yield runner
     finally:
@@ -399,6 +401,55 @@ def test_wait_rdma_vfs_ignores_non_vf_interfaces(node):
 
     assert wait_helper(node, EXPECTED_VFS=1, TIMEOUT_SECS=4) == 0, output(node)
     assert said(node, "with 0 RDMA VFs"), output(node)
+
+
+def test_wait_rdma_vfs_aborts_on_error_but_still_releases_kubelet(node):
+    """errexit must reach inside main, and an abort must still exit 0.
+
+    Bash suppresses errexit throughout a function invoked as a condition, so calling
+    main via `if ! main` would let it run past a failed command instead of aborting.
+    Pointing SYS_CLASS_NET at a path that cannot be globbed makes count_vfs fail.
+    """
+    stage_netdevs(node, vfs=0)
+    assert sh(node, "rm -rf /tmp/netdevs") == 0
+
+    # A non-existent tree makes the glob literal, so the physfn test fails on a path
+    # containing '*', and the run aborts rather than polling to the timeout.
+    rc = wait_helper(
+        node, SYS_CLASS_NET="/tmp/does-not-exist", EXPECTED_VFS=4, TIMEOUT_SECS=4
+    )
+    assert rc == 0, output(node)
+
+
+def test_wait_rdma_vfs_falls_back_on_a_bad_poll_interval(node):
+    """POLL_INTERVAL_SECS=0 would stop elapsed advancing and busy-spin until systemd."""
+    stage_netdevs(node, vfs=0)
+
+    rc = wait_helper(node, EXPECTED_VFS=4, TIMEOUT_SECS=4, POLL_INTERVAL_SECS=0)
+    assert rc == 0, output(node)
+    assert said(node, "POLL_INTERVAL_SECS='0' is not a positive integer"), output(node)
+
+
+@pytest.mark.parametrize(
+    "name,value",
+    [
+        ("EXPECTED_VFS", "abc"),
+        ("TIMEOUT_SECS", "-5"),
+        ("STABLE_POLLS", "0"),
+        ("POLL_INTERVAL_SECS", "1.5"),
+    ],
+)
+def test_wait_rdma_vfs_rejects_non_positive_integer_overrides(node, name, value):
+    """Non-numeric, negative, zero, and fractional overrides all fall back to defaults.
+
+    An empty value is deliberately not covered: `${VAR:-default}` already substitutes
+    the default for an empty string, so it never reaches the validator.
+    """
+    stage_netdevs(node, vfs=4)
+
+    rc = wait_helper(node, **{"EXPECTED_VFS": "4", "TIMEOUT_SECS": "6", name: value})
+    assert rc == 0, output(node)
+    assert said(node, f"{name}='{value}' is not a positive integer"), output(node)
 
 
 # ---------------------------------------------------------------------------

@@ -87,10 +87,15 @@ main() {
         exit 1
     fi
 
-    # Match an active assignment, not a commented example or an incidental mention, so
-    # a drop-in that would contribute nothing to the kernel command line still fails
-    # here rather than surfacing as a post-interrupt failure after the reboot.
-    if ! grep -Eq '^[[:space:]]*[^#].*pci=config_acs=' "${ACS_GRUB_DROPIN}"; then
+    # Match an active assignment, not a commented example, so a drop-in that would
+    # contribute nothing to the kernel command line fails here rather than surfacing as
+    # a post-interrupt failure after the reboot.
+    #
+    # Comments are stripped first rather than folded into one pattern: an expression
+    # like '^[[:space:]]*[^#].*pci=config_acs=' still matches "  # pci=config_acs=..."
+    # because [^#] can consume a second space, and tightening it to [^#[:space:]]
+    # then wrongly rejects a tab-indented active line.
+    if ! grep -v '^[[:space:]]*#' "${ACS_GRUB_DROPIN}" | grep -q 'pci=config_acs='; then
         echo "ERROR: ${ACS_GRUB_DROPIN} does not contain an active pci=config_acs setting"
         exit 1
     fi
