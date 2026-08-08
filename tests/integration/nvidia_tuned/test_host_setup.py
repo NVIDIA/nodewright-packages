@@ -431,7 +431,7 @@ def test_wait_rdma_vfs_falls_back_on_a_bad_poll_interval(node):
 
 
 @pytest.mark.parametrize(
-    "name,value",
+    ("name", "value"),
     [
         ("EXPECTED_VFS", "abc"),
         ("TIMEOUT_SECS", "-5"),
@@ -501,6 +501,37 @@ def test_pcie_acs_config_check_accepts_a_pending_reboot(node):
     assert step(node, "configure_pcie_acs.sh", failing) == 0, output(node)
     assert step(node, "configure_pcie_acs_check.sh", failing) == 0, output(node)
     assert said(node, "pending reboot"), output(node)
+
+
+@pytest.mark.parametrize(
+    ("dropin", "accepted"),
+    [
+        ('GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT pci=config_acs=1@0008:00:00.0"', True),
+        ("pci=config_acs=1@0008:00:00.0", True),
+        ("\tpci=config_acs=1@0008:00:00.0", True),
+        ("# pci=config_acs=1@0008:00:00.0", False),
+        ("  # pci=config_acs=1@0008:00:00.0", False),
+        ("# example only, nothing active here", False),
+    ],
+    ids=["assignment", "bare", "tab-indented", "comment", "indented-comment", "no-token"],
+)
+def test_pcie_acs_config_check_only_accepts_an_active_setting(node, dropin, accepted):
+    """A commented example must not satisfy the pre-reboot check, but indentation must.
+
+    Pins the matcher: a drop-in that contributes nothing to the kernel command line has
+    to fail here rather than surviving to a post-interrupt failure after the reboot.
+    """
+    configure(node, **OCI_GB300)
+    assert sh(node, "mkdir -p /etc/default/grub.d") == 0
+    assert sh(node, f"printf '%s\\n' {shell_quote(dropin)} > {ACS_DROPIN}") == 0
+
+    rc = step(node, "configure_pcie_acs_check.sh", {"FAKE_RDMA_TOPO_CHECK": "fail"})
+    if accepted:
+        assert rc == 0, output(node)
+        assert said(node, "pending reboot"), output(node)
+    else:
+        assert rc != 0, output(node)
+        assert said(node, "does not contain an active"), output(node)
 
 
 def test_pcie_acs_config_check_fails_when_nothing_was_written(node):

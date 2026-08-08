@@ -91,11 +91,17 @@ main() {
     # contribute nothing to the kernel command line fails here rather than surfacing as
     # a post-interrupt failure after the reboot.
     #
-    # Comments are stripped first rather than folded into one pattern: an expression
-    # like '^[[:space:]]*[^#].*pci=config_acs=' still matches "  # pci=config_acs=..."
-    # because [^#] can consume a second space, and tightening it to [^#[:space:]]
-    # then wrongly rejects a tab-indented active line.
-    if ! grep -v '^[[:space:]]*#' "${ACS_GRUB_DROPIN}" | grep -q 'pci=config_acs='; then
+    # The optional group is what makes this correct, and it is easy to "simplify" wrong:
+    #   ^[[:space:]]*[^#].*pci=config_acs=          matches "  # pci=config_acs=",
+    #                                               because [^#] consumes a second space
+    #   ^[[:space:]]*[^#[:space:]].*pci=config_acs= rejects a tab-indented active line,
+    #                                               because .* then needs a second token
+    # Making the leading group optional covers both: the token may start at the first
+    # non-blank character, but that character must not be '#'.
+    #
+    # A `grep -v | grep -q` pipeline would also be correct but can return 141 under
+    # pipefail when grep -q exits early and the upstream grep takes SIGPIPE.
+    if ! grep -Eq '^[[:space:]]*([^#[:space:]].*)?pci=config_acs=' "${ACS_GRUB_DROPIN}"; then
         echo "ERROR: ${ACS_GRUB_DROPIN} does not contain an active pci=config_acs setting"
         exit 1
     fi
