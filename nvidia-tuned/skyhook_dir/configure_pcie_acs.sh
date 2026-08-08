@@ -22,7 +22,7 @@
 # peer-to-peer DMA between the GPUs and the RoCE NICs. `rdma_topo check` fails on every
 # stock node, mlx5dv_reg_dmabuf_mr returns ENOTSUPP, and NCCL falls back to a slower
 # path. Correcting ACS raised measured all_reduce peak busbw from 360 GB/s to 426 GB/s
-# on a 2 node, 8 GPU RoCE run, and made DMA-BUF work, which removes the need for
+# on a two-node, eight-GPU RoCE run, and made DMA-BUF work, which removes the need for
 # nvidia_peermem and NCCL_DMABUF_ENABLE=0 wherever the correction takes effect.
 #
 # The values are per-topology: `rdma_topo write-grub-acs` generates a
@@ -44,7 +44,7 @@
 #
 # The change lands on the kernel command line, so it requires a reboot. Declare
 # `interrupt: {type: reboot}` on the custom resource; post_interrupt_pcie_acs_check.sh
-# reports on the corrected ACS values after the reboot.
+# then verifies the corrected values are live, and fails if they are not.
 
 set -euo pipefail
 

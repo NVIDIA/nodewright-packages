@@ -35,7 +35,7 @@ resolve bundled assets by service and accelerator and are no-ops when a pair shi
   RoCE NIC root ports, which blocks peer-to-peer DMA: `rdma_topo check` fails on every
   stock node and `mlx5dv_reg_dmabuf_mr` returns ENOTSUPP. The step runs the node's own
   `rdma_topo` tool to generate a `pci=config_acs=...` bootloader drop-in, then
-  regenerates the grub config. Measured on a 2 node, 8 GPU RoCE all_reduce run,
+  regenerates the grub config. Measured on a two-node, eight-GPU RoCE all_reduce run,
   correcting ACS raised peak busbw from 360 GB/s to 426 GB/s and made DMA-BUF work, so
   `nvidia_peermem` is no longer required and `NCCL_DMABUF_ENABLE=0` can be dropped on
   nodes where the correction takes effect.

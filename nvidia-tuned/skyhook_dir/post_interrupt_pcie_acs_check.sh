@@ -16,17 +16,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Reports whether the corrected PCIe ACS values are live after the reboot interrupt.
+# Verifies the corrected PCIe ACS values are live after the reboot interrupt.
 #
-# This check REPORTS, it does not gate. It exits 0 even when ACS is still wrong, and
-# says so loudly instead. Whether the kernel honours `pci=config_acs=` is a property of
-# the node image rather than something this package controls, so failing here would
-# quarantine nodes over an environment mismatch with no path to convergence. The node
-# stays in service without the ACS speedup, and the warning below tells whoever
-# investigates exactly what happened and what to do.
+# This check GATES: if the correction was requested and did not take effect, it exits
+# non-zero and blocks post-interrupt validation, rather than letting the node quietly
+# run degraded. The escape hatch is explicit rather than implicit: an operator who knows
+# a node cannot support the correction sets CONFIGURE_PCIE_ACS=false, which skips both
+# the correction and this check.
 #
-# The paired config-check is stricter on purpose: it fails when the drop-in was not
-# written, because that is this package not doing its job.
+# Because a failure here stops the package, the message must be self-contained. It names
+# the cause, what the node loses, and the switch to set. See fail_acs_not_applied().
 
 set -uo pipefail
 

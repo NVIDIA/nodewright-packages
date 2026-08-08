@@ -266,7 +266,7 @@ host-level steps do need a reboot:
   ports, which blocks peer-to-peer DMA. The `configure-pcie-acs` step runs the node's
   `rdma_topo` tool to generate a `pci=config_acs=...` bootloader drop-in, which only
   takes effect on the next boot. Correcting it raised measured all_reduce peak busbw
-  from 360 GB/s to 426 GB/s on a 2 node, 8 GPU RoCE run and made DMA-BUF work, which
+  from 360 GB/s to 426 GB/s on a two-node, eight-GPU RoCE run and made DMA-BUF work, which
   removes the need for `nvidia_peermem` and `NCCL_DMABUF_ENABLE=0` on nodes where the
   correction takes effect. It only takes effect on kernels that honour
   `pci=config_acs=`; on a node whose kernel does not, set `CONFIGURE_PCIE_ACS=false`

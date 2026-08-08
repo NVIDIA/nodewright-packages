@@ -19,7 +19,7 @@
 # Test double for update-grub. Records that it ran so tests can assert the bootloader
 # config was regenerated after the ACS drop-in was written.
 
-set -uo pipefail
+set -euo pipefail
 
 STATE_DIR="${FAKE_GRUB_STATE:-/tmp/fake-grub}"
 mkdir -p "${STATE_DIR}"

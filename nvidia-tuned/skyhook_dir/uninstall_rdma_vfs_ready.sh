@@ -42,9 +42,11 @@ HELPER_DEST="/usr/local/sbin/wait-rdma-vfs.sh"
 
 main() {
     if [[ ! -f "${UNIT_DEST}" ]]; then
-        echo "${UNIT_NAME} is not installed; nothing to do"
-        rm -f "${HELPER_DEST}"
-        return 0
+        # Informational only. A missing unit file does not mean a clean host: a partial
+        # install, or a hand-removed unit file, can leave the enablement symlink behind,
+        # and skipping the disable here would leave the uninstall check failing. So fall
+        # through and run the full teardown regardless.
+        echo "${UNIT_NAME} unit file is not present; running teardown anyway"
     fi
 
     # The unit may be enabled, disabled, or already half removed; none of that should

@@ -28,7 +28,9 @@
 # the last two VFs appearing within 2 seconds of each other. A 60 second ceiling would
 # be too short.
 
-set -uo pipefail
+# Strict mode, with the always-exit-0 contract preserved by the wrapper at the bottom:
+# main() aborts on an unexpected error and the node is released rather than held.
+set -euo pipefail
 
 # Number of VFs a healthy BM.GPU.GB300.4 presents.
 EXPECTED_VFS="${EXPECTED_VFS:-4}"
@@ -41,6 +43,22 @@ POLL_INTERVAL_SECS="${POLL_INTERVAL_SECS:-2}"
 STABLE_POLLS="${STABLE_POLLS:-5}"
 # Where network interfaces are enumerated. Overridable so tests can stage a fake tree.
 SYS_CLASS_NET="${SYS_CLASS_NET:-/sys/class/net}"
+
+# Fall back to the default when an override is not a positive integer. A zero or
+# non-numeric POLL_INTERVAL_SECS in particular would stop `elapsed` from advancing and
+# turn the wait into a busy loop that spins until systemd's TimeoutStartSec fires.
+require_positive_int() {
+    local name="$1" default="$2" value="${!1}"
+    if [[ ! "${value}" =~ ^[0-9]+$ ]] || [[ "${value}" -lt 1 ]]; then
+        echo "WARNING: ${name}='${value}' is not a positive integer; using ${default}"
+        printf -v "${name}" '%s' "${default}"
+    fi
+}
+
+require_positive_int EXPECTED_VFS 4
+require_positive_int TIMEOUT_SECS 300
+require_positive_int POLL_INTERVAL_SECS 2
+require_positive_int STABLE_POLLS 5
 
 count_vfs() {
     local netdev total=0
@@ -82,4 +100,9 @@ main() {
     return 0
 }
 
-main "$@"
+# Always exit 0. This unit is ordered Before=kubelet.service, so failing here would
+# delay the node joining the cluster over a wait that is best effort by design.
+if ! main "$@"; then
+    echo "WARNING: RDMA VF wait aborted unexpectedly; releasing kubelet anyway"
+fi
+exit 0

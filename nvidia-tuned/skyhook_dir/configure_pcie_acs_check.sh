@@ -87,8 +87,11 @@ main() {
         exit 1
     fi
 
-    if ! grep -q "config_acs" "${ACS_GRUB_DROPIN}"; then
-        echo "ERROR: ${ACS_GRUB_DROPIN} does not contain a config_acs setting"
+    # Match an active assignment, not a commented example or an incidental mention, so
+    # a drop-in that would contribute nothing to the kernel command line still fails
+    # here rather than surfacing as a post-interrupt failure after the reboot.
+    if ! grep -Eq '^[[:space:]]*[^#].*pci=config_acs=' "${ACS_GRUB_DROPIN}"; then
+        echo "ERROR: ${ACS_GRUB_DROPIN} does not contain an active pci=config_acs setting"
         exit 1
     fi
 

@@ -102,8 +102,9 @@ def node():
         tty=False,
         stdin_open=False,
     )
-    _wait_until_ready(runner)
+    # Inside the try so a readiness timeout still tears down the container and tempdir.
     try:
+        _wait_until_ready(runner)
         yield runner
     finally:
         runner.cleanup()
@@ -318,8 +319,22 @@ def test_rdma_vfs_ready_uninstall_is_idempotent_when_never_installed(node):
     configure(node, **OCI_GB300)
 
     assert step(node, "uninstall_rdma_vfs_ready.sh") == 0, output(node)
-    assert said(node, "nothing to do"), output(node)
     assert step(node, "uninstall_rdma_vfs_ready.sh") == 0, output(node)
+    assert step(node, "uninstall_rdma_vfs_ready_check.sh") == 0, output(node)
+
+
+def test_rdma_vfs_ready_uninstall_cleans_up_a_partial_install(node):
+    """A missing unit file must not short-circuit the disable; the symlink can outlive it."""
+    configure(node, **OCI_GB300)
+    assert step(node, "install_rdma_vfs_ready.sh") == 0, output(node)
+
+    # Unit file gone but still enabled, which is what a half-torn-down host looks like.
+    assert sh(node, f"rm -f {UNIT_DEST}") == 0
+    assert exists(node, "/tmp/fake-systemctl/enabled.rdma-vfs-ready.service")
+
+    assert step(node, "uninstall_rdma_vfs_ready.sh") == 0, output(node)
+    assert not exists(node, "/tmp/fake-systemctl/enabled.rdma-vfs-ready.service")
+    assert not exists(node, HELPER_DEST)
     assert step(node, "uninstall_rdma_vfs_ready_check.sh") == 0, output(node)
 
 

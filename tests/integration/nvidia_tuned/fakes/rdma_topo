@@ -22,7 +22,7 @@
 # FAKE_RDMA_TOPO_CHECK=fail  -> `check` fails (the stock GB300 state); default
 # FAKE_RDMA_TOPO_CHECK=fix   -> `check` fails until write-grub-acs has run, then succeeds
 
-set -uo pipefail
+set -euo pipefail
 
 STATE_DIR="${FAKE_RDMA_TOPO_STATE:-/tmp/fake-rdma-topo}"
 GRUB_DROPIN="${FAKE_RDMA_TOPO_DROPIN:-/etc/default/grub.d/config-acs.cfg}"
@@ -56,6 +56,10 @@ EOF
         echo "wrote ${GRUB_DROPIN}"
         exit 0
         ;;
+    *)
+        # Fail loudly rather than silently succeeding, so a script that grows a new
+        # rdma_topo subcommand cannot pass its tests without the double modelling it.
+        echo "fake rdma_topo: unsupported subcommand '${1:-}'" >&2
+        exit 64
+        ;;
 esac
-
-exit 0
