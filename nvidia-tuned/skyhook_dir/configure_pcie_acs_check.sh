@@ -87,21 +87,20 @@ main() {
         exit 1
     fi
 
-    # Match an active assignment, not a commented example, so a drop-in that would
-    # contribute nothing to the kernel command line fails here rather than surfacing as
-    # a post-interrupt failure after the reboot.
+    # Match an active assignment, so a drop-in that would contribute nothing to the
+    # kernel command line fails here rather than surfacing as a post-interrupt failure
+    # after the reboot.
     #
-    # The optional group is what makes this correct, and it is easy to "simplify" wrong:
-    #   ^[[:space:]]*[^#].*pci=config_acs=          matches "  # pci=config_acs=",
-    #                                               because [^#] consumes a second space
-    #   ^[[:space:]]*[^#[:space:]].*pci=config_acs= rejects a tab-indented active line,
-    #                                               because .* then needs a second token
-    # Making the leading group optional covers both: the token may start at the first
-    # non-blank character, but that character must not be '#'.
-    #
-    # A `grep -v | grep -q` pipeline would also be correct but can return 141 under
-    # pipefail when grep -q exits early and the upstream grep takes SIGPIPE.
-    if ! grep -Eq '^[[:space:]]*([^#[:space:]].*)?pci=config_acs=' "${ACS_GRUB_DROPIN}"; then
+    # Strip each line's comment first, then look for the token. Doing it in one awk pass
+    # rather than a regex is deliberate: every single-pattern form of this test has a
+    # blind spot. '[^#].*' matches an indented comment (it consumes a second space),
+    # '[^#[:space:]].*' rejects a tab-indented active line (the '.*' then needs a second
+    # token), and anchoring only the line prefix still accepts a trailing inline comment
+    # such as 'GRUB_CMDLINE_LINUX_DEFAULT="..." # pci=config_acs=x'. Removing the comment
+    # up front makes all of those fall out. awk is also a single process, so there is no
+    # pipeline that could return 141 under pipefail on an early exit.
+    if ! awk '{ sub(/#.*/, ""); if ($0 ~ /pci=config_acs=/) found = 1 } END { exit !found }' \
+        "${ACS_GRUB_DROPIN}"; then
         echo "ERROR: ${ACS_GRUB_DROPIN} does not contain an active pci=config_acs setting"
         exit 1
     fi

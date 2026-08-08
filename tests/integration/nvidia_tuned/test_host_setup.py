@@ -511,9 +511,18 @@ def test_pcie_acs_config_check_accepts_a_pending_reboot(node):
         ("\tpci=config_acs=1@0008:00:00.0", True),
         ("# pci=config_acs=1@0008:00:00.0", False),
         ("  # pci=config_acs=1@0008:00:00.0", False),
+        ('GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT" # pci=config_acs=1', False),
         ("# example only, nothing active here", False),
     ],
-    ids=["assignment", "bare", "tab-indented", "comment", "indented-comment", "no-token"],
+    ids=[
+        "assignment",
+        "bare",
+        "tab-indented",
+        "comment",
+        "indented-comment",
+        "inline-comment",
+        "no-token",
+    ],
 )
 def test_pcie_acs_config_check_only_accepts_an_active_setting(node, dropin, accepted):
     """A commented example must not satisfy the pre-reboot check, but indentation must.
