@@ -5,12 +5,23 @@
 
 All notable changes to this package will be documented in this file.
 
+## [0.7.1] - 2026-08-10
+
+### Bug Fixes
+
+- *(nvidia-tuned)* Verify PCIe ACS independently of GPU driver state
+- *(nvidia-tuned)* Require an ACS result record before accepting ACS values
+
+
 ## [0.7.0] - 2026-08-10
 
 ### New Features
 
 - *(nvidia-tuned)* Run DOCA Spectrum-X congestion control on OCI GB300 
 
+### Other Tasks
+
+- *(nvidia-tuned)* Update changelog for nvidia-tuned 
 
 ## [0.6.0] - 2026-08-10
 
