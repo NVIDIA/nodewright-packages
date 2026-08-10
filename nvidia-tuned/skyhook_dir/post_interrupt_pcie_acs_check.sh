@@ -35,6 +35,23 @@ PROFILES_DIR="${SKYHOOK_DIR}/profiles"
 RDMA_TOPO_BIN="${RDMA_TOPO_BIN:-rdma_topo}"
 PROC_CMDLINE="${PROC_CMDLINE:-/proc/cmdline}"
 
+# True when the PCIe ACS values are correct.
+#
+# Gates on the ACS lines rather than the tool's exit code. `rdma_topo check` also
+# asserts GPU and DMA iommu_group topology, which requires the GPU driver to be loaded.
+# That is not something this package controls, and on a new cluster it cannot be true
+# yet: Skyhook taints the node, the GPU operator cannot install drivers until Skyhook
+# completes, and Skyhook cannot complete while this check waits on the driver. Keying on
+# the exit code deadlocks bringup.
+#
+# Requires at least one ACS line, so a tool that failed to run is not read as success.
+acs_values_correct() {
+    local out
+    out="$("${RDMA_TOPO_BIN}" check 2>&1 || true)"
+    grep -q "ACS" <<< "${out}" || return 1
+    ! grep -qE "^FAIL[[:space:]]+ACS" <<< "${out}"
+}
+
 # Mirrors acs_requested() in configure_pcie_acs.sh.
 acs_requested() {
     local setting
@@ -75,7 +92,7 @@ main() {
         fail_acs_not_applied "${RDMA_TOPO_BIN} is not installed on this node, so the ACS values cannot be read."
     fi
 
-    if ! "${RDMA_TOPO_BIN}" check; then
+    if ! acs_values_correct; then
         if grep -q "config_acs" "${PROC_CMDLINE}"; then
             fail_acs_not_applied \
                 "The booted kernel command line carries the config_acs argument but the ACS values are still wrong, so the kernel did not act on it. This is what a kernel without pci=config_acs= support looks like."

@@ -412,7 +412,7 @@ See the [tuned package README](../tuned/README.md) for complete documentation on
 
 ## Version
 
-- **Package Version**: 0.7.0
+- **Package Version**: 0.7.1
 - **Base Package**: tuned (latest via preprocess.sh)
 - **Schema Version**: v1
 
