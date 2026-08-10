@@ -1,0 +1,13 @@
+# Instantiate the DOCA Spectrum-X congestion control unit when an RDMA bond device
+# appears, and stop it when the device goes away.
+#
+# This is what makes the daemon survive more than a clean boot: the processes are bound
+# to devices rather than to a one-shot enumeration, so an mlx5 driver reload that
+# removes and recreates mlx5_bond_* brings congestion control back with it. A discovery
+# service that ran once at boot would not.
+#
+# Only the bonded PFs are matched. The per-rail VFs that workload pods receive are a
+# different device layer and are not congestion control targets.
+
+ACTION=="add", SUBSYSTEM=="infiniband", KERNEL=="mlx5_bond_*", TAG+="systemd", ENV{SYSTEMD_WANTS}+="doca-spcx-cc@$name.service"
+ACTION=="remove", SUBSYSTEM=="infiniband", KERNEL=="mlx5_bond_*", RUN+="/usr/bin/systemctl --no-block stop doca-spcx-cc@$name.service"

@@ -1,13 +1,27 @@
 {
     "schema_version": "v1",
     "package_name": "nvidia_tuned",
-    "package_version": "0.6.0",
-    "expected_config_files": ["accelerator"],
+    "package_version": "0.7.0",
+    "expected_config_files": [
+        "accelerator"
+    ],
     "modes": {
         "uninstall": [
             {
                 "name": "uninstall-rdma-vfs-ready",
                 "path": "uninstall_rdma_vfs_ready.sh",
+                "arguments": [],
+                "returncodes": [
+                    0
+                ],
+                "on_host": true,
+                "env": {},
+                "idempotence": true,
+                "upgrade_step": false
+            },
+            {
+                "name": "uninstall-spcx-cc",
+                "path": "uninstall_spcx_cc.sh",
                 "arguments": [],
                 "returncodes": [
                     0
@@ -44,6 +58,18 @@
                 "upgrade_step": false
             },
             {
+                "name": "uninstall-spcx-cc-check",
+                "path": "uninstall_spcx_cc_check.sh",
+                "arguments": [],
+                "returncodes": [
+                    0
+                ],
+                "on_host": true,
+                "env": {},
+                "idempotence": true,
+                "upgrade_step": false
+            },
+            {
                 "name": "uninstall-check",
                 "path": "uninstall_tuned_check.sh",
                 "arguments": [],
@@ -55,7 +81,6 @@
                 "idempotence": true,
                 "upgrade_step": false
             }
-
         ],
         "upgrade": [
             {
@@ -70,7 +95,6 @@
                 "idempotence": true,
                 "upgrade_step": false
             }
-
         ],
         "upgrade-check": [
             {
@@ -85,7 +109,6 @@
                 "idempotence": true,
                 "upgrade_step": false
             }
-
         ],
         "apply": [
             {
@@ -100,7 +123,6 @@
                 "idempotence": true,
                 "upgrade_step": false
             }
-
         ],
         "apply-check": [
             {
@@ -115,7 +137,6 @@
                 "idempotence": true,
                 "upgrade_step": false
             }
-
         ],
         "config": [
             {
@@ -157,6 +178,18 @@
             {
                 "name": "configure-pcie-acs",
                 "path": "configure_pcie_acs.sh",
+                "arguments": [],
+                "returncodes": [
+                    0
+                ],
+                "on_host": true,
+                "env": {},
+                "idempotence": false,
+                "upgrade_step": false
+            },
+            {
+                "name": "configure-spcx-cc",
+                "path": "configure_spcx_cc.sh",
                 "arguments": [],
                 "returncodes": [
                     0
@@ -219,6 +252,18 @@
             {
                 "name": "configure-pcie-acs-check",
                 "path": "configure_pcie_acs_check.sh",
+                "arguments": [],
+                "returncodes": [
+                    0
+                ],
+                "on_host": true,
+                "env": {},
+                "idempotence": true,
+                "upgrade_step": false
+            },
+            {
+                "name": "configure-spcx-cc-check",
+                "path": "configure_spcx_cc_check.sh",
                 "arguments": [],
                 "returncodes": [
                     0

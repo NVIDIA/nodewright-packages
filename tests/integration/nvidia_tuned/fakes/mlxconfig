@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Test double for mlxconfig, reproducing the output shape and the values observed on a
+# working OCI GB300 node. Note PCC_INT_EN reads False there, which is why it is not
+# treated as a prerequisite.
+#
+# FAKE_USER_PROGRAMMABLE_CC overrides the reported value, so the disabled-firmware path
+# can be exercised. FAKE_MLXCONFIG_DEVICE_FAIL names a PCI address to report as disabled.
+
+set -euo pipefail
+
+device=""
+prev=""
+for arg in "$@"; do
+    [[ "${prev}" == "-d" ]] && device="${arg}"
+    prev="${arg}"
+done
+
+subcommand=""
+for arg in "$@"; do
+    case "${arg}" in
+        -d | --device) continue ;;
+        -*) continue ;;
+    esac
+    [[ "${arg}" == "${device}" ]] && continue
+    subcommand="${arg}"
+    break
+done
+
+case "${subcommand}" in
+    q | query) ;;
+    *)
+        # Fail loudly rather than returning query output for an unmodelled subcommand.
+        echo "fake mlxconfig: unsupported subcommand '${subcommand:-<none>}'" >&2
+        exit 64
+        ;;
+esac
+
+upcc="${FAKE_USER_PROGRAMMABLE_CC:-True(1)}"
+if [[ -n "${FAKE_MLXCONFIG_DEVICE_FAIL:-}" && "${device}" == "${FAKE_MLXCONFIG_DEVICE_FAIL}" ]]; then
+    upcc="False(0)"
+fi
+
+cat <<EOF
+
+Device #1:
+----------
+
+Device type:    ConnectX8
+Name:           fake
+Device:         ${device}
+
+Configurations:                              Next Boot
+        ROCE_CC_STEERING_EXT                        ENABLED(2)
+        PCC_INT_EN                                  False(0)
+        TX_SCHEDULER_LOCALITY_MODE                  ACCUMULATIVE(2)
+        USER_PROGRAMMABLE_CC                        ${upcc}
+        ROCE_ADAPTIVE_ROUTING_EN                    True(1)
+
+Apply new Configuration? (y/n) [n] : y
+EOF

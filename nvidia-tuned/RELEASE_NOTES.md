@@ -20,6 +20,88 @@ example is not itself picked up as release notes):
     - Notable behavior change worth calling out.
 -->
 
+## 0.7.0
+
+Adds DOCA Spectrum-X congestion control for GB300 nodes on OCI.
+
+**Upgrade note: congestion control is enabled by default.** An existing `service: oci`,
+`accelerator: gb300` deployment that moves to 0.7.0 starts running `doca_spcx_cc` with
+no custom resource change, because an absent `spcx_cc` key means on. Set
+`spcx_cc: "off"` in the package configMap before upgrading if that is not wanted.
+Nothing changes for any other `service`/`accelerator` pair: the step resolves bundled
+assets by service and accelerator and is a no-op when a pair ships none.
+
+- **New `config` step `configure-spcx-cc`.** Installs a `doca-spcx-cc@.service` template
+  and a udev rule, then runs one `doca_spcx_cc` process per RDMA bond (`mlx5_bond_*`).
+  These are the host PF bonds, not the VFs that workload pods receive.
+
+  Binding the units to devices through udev is the point. Established by hand with
+  `systemd-run`, the units are transient: they do not
+  survive a reboot, so a rebooted node silently drops out of congestion control. The
+  udev rule also re-instantiates a unit if an mlx5 driver reload removes and recreates
+  the device, which a one-shot enumeration at boot would not.
+
+- **Toggle with the `spcx_cc` configMap key**, not an env var. The operator diffs
+  configMap keys and records them in `status.ConfigUpdates`, so flipping this key
+  re-runs the step and can drive a `configInterrupts` entry; env changes do not. Setting
+  it to a falsey value (`off`, `false`, `0`, `no`) tears down any units this package
+  installed, rather than merely skipping, so the toggle works in both directions.
+
+- **A node with `spcx_cc: "off"` does not need DOCA installed.** The binary is only
+  looked for on the enable path, so opting out never fails a node that lacks the
+  dependency. With it on, a missing binary fails the package with a message naming the
+  cause and the remedy.
+
+- **Refuses to start alongside another owner.** If `doca_spcx_cc` is already running
+  from something this package did not start, the step fails rather than adding a second
+  process per rail; the tool requires exactly one. The error reports the processes,
+  rails, and owning units it actually found rather than assuming particular unit names.
+  On a rack where PCC was established by hand, either stop those units or let the nodes
+  reboot (which clears transient units) before rolling this out.
+
+- **Device selection is by name and structure, not name alone.** The default glob is
+  `mlx5_bond_*`, which is not incidental: `mlx5_ib` uses that name precisely when
+  hardware LAG is active, so it is the driver declaring which devices are bonds. RDMA
+  device names can still be changed, by rdma-core persistent naming or `rdma dev set
+  name`, so `RAIL_GLOB` in the package env overrides the pattern.
+
+  Whatever the glob matches, devices with a `physfn` are skipped: congestion control
+  belongs on host PFs, and a rename can leave a virtual function matching a pattern
+  meant for PFs. This matters on these nodes, where the host itself presents
+  `mlx5_0..3` as VFs alongside the four bonds.
+
+  If nothing matches, the step fails and lists the RDMA devices it did find, rather than
+  installing a udev rule that never fires.
+
+- **Switching it off cannot fail a node.** The off-state check asserts only this
+  package's own artifacts are gone. Congestion control running from somewhere else is
+  reported for context and left alone, because off means this package takes no part, not
+  that nothing else may run it.
+
+- **New `uninstall` step** removes the template unit and udev rule. Processes started
+  outside this package are deliberately left alone.
+
+- **Firmware is checked but never changed.** `USER_PROGRAMMABLE_CC` must read `True(1)`
+  on every rail, because a user-programmable congestion control program cannot take
+  effect without it. It is treated exactly like the DOCA binary: required when the
+  feature is on, never consulted when it is off. A node whose firmware disallows it
+  fails with the offending rail, its PCI address, and the `mlxconfig` command to fix it.
+
+  Setting it remains manual; this package reads these values and never writes them. The other congestion control knobs
+  (`ROCE_CC_STEERING_EXT`, `ROCE_ADAPTIVE_ROUTING_EN`, `TX_SCHEDULER_LOCALITY_MODE`,
+  `PCC_INT_EN`) are reported in the step output but not enforced: their required values
+  are not established, and `PCC_INT_EN` reads `False(0)` on a node where congestion
+  control works, so treating the observed set as mandatory would fail healthy nodes.
+
+  The daemon invocation is the documented one:
+  `doca_spcx_cc -d <rail> -w -1`, with `Restart=on-failure` and `RestartSec=5s`. What
+  differs is only the supervision: a persistent template unit bound to devices by udev,
+  instead of transient units created by hand.
+
+Note on defaults: congestion control trades fairness for tail latency under heavy
+incast, and the effect is workload dependent. `spcx_cc: "off"` is the supported way to
+run without it on nodes where that trade is not wanted.
+
 ## 0.6.0
 
 Adds two host-level fixes for GB300 nodes on OCI.
