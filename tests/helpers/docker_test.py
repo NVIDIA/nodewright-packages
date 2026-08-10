@@ -301,8 +301,12 @@ class DockerTestRunner:
         """Clean up Docker container and temporary files."""
         if self.container:
             try:
-                self.container.stop(timeout=5)
-                self.container.remove()
+                # Go straight to SIGKILL. PID 1 in these containers is `tail`,
+                # which installs no SIGTERM handler, and the kernel ignores
+                # default-disposition signals for PID 1, so a graceful stop()
+                # burned its full timeout (measured 5.25s) on every test before
+                # the SIGKILL landed. Nothing here holds state worth flushing.
+                self.container.remove(force=True)
             except Exception:
                 pass  # Ignore cleanup errors
             finally:
