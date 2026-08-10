@@ -20,6 +20,53 @@ example is not itself picked up as release notes):
     - Notable behavior change worth calling out.
 -->
 
+## 0.6.0
+
+Adds two host-level fixes for GB300 nodes on OCI.
+
+**Upgrade note: `service: oci` with `accelerator: gb300` now requires
+`interrupt: {type: reboot}` on the custom resource.** Both new steps land settings that
+only take effect at boot, and the post-interrupt checks fail if the node has not
+rebooted. Add the interrupt block before rolling 0.6.0 out to those nodes. Nothing
+changes for `eks`, `aks`, `bcm`, or any other `service`/`accelerator` pair: both steps
+resolve bundled assets by service and accelerator and are no-ops when a pair ships none.
+
+- **New `config` step `configure-pcie-acs`.** GB300 nodes ship with ACS enabled on the
+  RoCE NIC root ports, which blocks peer-to-peer DMA: `rdma_topo check` fails on every
+  stock node and `mlx5dv_reg_dmabuf_mr` returns ENOTSUPP. The step runs the node's own
+  `rdma_topo` tool to generate a `pci=config_acs=...` bootloader drop-in, then
+  regenerates the grub config. Measured on a two-node, eight-GPU RoCE all_reduce run,
+  correcting ACS raised peak busbw from 360 GB/s to 426 GB/s and made DMA-BUF work, so
+  `nvidia_peermem` is no longer required and `NCCL_DMABUF_ENABLE=0` can be dropped on
+  nodes where the correction takes effect.
+  The generated values hardcode local PCI addresses and are not portable across shapes,
+  so they are generated per node rather than baked into the image. The step opts in via
+  a bundled `profiles/service/oci/pcie-acs-gb300.enabled` marker.
+
+  The correction only takes effect on kernels that honour `pci=config_acs=`. On a node
+  whose kernel does not, the drop-in is written but ignored, and the post-interrupt
+  check fails the node with a message naming the cause, the cost, and the remedy. Set
+  `CONFIGURE_PCIE_ACS=false` in the package `env` on such nodes: that skips the
+  correction and its checks, and `nvidia_peermem` plus `NCCL_DMABUF_ENABLE=0` remain
+  required there. The reboot interrupt is still needed either way, for the VF gate.
+- **New `config` step `install-rdma-vfs-ready`.** The sriov device plugin enumerates PCI
+  devices once at startup and never rescans, but the Oracle Cloud Agent creates the RDMA
+  VFs roughly 70 seconds after boot. The plugin therefore started first, found nothing,
+  and the node advertised `nvidia.com/mlnxnics: 0` permanently until the pod was deleted
+  by hand. The step installs a `rdma-vfs-ready.service` unit that orders before
+  `kubelet.service` and waits for the VFs to appear. The wait always exits 0, including
+  on timeout and on a partial VF count that has stopped moving, so it can never strand a
+  node outside the cluster.
+- **New `post-interrupt-check` steps** assert the corrected ACS values are live and that
+  the VF gate ran during boot.
+- **New `uninstall` step** removes the `rdma-vfs-ready.service` unit and its helper, so
+  uninstalling the package does not leave an unowned unit ordering kubelet. The PCIe ACS
+  bootloader drop-in is deliberately left in place: it corrects a node-level hardware
+  misconfiguration rather than installing package state, and reverting it would degrade
+  RDMA performance and need another reboot. Remove
+  `/etc/default/grub.d/config-acs.cfg` by hand and re-run `update-grub` if you want the
+  stock ACS values back.
+
 ## 0.5.1
 
 Fixes profile `[sysctl]` values being silently overwritten by `/etc/sysctl.d`.

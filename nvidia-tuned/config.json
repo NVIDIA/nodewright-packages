@@ -1,10 +1,22 @@
 {
     "schema_version": "v1",
     "package_name": "nvidia_tuned",
-    "package_version": "0.5.1",
+    "package_version": "0.6.0",
     "expected_config_files": ["accelerator"],
     "modes": {
         "uninstall": [
+            {
+                "name": "uninstall-rdma-vfs-ready",
+                "path": "uninstall_rdma_vfs_ready.sh",
+                "arguments": [],
+                "returncodes": [
+                    0
+                ],
+                "on_host": true,
+                "env": {},
+                "idempotence": true,
+                "upgrade_step": false
+            },
             {
                 "name": "uninstall",
                 "path": "uninstall_tuned.sh",
@@ -19,6 +31,18 @@
             }
         ],
         "uninstall-check": [
+            {
+                "name": "uninstall-rdma-vfs-ready-check",
+                "path": "uninstall_rdma_vfs_ready_check.sh",
+                "arguments": [],
+                "returncodes": [
+                    0
+                ],
+                "on_host": true,
+                "env": {},
+                "idempotence": true,
+                "upgrade_step": false
+            },
             {
                 "name": "uninstall-check",
                 "path": "uninstall_tuned_check.sh",
@@ -119,6 +143,30 @@
                 "upgrade_step": false
             },
             {
+                "name": "install-rdma-vfs-ready",
+                "path": "install_rdma_vfs_ready.sh",
+                "arguments": [],
+                "returncodes": [
+                    0
+                ],
+                "on_host": true,
+                "env": {},
+                "idempotence": true,
+                "upgrade_step": false
+            },
+            {
+                "name": "configure-pcie-acs",
+                "path": "configure_pcie_acs.sh",
+                "arguments": [],
+                "returncodes": [
+                    0
+                ],
+                "on_host": true,
+                "env": {},
+                "idempotence": false,
+                "upgrade_step": false
+            },
+            {
                 "name": "config",
                 "path": "apply_tuned_profile.sh",
                 "arguments": [],
@@ -157,6 +205,30 @@
                 "upgrade_step": false
             },
             {
+                "name": "install-rdma-vfs-ready-check",
+                "path": "install_rdma_vfs_ready_check.sh",
+                "arguments": [],
+                "returncodes": [
+                    0
+                ],
+                "on_host": true,
+                "env": {},
+                "idempotence": true,
+                "upgrade_step": false
+            },
+            {
+                "name": "configure-pcie-acs-check",
+                "path": "configure_pcie_acs_check.sh",
+                "arguments": [],
+                "returncodes": [
+                    0
+                ],
+                "on_host": true,
+                "env": {},
+                "idempotence": true,
+                "upgrade_step": false
+            },
+            {
                 "name": "config-check",
                 "path": "apply_tuned_profile_check.sh",
                 "arguments": [],
@@ -170,6 +242,30 @@
             }
         ],
         "post-interrupt-check": [
+            {
+                "name": "post-interrupt-rdma-vfs-ready-check",
+                "path": "post_interrupt_rdma_vfs_ready_check.sh",
+                "arguments": [],
+                "returncodes": [
+                    0
+                ],
+                "on_host": true,
+                "env": {},
+                "idempotence": true,
+                "upgrade_step": false
+            },
+            {
+                "name": "post-interrupt-pcie-acs-check",
+                "path": "post_interrupt_pcie_acs_check.sh",
+                "arguments": [],
+                "returncodes": [
+                    0
+                ],
+                "on_host": true,
+                "env": {},
+                "idempotence": true,
+                "upgrade_step": false
+            },
             {
                 "name": "post-interrupt-check",
                 "path": "post_interrupt_tuned_check.sh",

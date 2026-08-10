@@ -79,7 +79,11 @@ profiles/
         ├── tuned.conf.template  # RDMA IPv6 defaults for OCI's IPv6/SLAAC RoCE fabric
         ├── script.sh            # Re-enables IPv6 on existing mlx5 RDMA VFs
         ├── nvidia-gb300-performance.conf   # Re-roots gb300 onto the bootloader-free base
-        └── nccl-topo-gb300.xml  # Installed to ${TOPO_PATH} by the write-nccl-topo config step
+        ├── nccl-topo-gb300.xml  # Installed to ${TOPO_PATH} by the write-nccl-topo config step
+        ├── pcie-acs-gb300.enabled          # Opts gb300 in to the configure-pcie-acs config step
+        └── rdma-vfs-ready-gb300/           # Installed by the install-rdma-vfs-ready config step
+            ├── rdma-vfs-ready.service
+            └── wait-rdma-vfs.sh
 ```
 
 Note: Profiles are stored in `profiles/` (not `root_dir/`) to avoid polluting the host filesystem during package extraction. The prepare scripts explicitly copy profiles to the appropriate tuned directories.
@@ -94,7 +98,18 @@ Note: Profiles are stored in `profiles/` (not `root_dir/`) to avoid polluting th
    - Copies the appropriate OS-specific workload profiles to the resolved tuned profiles dir (`/etc/tuned/profiles` on tuned >= 2.23, else `/etc/tuned`)
    - If a `service` is specified, creates service profile with dynamic `include=` pointing to the workload profile
 
-2. **Config stage**: The inherited `tuned` package applies the configured profile
+2. **Host setup steps**: three steps run between `prepare` and the profile apply. Each
+   resolves a bundled asset from the configured `service` and `accelerator` and is a
+   no-op when that pair ships nothing, so they cost nothing for pairs that do not use
+   them:
+   - `write-nccl-topo` installs `profiles/service/{service}/nccl-topo-{accelerator}.xml`
+     to `${TOPO_PATH}`
+   - `install-rdma-vfs-ready` installs and enables the systemd unit in
+     `profiles/service/{service}/rdma-vfs-ready-{accelerator}/`
+   - `configure-pcie-acs` runs the node's `rdma_topo` tool when
+     `profiles/service/{service}/pcie-acs-{accelerator}.enabled` is present
+
+3. **Config stage**: The inherited `tuned` package applies the configured profile
 
 ### Profile Name Construction
 
@@ -216,7 +231,7 @@ spec:
         service: aks
 ```
 
-**OCI tuning** (GB300 on OCI, applies without a reboot, installs an NCCL topology file):
+**OCI tuning** (GB300 on OCI: NCCL topology file, PCIe ACS correction, RDMA VF boot gate):
 
 ```yaml
 apiVersion: skyhook.nvidia.com/v1alpha1
@@ -230,7 +245,9 @@ spec:
   packages:
     nvidia-tuned:
       image: ghcr.io/nvidia/nodewright-packages/nvidia-tuned
-      version: 0.5.0
+      version: 0.6.0
+      interrupt:
+        type: reboot
       env:
         - name: TOPO_PATH
           value: /etc/nccl/gb300-topo.xml
@@ -240,8 +257,28 @@ spec:
         service: oci
 ```
 
-No `interrupt` is needed: the `oci` gb300 chain carries no `[bootloader]` settings, so
-the profile applies live.
+`interrupt: {type: reboot}` is required as of 0.6.0, and stays required even with
+`CONFIGURE_PCIE_ACS=false`, because the RDMA VF gate is a boot-ordering unit. The tuned
+profile chain itself still carries no `[bootloader]` settings and applies live, but two
+host-level steps do need a reboot:
+
+- **PCIe ACS correction.** GB300 nodes ship with ACS enabled on the RoCE NIC root
+  ports, which blocks peer-to-peer DMA. The `configure-pcie-acs` step runs the node's
+  `rdma_topo` tool to generate a `pci=config_acs=...` bootloader drop-in, which only
+  takes effect on the next boot. Correcting it raised measured all_reduce peak busbw
+  from 360 GB/s to 426 GB/s on a two-node, eight-GPU RoCE run and made DMA-BUF work, which
+  removes the need for `nvidia_peermem` and `NCCL_DMABUF_ENABLE=0` on nodes where the
+  correction takes effect. It only takes effect on kernels that honour
+  `pci=config_acs=`; on a node whose kernel does not, set `CONFIGURE_PCIE_ACS=false`
+  (see the environment variables below), keep `nvidia_peermem` loaded, and keep
+  `NCCL_DMABUF_ENABLE=0` set.
+- **RDMA VF boot gate.** The `install-rdma-vfs-ready` step installs a
+  `rdma-vfs-ready.service` unit that orders before `kubelet.service` and waits for the
+  Oracle Cloud Agent to create the RDMA VFs. It is a boot-ordering gate, so it only has
+  an effect from the next boot.
+
+Both steps are no-ops for every other `service`/`accelerator` pair, so existing `eks`,
+`aks`, and `bcm` deployments are unaffected and still need no `interrupt`.
 
 ### ConfigMap Fields
 
@@ -254,9 +291,11 @@ the profile applies live.
 > **gb300 / oci:** `gb300` ships a `performance` profile only. The base
 > `nvidia-gb300-performance` profile keeps the reboot-requiring `[bootloader]` tuning
 > (same as gb200); with `service=oci`, gb300 uses a bootloader-free profile chain
-> (`nvidia-gb300-noreboot-base`) so the tuning applies without a reboot. The `oci`
-> service also sets the RDMA IPv6 defaults that OCI's IPv6/SLAAC RoCE fabric needs, and
-> installs the bundled NCCL topology file (see `TOPO_PATH` below).
+> (`nvidia-gb300-noreboot-base`) so the tuning itself applies without a reboot. The
+> `oci` service also sets the RDMA IPv6 defaults that OCI's IPv6/SLAAC RoCE fabric
+> needs, and installs the bundled NCCL topology file (see `TOPO_PATH` below).
+> As of 0.6.0 the pair also runs the PCIe ACS correction and installs the RDMA VF boot
+> gate, both of which require `interrupt: {type: reboot}` on the custom resource.
 
 ## Available Profiles
 
@@ -284,13 +323,14 @@ the profile applies live.
 | `eks` | eks-specific settings (MAC address policy for CNI) |
 | `aks` | aks-specific settings (MAC address policy, grub.d bootloader workaround for Ubuntu) |
 | `bcm` | bcm-specific settings (bootloader-free vr200 chain, applies without a reboot) |
-| `oci` | oci-specific settings (RDMA IPv6 defaults, NCCL topology file, applies without a reboot) |
+| `oci` | oci-specific settings (RDMA IPv6 defaults, NCCL topology file, PCIe ACS correction and RDMA VF boot gate on gb300; requires `interrupt: {type: reboot}`) |
 
 ### Environment Variables
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `TOPO_PATH` | No | `/etc/nccl/topo.xml` | Absolute host path the bundled NCCL topology file is written to. Only used when the configured `service`/`accelerator` pair ships one (today `oci` + `gb300`); otherwise the step is a no-op. Point `NCCL_TOPO_FILE` at the same path in your workloads. |
+| `CONFIGURE_PCIE_ACS` | No | `true` | Set to `false` to skip the PCIe ACS correction and its checks. Only relevant to a `service`/`accelerator` pair that opts in (today `oci` + `gb300`). Use this on nodes whose kernel does not honour `pci=config_acs=`, where the correction cannot take effect and the post-interrupt check would otherwise fail the node. |
 
 ## Adding OS-Specific Overrides
 
@@ -315,6 +355,24 @@ tuned-adm active
 tuned-adm verify
 ```
 
+On `service: oci` with `accelerator: gb300`, also verify the two host-level steps after
+the node has rebooted:
+
+```bash
+# PCIe ACS values are correct on the RoCE NIC root ports
+rdma_topo check
+
+# The kernel booted with the generated ACS argument
+grep -o 'pci=config_acs=[^ ]*' /proc/cmdline
+
+# The RDMA VF gate ran ahead of kubelet
+systemctl status rdma-vfs-ready.service
+journalctl -u rdma-vfs-ready.service
+
+# The VFs the gate waited for are present
+ls -d /sys/class/net/*/device/physfn | wc -l
+```
+
 ## Inheritance
 
 This package inherits all functionality from the base `tuned` package:
@@ -328,7 +386,7 @@ See the [tuned package README](../tuned/README.md) for complete documentation on
 
 ## Version
 
-- **Package Version**: 0.3.0
+- **Package Version**: 0.6.0
 - **Base Package**: tuned (latest via preprocess.sh)
 - **Schema Version**: v1
 

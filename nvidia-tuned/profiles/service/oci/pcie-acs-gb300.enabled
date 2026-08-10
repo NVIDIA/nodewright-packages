@@ -1,0 +1,6 @@
+# Marker: opt this service/accelerator pair in to the PCIe ACS correction run by
+# skyhook_dir/configure_pcie_acs.sh. The file is a switch; its contents are ignored.
+#
+# GB300 nodes on OCI ship with ACS enabled on the RoCE NIC root ports, which blocks
+# peer-to-peer DMA. Correcting it requires a reboot, so a custom resource selecting
+# service=oci with accelerator=gb300 must declare interrupt: {type: reboot}.
