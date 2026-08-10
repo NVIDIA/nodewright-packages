@@ -26,6 +26,7 @@ for testing NodeWright package scripts in isolated environments.
 import os
 import shutil
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
@@ -128,6 +129,34 @@ class DockerTestRunner:
         
         return skyhook_package_dir
     
+    def wait_until_ready(self, timeout: float = 30.0):
+        """Poll until the container accepts exec and the package mount is visible.
+
+        Replaces a flat `time.sleep(1)`, which was both wasteful (paid once per
+        test) and a latent flake: a container that needed 1.1s would fail.
+        """
+        deadline = time.monotonic() + timeout
+        last_error = None
+
+        while time.monotonic() < deadline:
+            try:
+                probe = self.container.exec_run(["test", "-d", "/skyhook-package"], workdir="/")
+                if probe.exit_code == 0:
+                    return
+            except Exception as exc:  # container not accepting exec yet
+                last_error = exc
+            time.sleep(0.05)
+
+        detail = f" (last error: {last_error})" if last_error else ""
+        raise RuntimeError(
+            f"Container {self.container.id[:12]} never became ready within "
+            f"{timeout}s{detail}.\n"
+            f"If /skyhook-package is empty, the Docker daemon cannot see "
+            f"{self.temp_dir!r}. On macOS (colima or Docker Desktop) TMPDIR must be "
+            f"a path the daemon shares; the default /var/folders/... is not. Try:\n"
+            f'    export TMPDIR="$HOME/.cache/skyhook-tests"'
+        )
+
     def run_script(
         self,
         script: str,
@@ -195,8 +224,7 @@ class DockerTestRunner:
             )
             
             # Wait for container to be ready
-            import time
-            time.sleep(1)
+            self.wait_until_ready()
             
             # Verify script exists in container
             check_result = self.container.exec_run(
