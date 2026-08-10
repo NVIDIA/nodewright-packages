@@ -20,6 +20,16 @@ example is not itself picked up as release notes):
     - Notable behavior change worth calling out.
 -->
 
+## 0.7.1
+
+Fixes the PCIe ACS checks rejecting a node whose GPU driver is not loaded.
+
+`rdma_topo check` also asserts GPU and DMA iommu_group topology, and the checks keyed on
+its exit code. On a new cluster that cannot succeed: Skyhook taints the node, the GPU
+operator cannot install drivers until Skyhook completes, and Skyhook cannot complete
+while the post-interrupt check waits on the driver. The checks now gate on the tool's
+ACS lines, so correct ACS passes regardless of driver state while wrong ACS still fails.
+
 ## 0.7.0
 
 Adds DOCA Spectrum-X congestion control for GB300 nodes on OCI.

@@ -628,3 +628,57 @@ def test_pcie_acs_stays_on_for_any_non_falsey_value(node, value):
     assert rc == 0, output(node)
     assert said(node, "reboot is required"), output(node)
     assert exists(node, ACS_DROPIN)
+
+
+# ---------------------------------------------------------------------------
+# ACS verification must not depend on GPU driver state
+# ---------------------------------------------------------------------------
+
+
+def test_pcie_acs_accepts_correct_acs_when_the_gpu_driver_is_absent(node):
+    """`rdma_topo check` also asserts GPU topology, which this package does not control.
+
+    On a new cluster this is every node: Skyhook taints it, the GPU operator cannot
+    install drivers until Skyhook completes, and Skyhook cannot complete if this check
+    waits on the driver. Keying on the tool's exit code deadlocks bringup, so the checks
+    gate on the ACS lines instead.
+    """
+    configure(node, **OCI_GB300)
+    nogpu = {"FAKE_RDMA_TOPO_CHECK": "nogpu"}
+
+    # Correct ACS is recognised, so no bootloader rewrite is attempted.
+    assert step(node, "configure_pcie_acs.sh", nogpu) == 0, output(node)
+    assert said(node, "already correct"), output(node)
+    assert not exists(node, ACS_DROPIN)
+
+    assert step(node, "configure_pcie_acs_check.sh", nogpu) == 0, output(node)
+    assert said(node, "values are correct"), output(node)
+
+    # The post-interrupt check is the one that would have deadlocked a new cluster.
+    assert step(node, "post_interrupt_pcie_acs_check.sh", nogpu) == 0, output(node)
+    assert said(node, "correct after reboot"), output(node)
+
+
+def test_pcie_acs_still_fails_when_acs_itself_is_wrong(node):
+    """Ignoring GPU topology must not weaken the ACS assertion."""
+    configure(node, **OCI_GB300)
+    failing = {"FAKE_RDMA_TOPO_CHECK": "fail"}
+
+    assert step(node, "configure_pcie_acs.sh", failing) == 0, output(node)
+    assert said(node, "reboot is required"), output(node)
+    assert step(node, "post_interrupt_pcie_acs_check.sh", failing) != 0
+    assert said(node, "did not take effect on this node"), output(node)
+
+
+def test_pcie_acs_rejects_unreadable_acs_state(node):
+    """A diagnostic mentioning ACS is not an ACS result; unreadable must not pass."""
+    configure(node, **OCI_GB300)
+    unreadable = {"FAKE_RDMA_TOPO_CHECK": "unreadable"}
+
+    # Treated as "not correct", so the correction is attempted rather than skipped.
+    assert step(node, "configure_pcie_acs.sh", unreadable) == 0, output(node)
+    assert said(node, "reboot is required"), output(node)
+
+    # And it must not be reported as verified.
+    assert step(node, "post_interrupt_pcie_acs_check.sh", unreadable) != 0
+    assert said(node, "did not take effect on this node"), output(node)

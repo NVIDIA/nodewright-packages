@@ -79,6 +79,26 @@ acs_enabled() {
     [[ -f "${PROFILES_DIR}/service/${service}/pcie-acs-${accelerator}.enabled" ]]
 }
 
+# True when the PCIe ACS values are correct.
+#
+# Gates on the ACS lines rather than the tool's exit code. `rdma_topo check` also
+# asserts GPU and DMA iommu_group topology, which requires the GPU driver to be loaded.
+# That is not something this package controls, and on a new cluster it cannot be true
+# yet: Skyhook taints the node, the GPU operator cannot install drivers until Skyhook
+# completes, and Skyhook cannot complete while this check waits on the driver. Keying on
+# the exit code deadlocks bringup.
+#
+# Requires at least one ACS line, so a tool that failed to run is not read as success.
+acs_values_correct() {
+    local out
+    out="$("${RDMA_TOPO_BIN}" check 2>&1 || true)"
+    # An ACS result record must be present. Merely mentioning ACS is not evidence: a
+    # diagnostic such as "ACS query unavailable" would otherwise pass the presence test,
+    # match no FAIL, and report unreadable state as correct.
+    grep -qE "^(OK|FAIL)[[:space:]]+ACS([[:space:]]|$)" <<< "${out}" || return 1
+    ! grep -qE "^FAIL[[:space:]]+ACS([[:space:]]|$)" <<< "${out}"
+}
+
 # Regenerate the bootloader config. Mirrors the fallback chain in kdump's
 # update_grub_config().
 regenerate_grub() {
@@ -116,7 +136,7 @@ main() {
     # `rdma_topo check` reads the live kernel state, so it keeps failing between the
     # grub write and the reboot. Re-running write-grub-acs in that window is harmless:
     # the tool regenerates the same drop-in from the same topology.
-    if "${RDMA_TOPO_BIN}" check; then
+    if acs_values_correct; then
         echo "PCIe ACS values are already correct; nothing to do"
         return 0
     fi

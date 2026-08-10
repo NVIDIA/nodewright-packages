@@ -18,9 +18,15 @@
 
 # Test double for the rdma_topo tool that ships in the OCI GB300 node image.
 #
-# FAKE_RDMA_TOPO_CHECK=pass  -> `check` succeeds
-# FAKE_RDMA_TOPO_CHECK=fail  -> `check` fails (the stock GB300 state); default
-# FAKE_RDMA_TOPO_CHECK=fix   -> `check` fails until write-grub-acs has run, then succeeds
+# FAKE_RDMA_TOPO_CHECK=pass    -> ACS lines all OK
+# FAKE_RDMA_TOPO_CHECK=fail    -> ACS lines report FAIL (the stock GB300 state); default
+# FAKE_RDMA_TOPO_CHECK=fix     -> ACS FAILs until write-grub-acs has run, then OK
+# FAKE_RDMA_TOPO_CHECK=nogpu   -> ACS all OK, but the GPU iommu_group assertion fails
+#                                 and the tool exits non-zero. This is a node whose GPU
+#                                 driver is not loaded, which on a new cluster is every
+#                                 node until Skyhook completes.
+# FAKE_RDMA_TOPO_CHECK=unreadable -> mentions ACS in a diagnostic but emits no ACS
+#                                 result record. Unreadable state must not read as OK.
 
 set -euo pipefail
 
@@ -32,19 +38,30 @@ echo "$*" >> "${STATE_DIR}/calls"
 
 case "${1:-}" in
     check)
-        case "${FAKE_RDMA_TOPO_CHECK:-fail}" in
+        setting="${FAKE_RDMA_TOPO_CHECK:-fail}"
+        if [[ "${setting}" == "fix" && -f "${STATE_DIR}/wrote-grub-acs" ]]; then
+            setting="pass"
+        fi
+
+        case "${setting}" in
             pass)
-                echo "PASS ACS for grace_rp 0008:00:00.0"
+                echo "OK	All ConnectX DMA functions have correct PCI topology"
+                echo "OK	ACS for grace_rp 0008:00:00.0 has correct values 0011100 = xx111x0"
                 exit 0
                 ;;
-            fix)
-                if [[ -f "${STATE_DIR}/wrote-grub-acs" ]]; then
-                    echo "PASS ACS for grace_rp 0008:00:00.0"
-                    exit 0
-                fi
+            unreadable)
+                echo "rdma_topo: ACS query unavailable"
+                exit 1
+                ;;
+            nogpu)
+                # ACS is correct; only the GPU topology assertion fails, and the tool
+                # still exits non-zero. Keying on the exit code would reject this node.
+                echo "OK	ACS for grace_rp 0008:00:00.0 has correct values 0011100 = xx111x0"
+                echo "FAIL	Kernel iommu_group for DMA 0009:03:00.0 and GPU 0009:06:00.0 are not equal 29 != None"
+                exit 1
                 ;;
         esac
-        echo "FAIL ACS for grace_rp 0008:00:00.0 has incorrect values 0011101 != xx111x0 (0x1d != 0x1c)" >&2
+        echo "FAIL	ACS for grace_rp 0008:00:00.0 has incorrect values 0011101 != xx111x0 (0x1d != 0x1c)"
         exit 1
         ;;
     write-grub-acs)
