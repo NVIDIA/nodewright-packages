@@ -48,8 +48,11 @@ PROC_CMDLINE="${PROC_CMDLINE:-/proc/cmdline}"
 acs_values_correct() {
     local out
     out="$("${RDMA_TOPO_BIN}" check 2>&1 || true)"
-    grep -q "ACS" <<< "${out}" || return 1
-    ! grep -qE "^FAIL[[:space:]]+ACS" <<< "${out}"
+    # An ACS result record must be present. Merely mentioning ACS is not evidence: a
+    # diagnostic such as "ACS query unavailable" would otherwise pass the presence test,
+    # match no FAIL, and report unreadable state as correct.
+    grep -qE "^(OK|FAIL)[[:space:]]+ACS([[:space:]]|$)" <<< "${out}" || return 1
+    ! grep -qE "^FAIL[[:space:]]+ACS([[:space:]]|$)" <<< "${out}"
 }
 
 # Mirrors acs_requested() in configure_pcie_acs.sh.

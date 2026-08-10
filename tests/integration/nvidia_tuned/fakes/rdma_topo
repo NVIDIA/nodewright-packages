@@ -25,6 +25,8 @@
 #                                 and the tool exits non-zero. This is a node whose GPU
 #                                 driver is not loaded, which on a new cluster is every
 #                                 node until Skyhook completes.
+# FAKE_RDMA_TOPO_CHECK=unreadable -> mentions ACS in a diagnostic but emits no ACS
+#                                 result record. Unreadable state must not read as OK.
 
 set -euo pipefail
 
@@ -46,6 +48,10 @@ case "${1:-}" in
                 echo "OK	All ConnectX DMA functions have correct PCI topology"
                 echo "OK	ACS for grace_rp 0008:00:00.0 has correct values 0011100 = xx111x0"
                 exit 0
+                ;;
+            unreadable)
+                echo "rdma_topo: ACS query unavailable"
+                exit 1
                 ;;
             nogpu)
                 # ACS is correct; only the GPU topology assertion fails, and the tool

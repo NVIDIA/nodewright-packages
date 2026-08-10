@@ -668,3 +668,17 @@ def test_pcie_acs_still_fails_when_acs_itself_is_wrong(node):
     assert said(node, "reboot is required"), output(node)
     assert step(node, "post_interrupt_pcie_acs_check.sh", failing) != 0
     assert said(node, "did not take effect on this node"), output(node)
+
+
+def test_pcie_acs_rejects_unreadable_acs_state(node):
+    """A diagnostic mentioning ACS is not an ACS result; unreadable must not pass."""
+    configure(node, **OCI_GB300)
+    unreadable = {"FAKE_RDMA_TOPO_CHECK": "unreadable"}
+
+    # Treated as "not correct", so the correction is attempted rather than skipped.
+    assert step(node, "configure_pcie_acs.sh", unreadable) == 0, output(node)
+    assert said(node, "reboot is required"), output(node)
+
+    # And it must not be reported as verified.
+    assert step(node, "post_interrupt_pcie_acs_check.sh", unreadable) != 0
+    assert said(node, "did not take effect on this node"), output(node)
