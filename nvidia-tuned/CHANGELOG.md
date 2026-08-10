@@ -5,8 +5,46 @@
 
 All notable changes to this package will be documented in this file.
 
-## [Unreleased]
+## [0.7.0] - 2026-08-10
 
+### New Features
+
+- *(nvidia-tuned)* Run DOCA Spectrum-X congestion control on OCI GB300 
+
+
+## [0.6.0] - 2026-08-10
+
+### New Features
+
+- *(nvidia-tuned)* Add PCIe ACS fix and RDMA VF boot gate for OCI GB300 
+
+## [0.5.1] - 2026-08-07
+
+### Bug Fixes
+
+- *(nvidia-tuned)* Restart tuned after changing reapply_sysctl 
+
+## [0.5.0] - 2026-08-07
+
+### New Features
+
+- *(nvidia-tuned)* Add oci service and gb300 accelerator 
+
+## [0.4.0] - 2026-07-16
+
+### New Features
+
+- Add vr200 support to nvidia-setup and nvidia-tuned 
+
+## [0.3.2] - 2026-07-15
+
+### Bug Fixes
+
+- *(nvidia-tuned)* Remove isolcpus from all inference profiles 
+
+### Other Tasks
+
+- *(general)* Regenerate package changelogs to current tags 
 
 ## [0.3.1] - 2026-07-08
 
