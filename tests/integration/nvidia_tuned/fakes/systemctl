@@ -68,6 +68,15 @@ case "${verb}" in
     stop)
         rm -f "${STATE_DIR}/active.${unit}"
         ;;
+    reset-failed)
+        # Clears failed state. Accepts a glob, matching how the teardown calls it.
+        for marker in "${STATE_DIR}"/failed.*; do
+            [[ -e "${marker}" ]] || continue
+            name="${marker##*/}"; name="${name#failed.}"
+            # shellcheck disable=SC2053
+            [[ -z "${unit}" || "${name}" == ${unit} ]] && rm -f "${marker}"
+        done
+        ;;
     is-enabled)
         if [[ -f "${STATE_DIR}/enabled.${unit}" ]]; then
             echo "enabled"

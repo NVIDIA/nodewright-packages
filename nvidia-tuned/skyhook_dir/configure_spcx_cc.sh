@@ -64,7 +64,12 @@ MLXCONFIG_BIN="${MLXCONFIG_BIN:-mlxconfig}"
 # treating the observed set as mandatory would fail healthy nodes.
 REQUIRED_FW_SETTING="USER_PROGRAMMABLE_CC"
 REQUIRED_FW_VALUE="True(1)"
-REPORTED_FW_SETTINGS="ROCE_CC_STEERING_EXT ROCE_ADAPTIVE_ROUTING_EN TX_SCHEDULER_LOCALITY_MODE PCC_INT_EN"
+REPORTED_FW_SETTINGS=(
+    ROCE_CC_STEERING_EXT
+    ROCE_ADAPTIVE_ROUTING_EN
+    TX_SCHEDULER_LOCALITY_MODE
+    PCC_INT_EN
+)
 
 # Resolve the bundled asset directory for the configured service/accelerator, if any.
 resolve_asset_dir() {
@@ -135,6 +140,8 @@ teardown() {
     rm -f "${RULES_DEST}"
     rm -f "${UNIT_DEST}"
     systemctl daemon-reload
+    # A failed instance stays loaded after `disable --now` and would still be listed.
+    systemctl reset-failed 'doca-spcx-cc@*.service' >/dev/null 2>&1 || true
     udevadm control --reload >/dev/null 2>&1 || true
 }
 
@@ -156,11 +163,12 @@ owning_unit() {
 # `systemd-run` loop, a unit under any name, or a bare process with no unit at all, so
 # the report lists what was actually found instead of naming units that may not exist.
 assert_no_foreign_processes() {
-    local pids pid unit rail found=0 report=""
-    pids="$(pgrep -x doca_spcx_cc 2>/dev/null || true)"
-    [[ -n "${pids}" ]] || return 0
+    local pid unit rail found=0 report=""
+    local -a pids
+    mapfile -t pids < <(pgrep -x doca_spcx_cc 2>/dev/null || true)
+    [[ "${#pids[@]}" -gt 0 ]] || return 0
 
-    for pid in ${pids}; do
+    for pid in "${pids[@]}"; do
         unit="$(owning_unit "${pid}")"
         # Instances of this package's own template are not foreign.
         [[ "${unit}" == doca-spcx-cc@* ]] && continue
@@ -247,7 +255,7 @@ EOF
         # are not enforced.
         local extra key
         extra=""
-        for key in ${REPORTED_FW_SETTINGS}; do
+        for key in "${REPORTED_FW_SETTINGS[@]}"; do
             extra+=" ${key}=$(fw_setting "${bdf}" "${key}")"
         done
         echo "Firmware ready on ${rail} (${bdf}): ${REQUIRED_FW_SETTING}=${value}${extra}"

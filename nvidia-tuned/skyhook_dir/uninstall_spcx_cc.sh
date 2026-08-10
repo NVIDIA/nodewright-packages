@@ -56,6 +56,9 @@ main() {
 
     rm -f "${UNIT_DEST}"
     systemctl daemon-reload
+    # A failed instance stays loaded after `disable --now`, and the uninstall check
+    # would read that as incomplete cleanup.
+    systemctl reset-failed 'doca-spcx-cc@*.service' >/dev/null 2>&1 || true
 
     if [[ "${stopped}" -eq 0 ]]; then
         echo "No doca-spcx-cc@ units were present; nothing to stop"

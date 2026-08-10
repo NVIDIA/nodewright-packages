@@ -369,6 +369,11 @@ def test_spcx_cc_never_targets_a_virtual_function(node):
     assert exists(node, "/tmp/fake-systemctl/active.doca-spcx-cc@rdma_rail0.service")
     assert not exists(node, "/tmp/fake-systemctl/active.doca-spcx-cc@rdma_rail1.service")
 
+    # The check must apply the same exclusion. Without it, it would demand an active
+    # unit for the VF that configure deliberately never started.
+    rc = step(node, "configure_spcx_cc_check.sh", {"RAIL_GLOB": "rdma_rail*"})
+    assert rc == 0, output(node)
+
 
 def test_spcx_cc_ignores_host_vfs_with_a_broad_glob(node):
     """Even mlx5_* must not start congestion control on the host's own VFs."""

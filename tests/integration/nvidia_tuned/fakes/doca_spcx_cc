@@ -26,7 +26,11 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         -d | --device) device="${2:-}"; shift 2 ;;
         --device=*) device="${1#*=}"; shift ;;
-        -w) shift; shift || true ;;
+        -w)
+            # The service contract is `-w -1`; anything else means a wrong ExecStart.
+            [[ "${2:-}" == "-1" ]] || { echo "fake doca_spcx_cc: expected -w -1" >&2; exit 64; }
+            shift 2
+            ;;
         *)
             echo "fake doca_spcx_cc: unsupported argument '$1'" >&2
             exit 64

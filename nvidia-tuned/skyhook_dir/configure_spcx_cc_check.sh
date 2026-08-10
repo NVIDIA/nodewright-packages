@@ -75,11 +75,16 @@ spcx_cc_requested() {
     esac
 }
 
+# Mirrors discover_rails() in configure_spcx_cc.sh, including the physfn exclusion.
+# Without it a glob that matches a virtual function would make this demand a unit the
+# configure step deliberately never started.
 discover_rails() {
-    local path
+    local path name
     for path in "${IB_CLASS_DIR}/"${RAIL_GLOB}; do
         [[ -e "${path}" ]] || continue
-        basename "${path}"
+        name="$(basename "${path}")"
+        [[ -e "${path}/device/physfn" ]] && continue
+        echo "${name}"
     done
 }
 
@@ -93,11 +98,12 @@ owning_unit() {
 # Returns non-zero when a doca_spcx_cc process is owned by anything other than this
 # package's template. Mirrors the configure-time guard so drift after config is caught.
 assert_no_foreign_processes() {
-    local pids pid unit rail found=0
-    pids="$(pgrep -x doca_spcx_cc 2>/dev/null || true)"
-    [[ -n "${pids}" ]] || return 0
+    local pid unit rail found=0
+    local -a pids
+    mapfile -t pids < <(pgrep -x doca_spcx_cc 2>/dev/null || true)
+    [[ "${#pids[@]}" -gt 0 ]] || return 0
 
-    for pid in ${pids}; do
+    for pid in "${pids[@]}"; do
         unit="$(owning_unit "${pid}")"
         [[ "${unit}" == doca-spcx-cc@* ]] && continue
         rail="$(tr '\0' ' ' < "/proc/${pid}/cmdline" 2>/dev/null | sed -n 's/.*-d[= ]\([^ ]*\).*/\1/p')"
