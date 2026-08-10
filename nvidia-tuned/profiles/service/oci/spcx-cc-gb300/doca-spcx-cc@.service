@@ -1,0 +1,17 @@
+[Unit]
+Description=DOCA Spectrum-X congestion control on %i
+Documentation=https://github.com/NVIDIA/nodewright-packages/tree/main/nvidia-tuned
+# %i is an RDMA device name such as mlx5_bond_0. The device must exist before the
+# process starts; the udev rule instantiates this unit on device add, which covers
+# both boot and a driver reload that removes and recreates the device.
+ConditionPathExists=/sys/class/infiniband/%i
+ConditionPathExists=/opt/mellanox/doca/tools/doca_spcx_cc
+
+[Service]
+Type=simple
+ExecStart=/opt/mellanox/doca/tools/doca_spcx_cc -d %i -w -1
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

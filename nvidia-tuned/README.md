@@ -81,9 +81,12 @@ profiles/
         ├── nvidia-gb300-performance.conf   # Re-roots gb300 onto the bootloader-free base
         ├── nccl-topo-gb300.xml  # Installed to ${TOPO_PATH} by the write-nccl-topo config step
         ├── pcie-acs-gb300.enabled          # Opts gb300 in to the configure-pcie-acs config step
-        └── rdma-vfs-ready-gb300/           # Installed by the install-rdma-vfs-ready config step
-            ├── rdma-vfs-ready.service
-            └── wait-rdma-vfs.sh
+        ├── rdma-vfs-ready-gb300/           # Installed by the install-rdma-vfs-ready config step
+        │   ├── rdma-vfs-ready.service
+        │   └── wait-rdma-vfs.sh
+        └── spcx-cc-gb300/                  # Installed by the configure-spcx-cc config step
+            ├── doca-spcx-cc@.service
+            └── 99-doca-spcx-cc.rules
 ```
 
 Note: Profiles are stored in `profiles/` (not `root_dir/`) to avoid polluting the host filesystem during package extraction. The prepare scripts explicitly copy profiles to the appropriate tuned directories.
@@ -108,6 +111,8 @@ Note: Profiles are stored in `profiles/` (not `root_dir/`) to avoid polluting th
      `profiles/service/{service}/rdma-vfs-ready-{accelerator}/`
    - `configure-pcie-acs` runs the node's `rdma_topo` tool when
      `profiles/service/{service}/pcie-acs-{accelerator}.enabled` is present
+   - `configure-spcx-cc` installs the DOCA Spectrum-X congestion control template unit
+     and udev rule from `profiles/service/{service}/spcx-cc-{accelerator}/`
 
 3. **Config stage**: The inherited `tuned` package applies the configured profile
 
@@ -231,7 +236,7 @@ spec:
         service: aks
 ```
 
-**OCI tuning** (GB300 on OCI: NCCL topology file, PCIe ACS correction, RDMA VF boot gate):
+**OCI tuning** (GB300 on OCI: NCCL topology, PCIe ACS, RDMA VF gate, congestion control):
 
 ```yaml
 apiVersion: skyhook.nvidia.com/v1alpha1
@@ -245,7 +250,7 @@ spec:
   packages:
     nvidia-tuned:
       image: ghcr.io/nvidia/nodewright-packages/nvidia-tuned
-      version: 0.6.0
+      version: 0.7.0
       interrupt:
         type: reboot
       env:
@@ -255,6 +260,15 @@ spec:
         intent: performance
         accelerator: gb300
         service: oci
+        spcx_cc: "on"
+      configInterrupts:
+        spcx_cc:
+          type: service
+          services:
+            - doca-spcx-cc@mlx5_bond_0
+            - doca-spcx-cc@mlx5_bond_1
+            - doca-spcx-cc@mlx5_bond_2
+            - doca-spcx-cc@mlx5_bond_3
 ```
 
 `interrupt: {type: reboot}` is required as of 0.6.0, and stays required even with
@@ -276,6 +290,16 @@ host-level steps do need a reboot:
   `rdma-vfs-ready.service` unit that orders before `kubelet.service` and waits for the
   Oracle Cloud Agent to create the RDMA VFs. It is a boot-ordering gate, so it only has
   an effect from the next boot.
+- **Spectrum-X congestion control.** The `configure-spcx-cc` step installs a
+  `doca-spcx-cc@.service` template plus a udev rule, running one `doca_spcx_cc` process
+  per RDMA bond (`mlx5_bond_*`). It is enabled by default; set `spcx_cc: "off"` in the
+  configMap to disable it. Binding the units to devices through udev is what makes the
+  state survive both a reboot and an mlx5 driver reload; started by hand with
+  `systemd-run`, the units are transient and vanish on reboot.
+  The step requires `USER_PROGRAMMABLE_CC` to be enabled in the NIC firmware, since a
+  programmable congestion control algorithm cannot take effect without it, and fails
+  with the `mlxconfig` command to fix it otherwise. Setting firmware stays manual.
+  A node with `spcx_cc: "off"` is never checked.
 
 Both steps are no-ops for every other `service`/`accelerator` pair, so existing `eks`,
 `aks`, and `bcm` deployments are unaffected and still need no `interrupt`.
@@ -287,6 +311,7 @@ Both steps are no-ops for every other `service`/`accelerator` pair, so existing 
 | `accelerator` | Yes | — | GPU/accelerator type (e.g., `h100`, `gb200`, `generic`). When set to `generic`, intent and service are ignored |
 | `intent` | No | `performance` | Workload intent (e.g., `inference`, `performance`, `multiNodeTraining`). Ignored when `accelerator=generic` |
 | `service` | No | — | Service name (e.g., `eks`). If specified, service profile wraps the workload profile. Ignored when `accelerator=generic` |
+| `spcx_cc` | No | `on` | DOCA Spectrum-X congestion control. Set to `off` (or `false`, `0`, `no`) to disable it and tear down any units this package installed. Only relevant to a `service`/`accelerator` pair that ships the assets (today `oci` + `gb300`). A node with `spcx_cc: off` does not need DOCA installed. Changing this key re-runs the step, so it can be toggled without a package version bump. |
 
 > **gb300 / oci:** `gb300` ships a `performance` profile only. The base
 > `nvidia-gb300-performance` profile keeps the reboot-requiring `[bootloader]` tuning
@@ -295,7 +320,8 @@ Both steps are no-ops for every other `service`/`accelerator` pair, so existing 
 > `oci` service also sets the RDMA IPv6 defaults that OCI's IPv6/SLAAC RoCE fabric
 > needs, and installs the bundled NCCL topology file (see `TOPO_PATH` below).
 > As of 0.6.0 the pair also runs the PCIe ACS correction and installs the RDMA VF boot
-> gate, both of which require `interrupt: {type: reboot}` on the custom resource.
+> gate, both of which require `interrupt: {type: reboot}` on the custom resource. As of
+> 0.7.0 it also runs DOCA Spectrum-X congestion control, controlled by `spcx_cc`.
 
 ## Available Profiles
 
@@ -323,7 +349,7 @@ Both steps are no-ops for every other `service`/`accelerator` pair, so existing 
 | `eks` | eks-specific settings (MAC address policy for CNI) |
 | `aks` | aks-specific settings (MAC address policy, grub.d bootloader workaround for Ubuntu) |
 | `bcm` | bcm-specific settings (bootloader-free vr200 chain, applies without a reboot) |
-| `oci` | oci-specific settings (RDMA IPv6 defaults, NCCL topology file, PCIe ACS correction and RDMA VF boot gate on gb300; requires `interrupt: {type: reboot}`) |
+| `oci` | oci-specific settings (RDMA IPv6 defaults, NCCL topology file, PCIe ACS correction, RDMA VF boot gate, and Spectrum-X congestion control on gb300; requires `interrupt: {type: reboot}`) |
 
 ### Environment Variables
 
@@ -386,7 +412,7 @@ See the [tuned package README](../tuned/README.md) for complete documentation on
 
 ## Version
 
-- **Package Version**: 0.6.0
+- **Package Version**: 0.7.0
 - **Base Package**: tuned (latest via preprocess.sh)
 - **Schema Version**: v1
 

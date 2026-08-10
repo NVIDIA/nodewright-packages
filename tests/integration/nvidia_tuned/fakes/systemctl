@@ -68,6 +68,15 @@ case "${verb}" in
     stop)
         rm -f "${STATE_DIR}/active.${unit}"
         ;;
+    reset-failed)
+        # Clears failed state. Accepts a glob, matching how the teardown calls it.
+        for marker in "${STATE_DIR}"/failed.*; do
+            [[ -e "${marker}" ]] || continue
+            name="${marker##*/}"; name="${name#failed.}"
+            # shellcheck disable=SC2053
+            [[ -z "${unit}" || "${name}" == ${unit} ]] && rm -f "${marker}"
+        done
+        ;;
     is-enabled)
         if [[ -f "${STATE_DIR}/enabled.${unit}" ]]; then
             echo "enabled"
@@ -86,6 +95,25 @@ case "${verb}" in
         ;;
     status)
         echo "fake status for ${unit}"
+        ;;
+    list-units)
+        # `unit` holds the glob the caller passed, e.g. 'doca-spcx-cc@*.service'.
+        # Emit one unit name per line; callers take field 1.
+        seen=""
+        for marker in "${STATE_DIR}"/enabled.* "${STATE_DIR}"/active.*; do
+            [[ -e "${marker}" ]] || continue
+            name="${marker##*/}"
+            name="${name#enabled.}"
+            name="${name#active.}"
+            case " ${seen} " in *" ${name} "*) continue ;; esac
+            seen="${seen} ${name}"
+            # Glob matching on the right-hand side is the point: callers pass a
+            # pattern such as 'doca-spcx-cc@*.service'.
+            # shellcheck disable=SC2053
+            if [[ -z "${unit}" || "${name}" == ${unit} ]]; then
+                echo "${name} loaded active running fake unit"
+            fi
+        done
         ;;
     *)
         # Fail loudly rather than silently succeeding. A double that returns 0 for an

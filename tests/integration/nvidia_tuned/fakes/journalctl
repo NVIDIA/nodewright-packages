@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Test double for journalctl, scoped to what the congestion control check reads.
+#
+# Emits the daemon's readiness line for a unit only once that unit is marked active by
+# the fake systemctl. Set FAKE_JOURNAL_NEVER_READY=1 to model a daemon that starts but
+# never reports ready, which is the case the check must not silently pass.
+
+set -euo pipefail
+
+STATE_DIR="${FAKE_SYSTEMCTL_STATE:-/tmp/fake-systemctl}"
+
+unit=""
+prev=""
+for arg in "$@"; do
+    [[ "${prev}" == "-u" ]] && unit="${arg}"
+    prev="${arg}"
+done
+
+if [[ -z "${unit}" ]]; then
+    # Fail loudly rather than returning empty output for an unmodelled invocation.
+    echo "fake journalctl: expected -u <unit>" >&2
+    exit 64
+fi
+[[ -e "${STATE_DIR}/active.${unit}" ]] || exit 0
+[[ "${FAKE_JOURNAL_NEVER_READY:-0}" == "1" ]] && exit 0
+
+device="${unit#doca-spcx-cc@}"
+device="${device%.service}"
+echo "PCC host status Active on ${device}"
