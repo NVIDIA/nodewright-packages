@@ -32,6 +32,7 @@ jobs:
     outputs:
       packages: ${{ steps.changes.outputs.packages }}
       has_changes: ${{ steps.changes.outputs.has_changes }}
+      shards: ${{ steps.shards.outputs.shards }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -77,6 +78,22 @@ jobs:
             echo "packages=[]" >> $GITHUB_OUTPUT
             echo "has_changes=false" >> $GITHUB_OUTPUT
             echo "No package changes detected"
+          fi
+
+      # Expand the changed packages into test shards. Only packages that opt in
+      # (SHARD_BY_BASE_IMAGE in their tests/integration/<pkg>/__init__.py) split
+      # into more than one job; everything else gets a single "all" shard.
+      # scripts/test_shards.py is stdlib-only, so this needs no venv.
+      - name: Compute test shards
+        id: shards
+        shell: bash
+        run: |
+          PACKAGES=$(echo '${{ steps.changes.outputs.packages }}' | jq -r '.[]')
+          if [ -z "$PACKAGES" ]; then
+            echo 'shards=[]' >> "$GITHUB_OUTPUT"
+          else
+            # shellcheck disable=SC2086
+            echo "shards=$(python3 scripts/test_shards.py $PACKAGES)" >> "$GITHUB_OUTPUT"
           fi
 
   # Second job: validate changed packages
@@ -173,15 +190,20 @@ jobs:
         run: |
           make validate-inherited PACKAGE="${{ matrix.package }}"
 
-  # Third job: test changed packages
+  # Third job: test changed packages.
+  #
+  # One job per shard. Packages that do not opt into sharding produce exactly one
+  # shard ("all") and behave as before. Keep the job id `test`: the build and
+  # ci-gate jobs list it in `needs:`, and branch protection requires ci-gate.
   test:
     needs: [detect-changes, validate]
-    if: needs.detect-changes.outputs.has_changes == 'true'
+    if: needs.detect-changes.outputs.has_changes == 'true' && needs.detect-changes.outputs.shards != '[]'
     runs-on: ubuntu-latest
+    name: test (${{ matrix.package }} / ${{ matrix.shard }})
     strategy:
       fail-fast: false
       matrix:
-        package: ${{ fromJson(needs.detect-changes.outputs.packages) }}
+        include: ${{ fromJson(needs.detect-changes.outputs.shards) }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -219,11 +241,45 @@ jobs:
           }
           echo "Docker is available and ready for tests"
 
-      - name: Run tests for package
+      # Each shard builds only the one base image it needs, so there is exactly
+      # one distro install per OS across the whole run and they happen
+      # concurrently. No-ops for packages that declare no test-base Dockerfile.
+      - name: Build prebuilt test base images
         if: steps.check-package.outputs.package_changed == 'true'
         shell: bash
         run: |
-          make test-package PACKAGE="${{ matrix.package }}"
+          if [ -n "${{ matrix.base_image }}" ]; then
+            ./venv/bin/python scripts/build_test_base_images.py \
+              --package "${{ matrix.package }}" --base-image "${{ matrix.base_image }}"
+          else
+            ./venv/bin/python scripts/build_test_base_images.py \
+              --package "${{ matrix.package }}"
+          fi
+
+      - name: Run tests for shard
+        if: steps.check-package.outputs.package_changed == 'true'
+        shell: bash
+        run: |
+          TEST_DIR="tests/integration/$(echo '${{ matrix.package }}' | tr '-' '_')"
+          if [ ! -d "$TEST_DIR" ]; then
+            echo "No test directory $TEST_DIR; nothing to run."
+            exit 0
+          fi
+
+          set +e
+          # shellcheck disable=SC2086
+          ./venv/bin/pytest "$TEST_DIR" -n auto -v --durations=10 --durations-min=10.0 \
+            ${{ matrix.args }}
+          status=$?
+          set -e
+
+          # pytest exits 5 when a shard collects nothing. Report that loudly
+          # rather than letting an empty shard look like a pass.
+          if [ "$status" -eq 5 ]; then
+            echo "::warning::Shard '${{ matrix.shard }}' collected no tests."
+            exit 0
+          fi
+          exit "$status"
 
   # Test the shared test harness itself. The package `test` job only runs
   # tests/integration/<package>, and it only runs at all when a package

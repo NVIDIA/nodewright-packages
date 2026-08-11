@@ -26,6 +26,45 @@ from typing import Union, Dict, List
 from tests.helpers.docker_test import DockerTestRunner
 
 
+def pytest_addoption(parser):
+    """CI shard selection.
+
+    Shards must never be selected with `-k <image>`: test IDs only carry an
+    image suffix when the test is parametrized by base_image, so `-k` silently
+    drops every test that is pinned to a fixed image. These options select
+    explicitly instead. tests/test_sharding.py guards the partition.
+    """
+    parser.addoption(
+        "--base-image", action="store", default=None,
+        help="Restrict TEST_MATRIX to a single base image (used for CI sharding).",
+    )
+    parser.addoption(
+        "--matrix-scope", action="store", default="all",
+        choices=["all", "matrix", "no-matrix"],
+        help=(
+            "Select only tests parametrized by base_image ('matrix'), only tests "
+            "that are not ('no-matrix'), or everything ('all')."
+        ),
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    """Split tests into the matrix / no-matrix shards without using -k."""
+    scope = config.getoption("--matrix-scope")
+    if scope == "all":
+        return
+
+    kept, deselected = [], []
+    for item in items:
+        callspec = getattr(item, "callspec", None)
+        is_matrix = callspec is not None and "base_image" in callspec.params
+        (kept if (scope == "matrix") == is_matrix else deselected).append(item)
+
+    if deselected:
+        config.hook.pytest_deselected(items=deselected)
+        items[:] = kept
+
+
 def get_test_matrix(package_name: str) -> List[Union[str, Dict]]:
     """
     Get the test matrix for a package.
@@ -121,5 +160,14 @@ def pytest_generate_tests(metafunc):
                     # Generate IDs for better test names
                     ids = [normalize_matrix_entry(entry).get("name", img.replace(":", "-")) for entry, img in zip(matrix, base_images)]
                     
+                    # Restrict to one base image when CI is sharding by OS.
+                    selected = metafunc.config.getoption("--base-image")
+                    if selected is not None:
+                        pairs = [
+                            (img, i) for img, i in zip(base_images, ids) if img == selected
+                        ]
+                        base_images = [img for img, _ in pairs]
+                        ids = [i for _, i in pairs]
+
                     # Parametrize the test
                     metafunc.parametrize("base_image", base_images, ids=ids)

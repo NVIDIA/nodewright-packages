@@ -23,6 +23,12 @@ Define the containers/base images to test against.
 Each entry can be a string (base image name) or a dict with additional config.
 """
 
+# Split this package's CI test job into one job per base image, plus one for the
+# tests pinned to a fixed image. Only worth it for a suite big enough to dwarf
+# the ~60-90s of fixed per-job setup (checkout, venv, pip, image pulls); every
+# other package in this repo finishes in well under a minute and leaves this off.
+SHARD_BY_BASE_IMAGE = True
+
 # Test matrix: list of base images to test against
 TEST_MATRIX = [
     "ubuntu:26.04",  # Resolute (vr200 is 26.04-only)
