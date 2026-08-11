@@ -24,8 +24,10 @@
 # version sort orders pre-releases correctly (see docs/release-process.md).
 #
 # Tags in this repo are <package>/<version> with no "v" prefix (e.g.
-# nvidia-setup/0.3.0). Packages are discovered at runtime as top-level
-# directories containing a config.json.
+# nvidia-setup/0.3.0). The package component must match [a-z][a-z0-9-]*
+# (lowercase letters, digits, hyphens only, starting with a letter); the
+# release workflows enforce this grammar. Packages are discovered at runtime
+# as top-level directories containing a config.json.
 #
 # The tag is created on the current HEAD. Make sure the release commit (CHANGELOG
 # cut, version bump, etc.) is already committed and checked out before tagging.

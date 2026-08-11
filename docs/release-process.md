@@ -8,6 +8,11 @@ the form `<package>/<version>` with no `v` prefix, for example
 `nvidia-setup/0.3.0`. Pushing such a tag triggers `.github/workflows/release.yml`,
 which builds the release notes and creates the GitHub Release.
 
+Package names (the `<package>` component of a tag) must match `[a-z][a-z0-9-]*`:
+lowercase ASCII letters, digits, and hyphens only, starting with a letter. The
+release workflows enforce this and reject any tag whose package component falls
+outside this grammar.
+
 ## Two-file model
 
 Each package owns two changelog files:

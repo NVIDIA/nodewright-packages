@@ -53,6 +53,10 @@ jobs:
           REF_NAME: ${{ github.ref_name }}
         run: |
           PACKAGE_NAME="${REF_NAME%%/*}"
+          if ! [[ "${PACKAGE_NAME}" =~ ^[a-z][a-z0-9-]*$ ]]; then
+            echo "ERROR: package component '${PACKAGE_NAME}' must match [a-z][a-z0-9-]* (lowercase letters, digits, hyphens only)" >&2
+            exit 1
+          fi
           echo "package_name=${PACKAGE_NAME}" >> $GITHUB_OUTPUT
 
       - name: Build and push Docker image
