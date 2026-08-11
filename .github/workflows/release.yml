@@ -54,6 +54,10 @@ jobs:
         id: extract
         run: |
           PACKAGE_NAME=$(echo "${GITHUB_REF_NAME}" | cut -f 1 -d /)
+          if ! [[ "${PACKAGE_NAME}" =~ ^[a-z][a-z0-9-]*$ ]]; then
+            echo "ERROR: package component '${PACKAGE_NAME}' must match [a-z][a-z0-9-]* (lowercase letters, digits, hyphens only)" >&2
+            exit 1
+          fi
           echo "package_name=${PACKAGE_NAME}" >> "$GITHUB_OUTPUT"
 
       # git-cliff release assets are versioned in the filename
@@ -154,6 +158,10 @@ jobs:
             PRERELEASE_FLAG="--prerelease"
           else
             echo "ERROR: tag '${GITHUB_REF_NAME}' does not match <package>/<MAJOR>.<MINOR>.<PATCH> or <package>/<MAJOR>.<MINOR>.<PATCH>-rc.<N>" >&2
+            exit 1
+          fi
+          if ! git check-ref-format "${GITHUB_REF_NAME}"; then
+            echo "ERROR: '${GITHUB_REF_NAME}' is not a valid git ref name" >&2
             exit 1
           fi
           if ! gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
