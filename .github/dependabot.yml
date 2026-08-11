@@ -1,0 +1,53 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Keeps the pinned GitHub Actions current. Every `uses:` in this repo is pinned
+# to a commit SHA with a trailing `# vX.Y.Z` comment (see AGENTS.md); Dependabot
+# understands that convention and bumps the SHA and the comment together, which
+# is what makes SHA pinning maintainable rather than a thing that silently rots.
+#
+# Without this, actions drift until something forces the issue: the whole set
+# went stale enough to trip the Node 20 runtime deprecation before anyone
+# noticed.
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    # "/" covers .github/workflows; the composite action needs its own entry
+    # because its `uses:` refs live in .github/actions/build-package/action.yml.
+    directories:
+      - "/"
+      - "/.github/actions/build-package"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: America/Los_Angeles
+    open-pull-requests-limit: 5
+    labels:
+      - component/ci
+    # commitlint runs on the PR title and every commit, so Dependabot's default
+    # "Bump x from y to z" subject would fail CI. This makes it
+    # "chore(general/ci): bump x from y to z", which is a valid Conventional
+    # Commit with the scope this repo uses for CI-wide changes.
+    commit-message:
+      prefix: chore(general/ci)
+    # One PR for all action bumps rather than one per action. Keeps the review
+    # surface small and avoids five near-identical PRs every Monday.
+    groups:
+      github-actions:
+        patterns:
+          - "*"
