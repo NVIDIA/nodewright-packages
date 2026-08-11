@@ -49,43 +49,6 @@ UTILS_SRC = _REPO_ROOT / "tuned" / "skyhook_dir" / "utils.sh"
 UTILS_DEST = "skyhook_dir/utils.sh"
 
 
-def install_tuned_in_container(runner: DockerTestRunner, base_image: str):
-    """Install tuned package in an existing container."""
-    if runner.container is None:
-        raise RuntimeError("Container must be created before installing tuned. Call run_script first.")
-    
-    # Determine package manager based on base image
-    if "ubuntu" in base_image or "debian" in base_image:
-        # Update package lists and install tuned
-        runner.container.exec_run(
-            ["apt-get", "update", "-y"],
-            workdir="/"
-        )
-        runner.container.exec_run(
-            ["apt-get", "install", "-y", "tuned"],
-            workdir="/"
-        )
-    elif "rocky" in base_image or "rhel" in base_image or "centos" in base_image:
-        # For RHEL-based systems, use dnf if available, otherwise yum
-        # Try dnf first (Rocky 9 uses dnf)
-        dnf_result = runner.container.exec_run(
-            ["which", "dnf"],
-            workdir="/"
-        )
-        if dnf_result.exit_code == 0:
-            runner.container.exec_run(
-                ["dnf", "install", "-y", "tuned"],
-                workdir="/"
-            )
-        else:
-            runner.container.exec_run(
-                ["yum", "install", "-y", "tuned"],
-                workdir="/"
-            )
-    else:
-        raise ValueError(f"Unknown base image: {base_image}")
-
-
 def _matches_any(text: str, *patterns: str) -> bool:
     """Check if any of the patterns are contained in the text."""
     return any(pattern in text for pattern in patterns)
@@ -94,7 +57,7 @@ def _matches_any(text: str, *patterns: str) -> bool:
 def _get_tuned_major_minor(runner: DockerTestRunner) -> tuple[int, int]:
     """Parse the container's installed tuned version into (major, minor)."""
     if runner.container is None:
-        raise RuntimeError("Container not initialized. Call install_tuned_in_container first.")
+        raise RuntimeError("Container not initialized. Call create_container_for_testing first.")
     result = runner.container.exec_run(["tuned", "--version"], workdir="/")
     assert_exit_code(result, 0)
     output = result.output.decode("utf-8", errors="replace")
@@ -195,8 +158,7 @@ def create_container_for_testing(runner: DockerTestRunner, configmaps: dict):
     )
     
     # Wait for container to be ready
-    import time
-    time.sleep(1)
+    runner.wait_until_ready()
 
 
 def run_script_in_container(runner: DockerTestRunner, script: str, configmaps: dict):
@@ -251,8 +213,6 @@ def test_tuned_version_requirement(base_image):
     try:
         # Create container directly
         create_container_for_testing(runner, {"accelerator": "h100"})
-        # Install tuned
-        install_tuned_in_container(runner, base_image)
         verify_tuned_version(runner, base_image)
     finally:
         runner.cleanup()
@@ -272,8 +232,6 @@ def test_prepare_nvidia_profiles_no_service(base_image, accelerator, intent):
         # Create container directly (faster than running script first)
         create_container_for_testing(runner, configmaps)
         
-        # Install tuned in the container
-        install_tuned_in_container(runner, base_image)
         
         # Now run the script in the same container
         result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
@@ -329,8 +287,6 @@ def test_prepare_nvidia_profiles_with_eks_service(base_image, accelerator, inten
         if runner.container is None:
             raise RuntimeError("Container was not created by run_script")
         
-        # Install tuned in the existing container
-        install_tuned_in_container(runner, base_image)
         
         # Now run the script in the same container
         result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
@@ -391,8 +347,6 @@ def test_prepare_nvidia_profiles_with_aks_service(base_image, intent):
         # Create container directly
         create_container_for_testing(runner, configmaps)
 
-        # Install tuned in the existing container
-        install_tuned_in_container(runner, base_image)
 
         # Run the script in the same container
         result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
@@ -446,8 +400,6 @@ def test_prepare_nvidia_profiles_eks_grub_config(base_image):
         # Create container directly
         create_container_for_testing(runner, configmaps)
         
-        # Install tuned in the container
-        install_tuned_in_container(runner, base_image)
         
         # Install grub-common for update-grub command (if available)
         if "ubuntu" in base_image or "debian" in base_image:
@@ -505,8 +457,6 @@ def test_prepare_nvidia_profiles_default_intent(base_image):
         # Create container directly
         create_container_for_testing(runner, configmaps)
         
-        # Install tuned in the container
-        install_tuned_in_container(runner, base_image)
         
         # Run the script in the same container
         result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
@@ -531,8 +481,6 @@ def test_prepare_nvidia_profiles_missing_accelerator(base_image):
         # Create container directly
         create_container_for_testing(runner, configmaps)
         
-        # Install tuned in the container
-        install_tuned_in_container(runner, base_image)
         
         # Run the script in the same container
         result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
@@ -555,8 +503,6 @@ def test_prepare_nvidia_profiles_generic_accelerator(base_image):
         # Create container directly
         create_container_for_testing(runner, configmaps)
         
-        # Install tuned in the container
-        install_tuned_in_container(runner, base_image)
         
         # Run the script in the same container
         result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
@@ -591,7 +537,6 @@ def test_prepare_nvidia_profiles_generic_ignores_intent(base_image):
         }
         
         create_container_for_testing(runner, configmaps)
-        install_tuned_in_container(runner, base_image)
         
         result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
         
@@ -619,7 +564,6 @@ def test_prepare_nvidia_profiles_generic_ignores_service(base_image):
         }
         
         create_container_for_testing(runner, configmaps)
-        install_tuned_in_container(runner, base_image)
         
         result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
         
@@ -652,7 +596,6 @@ def test_prepare_nvidia_profiles_generic_profile_content(base_image):
         }
         
         create_container_for_testing(runner, configmaps)
-        install_tuned_in_container(runner, base_image)
         
         result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
         assert_exit_code(result, 0)
@@ -695,7 +638,6 @@ def test_prepare_nvidia_profiles_generic_check_script(base_image):
         }
         
         create_container_for_testing(runner, configmaps)
-        install_tuned_in_container(runner, base_image)
         
         # Run prepare first
         prepare_result = run_script_in_container(
@@ -730,8 +672,6 @@ def test_prepare_nvidia_profiles_eks_service_specific_profile(base_image):
         # Create container directly
         create_container_for_testing(runner, configmaps)
         
-        # Install tuned in the container
-        install_tuned_in_container(runner, base_image)
         
         # Run the script in the same container
         result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
@@ -778,7 +718,6 @@ def test_prepare_nvidia_profiles_aks_service_specific_profile(base_image):
         }
 
         create_container_for_testing(runner, configmaps)
-        install_tuned_in_container(runner, base_image)
 
         result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
         assert_exit_code(result, 0)
@@ -820,7 +759,6 @@ def test_prepare_nvidia_profiles_common_service_rejected(base_image):
         }
 
         create_container_for_testing(runner, configmaps)
-        install_tuned_in_container(runner, base_image)
 
         result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
 
@@ -851,8 +789,6 @@ def test_prepare_nvidia_profiles_common_profiles_deployed(base_image):
         # Create container directly
         create_container_for_testing(runner, configmaps)
 
-        # Install tuned in the container
-        install_tuned_in_container(runner, base_image)
 
         # Run the script in the same container
         result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
@@ -885,7 +821,6 @@ def test_prepare_nvidia_profiles_vr200_no_service(base_image, intent):
     try:
         configmaps = {"accelerator": "vr200", "intent": intent}
         create_container_for_testing(runner, configmaps)
-        install_tuned_in_container(runner, base_image)
         result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
 
         assert_exit_code(result, 0)
@@ -905,7 +840,6 @@ def test_prepare_nvidia_profiles_vr200_base_keeps_bootloader(base_image, intent)
     try:
         configmaps = {"accelerator": "vr200", "intent": intent}
         create_container_for_testing(runner, configmaps)
-        install_tuned_in_container(runner, base_image)
         result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
 
         assert_exit_code(result, 0)
@@ -925,7 +859,6 @@ def test_prepare_nvidia_profiles_vr200_bcm_no_bootloader(base_image, intent):
     try:
         configmaps = {"accelerator": "vr200", "intent": intent, "service": "bcm"}
         create_container_for_testing(runner, configmaps)
-        install_tuned_in_container(runner, base_image)
         result = run_script_in_container(runner, "prepare_nvidia_profiles.sh", configmaps)
 
         assert_exit_code(result, 0)

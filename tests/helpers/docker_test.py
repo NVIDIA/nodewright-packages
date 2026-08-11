@@ -33,6 +33,8 @@ from typing import Dict, List, Optional, Tuple, Union
 
 import docker
 
+from tests.helpers.base_images import assert_image_present, resolve_base_image
+
 
 @dataclass
 class TestResult:
@@ -55,8 +57,16 @@ class DockerTestRunner:
             base_image: Docker base image to use (default: ubuntu:24.04)
         """
         self.package = package
-        self.base_image = base_image
+        self.requested_base_image = base_image
         self.client = docker.from_env()
+        # Packages may declare a prebuilt test base image (see
+        # tests/helpers/base_images.py). Resolving here means no test file has to
+        # know whether its package opts in, and it covers every container-creation
+        # path -- including the ones that call containers.run directly rather than
+        # going through run_script.
+        self.base_image = resolve_base_image(package, base_image)
+        if self.base_image != base_image:
+            assert_image_present(self.client, self.base_image, package)
         self.container = None
         self.temp_dir = None
         self._package_path = Path(__file__).parent.parent.parent / package

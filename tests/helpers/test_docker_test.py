@@ -105,3 +105,20 @@ def test_wait_until_ready_raises_an_actionable_error_on_timeout():
         )
     finally:
         runner.cleanup()
+
+
+def test_runner_uses_the_raw_image_for_packages_without_a_test_base():
+    """shellscript declares no test-base Dockerfile, so resolution is a no-op."""
+    runner = DockerTestRunner(package="shellscript", base_image="ubuntu:24.04")
+    assert runner.base_image == "ubuntu:24.04"
+    assert runner.requested_base_image == "ubuntu:24.04"
+
+
+def test_missing_prebuilt_image_fails_before_any_registry_pull():
+    """A missing prebuilt image must never turn into a Docker Hub pull attempt.
+
+    Constructing the runner is what has to fail, because most nvidia-tuned tests
+    bypass run_script and call containers.run directly.
+    """
+    with pytest.raises(RuntimeError, match="make test-base-images"):
+        DockerTestRunner(package="nvidia-tuned", base_image="does-not-exist:0")
