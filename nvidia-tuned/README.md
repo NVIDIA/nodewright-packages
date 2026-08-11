@@ -418,4 +418,3 @@ See the [tuned package README](../tuned/README.md) for complete documentation on
 
 ## Additional documentation
 - [NVIDA Grace Performance Tuning Guide](https://docs.nvidia.com/dccpu/grace-perf-tuning-guide/os-settings.html#operating-system-settings)
-<!-- TEMPORARY: forces CI to exercise the sharded test job on this PR. Revert before merge. -->
