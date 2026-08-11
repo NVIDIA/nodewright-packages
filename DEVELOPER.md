@@ -146,6 +146,55 @@ All commits must be signed off. Use `git commit -s` to automatically add your si
 Signed-off-by: Your Name <your.email@example.com>
 ```
 
+## Running Tests
+
+The suite is Docker-based: each test copies a package into a temporary
+directory, bind-mounts it into a throwaway container, and runs a lifecycle
+script inside it. A working Docker (or Podman) daemon is required. Both targets
+create a `venv/` on first run.
+
+```bash
+# Every package, in parallel
+make test
+
+# A single package (test dirs use underscores: nvidia-setup -> nvidia_setup)
+make test-package PACKAGE=nvidia-setup
+```
+
+`tests/helpers/` holds the shared harness plus its own tests. Run those when you
+change the harness itself (this target creates the `venv/` too, so it works on a
+fresh checkout):
+
+```bash
+make test-harness
+```
+
+A package may declare a prebuilt test base image
+(`tests/integration/<pkg>/test-base/Dockerfile`) so expensive setup happens once
+per OS at image-build time instead of once per test. The `test` and
+`test-package` targets build these automatically; build them explicitly with:
+
+```bash
+make test-base-images PACKAGE=nvidia-tuned          # add NO_CACHE=1 to force a rebuild
+```
+
+These images are local-only and are never pushed to or pulled from a registry.
+
+### Running tests on macOS
+
+The harness bind-mounts a temporary directory into each container, and Docker
+Desktop and colima share only certain host paths with the daemon's VM. The
+default macOS `TMPDIR` (`/var/folders/...`) is usually not one of them. When it
+is not shared, the mount silently comes up empty and every test fails with
+`Script ... not found in container`, which does not point at the real cause.
+Point `TMPDIR` at a shared path first:
+
+```bash
+export TMPDIR="$HOME/.cache/skyhook-tests"
+mkdir -p "$TMPDIR"
+make test
+```
+
 ## CI Validation
 
 The CI pipeline automatically runs validations:

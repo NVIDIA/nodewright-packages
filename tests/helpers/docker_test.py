@@ -26,11 +26,14 @@ for testing NodeWright package scripts in isolated environments.
 import os
 import shutil
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
 import docker
+
+from tests.helpers.base_images import assert_image_present, resolve_base_image
 
 
 @dataclass
@@ -54,8 +57,16 @@ class DockerTestRunner:
             base_image: Docker base image to use (default: ubuntu:24.04)
         """
         self.package = package
-        self.base_image = base_image
+        self.requested_base_image = base_image
         self.client = docker.from_env()
+        # Packages may declare a prebuilt test base image (see
+        # tests/helpers/base_images.py). Resolving here means no test file has to
+        # know whether its package opts in, and it covers every container-creation
+        # path -- including the ones that call containers.run directly rather than
+        # going through run_script.
+        self.base_image = resolve_base_image(package, base_image)
+        if self.base_image != base_image:
+            assert_image_present(self.client, self.base_image, package)
         self.container = None
         self.temp_dir = None
         self._package_path = Path(__file__).parent.parent.parent / package
@@ -128,6 +139,34 @@ class DockerTestRunner:
         
         return skyhook_package_dir
     
+    def wait_until_ready(self, timeout: float = 30.0):
+        """Poll until the container accepts exec and the package mount is visible.
+
+        Replaces a flat `time.sleep(1)`, which was both wasteful (paid once per
+        test) and a latent flake: a container that needed 1.1s would fail.
+        """
+        deadline = time.monotonic() + timeout
+        last_error = None
+
+        while time.monotonic() < deadline:
+            try:
+                probe = self.container.exec_run(["test", "-d", "/skyhook-package"], workdir="/")
+                if probe.exit_code == 0:
+                    return
+            except Exception as exc:  # container not accepting exec yet
+                last_error = exc
+            time.sleep(0.05)
+
+        detail = f" (last error: {last_error})" if last_error else ""
+        raise RuntimeError(
+            f"Container {self.container.id[:12]} never became ready within "
+            f"{timeout}s{detail}.\n"
+            f"If /skyhook-package is empty, the Docker daemon cannot see "
+            f"{self.temp_dir!r}. On macOS (colima or Docker Desktop) TMPDIR must be "
+            f"a path the daemon shares; the default /var/folders/... is not. Try:\n"
+            f'    export TMPDIR="$HOME/.cache/skyhook-tests"'
+        )
+
     def run_script(
         self,
         script: str,
@@ -195,8 +234,7 @@ class DockerTestRunner:
             )
             
             # Wait for container to be ready
-            import time
-            time.sleep(1)
+            self.wait_until_ready()
             
             # Verify script exists in container
             check_result = self.container.exec_run(
@@ -301,8 +339,12 @@ class DockerTestRunner:
         """Clean up Docker container and temporary files."""
         if self.container:
             try:
-                self.container.stop(timeout=5)
-                self.container.remove()
+                # Go straight to SIGKILL. PID 1 in these containers is `tail`,
+                # which installs no SIGTERM handler, and the kernel ignores
+                # default-disposition signals for PID 1, so a graceful stop()
+                # burned its full timeout (measured 5.25s) on every test before
+                # the SIGKILL landed. Nothing here holds state worth flushing.
+                self.container.remove(force=True)
             except Exception:
                 pass  # Ignore cleanup errors
             finally:

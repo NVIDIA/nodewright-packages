@@ -40,13 +40,28 @@ test-deps: ## Install Python test dependencies
 	fi
 	./venv/bin/pip install -r tests/requirements.txt
 
+.PHONY: test-base-images
+test-base-images: test-deps ## Build prebuilt test base images for a package. Usage: make test-base-images PACKAGE=<name> [NO_CACHE=1]
+	@if [ -z "$(PACKAGE)" ]; then \
+		echo "ERROR: PACKAGE variable is required. Usage: make test-base-images PACKAGE=<package-name>"; \
+		exit 1; \
+	fi
+	@./venv/bin/python scripts/build_test_base_images.py --package "$(PACKAGE)" $(if $(NO_CACHE),--no-cache)
+
 .PHONY: test
 test: test-deps ## Run Docker-based tests (in parallel)
+	@for pkg in $$(ls tests/integration | grep -v '^__'); do \
+		./venv/bin/python scripts/build_test_base_images.py --package "$$pkg" || exit 1; \
+	done
 	@if [ -n "$$TEST_WORKERS" ]; then \
 		./venv/bin/pytest tests/integration/ -n $$TEST_WORKERS -v --durations=10 --durations-min=10.0; \
 	else \
 		./venv/bin/pytest tests/integration/ -n auto -v --durations=10 --durations-min=10.0; \
 	fi
+
+.PHONY: test-harness
+test-harness: test-deps ## Run tests for the shared Docker test harness itself
+	./venv/bin/pytest tests/helpers/ -v
 
 .PHONY: test-package
 test-package: test-deps ## Run tests for a specific package. Usage: make test-package PACKAGE=<package-name>
@@ -62,6 +77,7 @@ test-package: test-deps ## Run tests for a specific package. Usage: make test-pa
 		exit 0; \
 	fi; \
 	echo "Running tests for package: $(PACKAGE) (test directory: $$TEST_DIR)"; \
+	./venv/bin/python scripts/build_test_base_images.py --package "$(PACKAGE)" || exit 1; \
 	if [ -n "$$TEST_WORKERS" ]; then \
 		./venv/bin/pytest $$TEST_DIR -n $$TEST_WORKERS -v --durations=10 --durations-min=10.0; \
 	else \
