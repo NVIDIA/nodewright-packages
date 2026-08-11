@@ -34,7 +34,7 @@ jobs:
       has_changes: ${{ steps.changes.outputs.has_changes }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -90,7 +90,7 @@ jobs:
         package: ${{ fromJson(needs.detect-changes.outputs.packages) }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -184,7 +184,7 @@ jobs:
         package: ${{ fromJson(needs.detect-changes.outputs.packages) }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -225,6 +225,53 @@ jobs:
         run: |
           make test-package PACKAGE="${{ matrix.package }}"
 
+  # Test the shared test harness itself. The package `test` job only runs
+  # tests/integration/<package>, and it only runs at all when a package
+  # directory changed -- so a PR touching only tests/helpers/ would otherwise
+  # run no tests at all, including the ones guarding the harness.
+  test-harness:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check if the test harness changed
+        id: check-harness
+        shell: bash
+        run: |
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+          if echo "$CHANGED_FILES" | grep -q "^tests/helpers/"; then
+            echo "harness_changed=true" >> $GITHUB_OUTPUT
+            echo "Test harness changed, running its tests"
+          else
+            echo "harness_changed=false" >> $GITHUB_OUTPUT
+            echo "No files changed in tests/helpers/, skipping harness tests"
+          fi
+
+      - name: Install test dependencies
+        if: steps.check-harness.outputs.harness_changed == 'true'
+        shell: bash
+        run: |
+          make test-deps
+
+      - name: Verify Docker is available for tests
+        if: steps.check-harness.outputs.harness_changed == 'true'
+        shell: bash
+        run: |
+          docker info > /dev/null 2>&1 || {
+            echo "ERROR: Docker daemon is not accessible. Tests require Docker to run containers." >&2
+            exit 1
+          }
+          echo "Docker is available and ready for tests"
+
+      - name: Run test harness tests
+        if: steps.check-harness.outputs.harness_changed == 'true'
+        shell: bash
+        run: |
+          make test-harness
+
   # Fourth job: build changed packages
   build:
     needs: [detect-changes, validate, test]
@@ -239,7 +286,7 @@ jobs:
         package: ${{ fromJson(needs.detect-changes.outputs.packages) }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -331,7 +378,7 @@ jobs:
   # runs and reports on its own.
   ci-gate:
     name: ci-gate
-    needs: [detect-changes, validate, test, build]
+    needs: [detect-changes, validate, test, test-harness, build]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 1

@@ -43,7 +43,7 @@ jobs:
       contents: write  # required for gh release create
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0  # full history needed for git-cliff to walk all tags
 

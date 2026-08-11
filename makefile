@@ -48,6 +48,10 @@ test: test-deps ## Run Docker-based tests (in parallel)
 		./venv/bin/pytest tests/integration/ -n auto -v --durations=10 --durations-min=10.0; \
 	fi
 
+.PHONY: test-harness
+test-harness: test-deps ## Run tests for the shared Docker test harness itself
+	./venv/bin/pytest tests/helpers/ -v
+
 .PHONY: test-package
 test-package: test-deps ## Run tests for a specific package. Usage: make test-package PACKAGE=<package-name>
 	@if [ -z "$(PACKAGE)" ]; then \
