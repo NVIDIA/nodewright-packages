@@ -77,6 +77,7 @@ test-package: test-deps ## Run tests for a specific package. Usage: make test-pa
 		exit 0; \
 	fi; \
 	echo "Running tests for package: $(PACKAGE) (test directory: $$TEST_DIR)"; \
+	./venv/bin/python scripts/build_test_base_images.py --package "$(PACKAGE)" || exit 1; \
 	if [ -n "$$TEST_WORKERS" ]; then \
 		./venv/bin/pytest $$TEST_DIR -n $$TEST_WORKERS -v --durations=10 --durations-min=10.0; \
 	else \

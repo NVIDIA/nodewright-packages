@@ -38,12 +38,16 @@ PACKAGE_DIR = "tests/integration/nvidia_tuned"
 IMAGES = [e["base_image"] if isinstance(e, dict) else e for e in TEST_MATRIX]
 
 
-def _collected(*args: str) -> int:
-    """Return how many tests pytest actually selects for the given args.
+def _node_ids(*args: str) -> set:
+    """Return the exact set of test node IDs pytest selects for the given args.
 
-    Counts emitted test IDs rather than parsing the summary line: with a
-    deselection in play pytest prints "37/122 tests collected", where the number
-    that matters is the numerator. Counting `::` lines avoids that ambiguity.
+    Compares identities rather than counts: equal totals can hide one test
+    duplicated across shards and another omitted entirely, which would leave the
+    suite unpartitioned while the arithmetic still balanced.
+
+    Reads node IDs rather than the summary line, which with a deselection in play
+    reads "37/122 tests collected" -- where the number that matters is the
+    numerator, not the total.
     """
     result = subprocess.run(
         [sys.executable, "-m", "pytest", PACKAGE_DIR, "--collect-only", "-q", *args],
@@ -51,28 +55,46 @@ def _collected(*args: str) -> int:
         text=True,
         check=False,
     )
-    # pytest exits 5 for "no tests collected", which is a legitimate answer of 0.
+    # pytest exits 5 for "no tests collected", a legitimate empty selection.
     if result.returncode == 5:
-        return 0
+        return set()
     if result.returncode != 0:
         raise AssertionError(
             f"pytest --collect-only failed ({result.returncode}) for args {args!r}:\n"
             f"{result.stdout}\n{result.stderr}"
         )
-    return sum(1 for line in result.stdout.splitlines() if "::" in line)
+    return {line.strip() for line in result.stdout.splitlines() if "::" in line}
+
+
+def _collected(*args: str) -> int:
+    """Number of tests selected for the given args."""
+    return len(_node_ids(*args))
 
 
 @pytest.mark.timeout(600)
 def test_shards_partition_the_suite_exactly():
-    total = _collected()
-    matrix_total = sum(
-        _collected("--base-image", image, "--matrix-scope", "matrix") for image in IMAGES
-    )
-    no_matrix_total = _collected("--matrix-scope", "no-matrix")
+    """Every test lands in exactly one shard: no omissions, no duplicates."""
+    everything = _node_ids()
+    shards = [
+        _node_ids("--base-image", image, "--matrix-scope", "matrix") for image in IMAGES
+    ]
+    shards.append(_node_ids("--matrix-scope", "no-matrix"))
 
-    assert matrix_total + no_matrix_total == total, (
-        f"shards cover {matrix_total + no_matrix_total} tests but the suite has "
-        f"{total}; some tests would silently never run in CI"
+    covered = set().union(*shards)
+
+    missing = everything - covered
+    assert not missing, (
+        f"{len(missing)} test(s) are in no shard and would silently never run in "
+        f"CI, e.g. {sorted(missing)[:5]}"
+    )
+
+    extra = covered - everything
+    assert not extra, f"shards select tests outside the suite: {sorted(extra)[:5]}"
+
+    # Sum-of-sizes vs union size is what catches a test appearing in two shards.
+    duplicated = sum(len(s) for s in shards) - len(covered)
+    assert duplicated == 0, (
+        f"{duplicated} test(s) appear in more than one shard and would run twice"
     )
 
 

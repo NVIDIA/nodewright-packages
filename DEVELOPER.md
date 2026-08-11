@@ -161,12 +161,24 @@ make test
 make test-package PACKAGE=nvidia-setup
 ```
 
-`tests/helpers/` holds the shared harness plus its own tests. Run those directly
-when you change the harness itself:
+`tests/helpers/` holds the shared harness plus its own tests. Run those when you
+change the harness itself (this target creates the `venv/` too, so it works on a
+fresh checkout):
 
 ```bash
-./venv/bin/pytest tests/helpers/ -v
+make test-harness
 ```
+
+A package may declare a prebuilt test base image
+(`tests/integration/<pkg>/test-base/Dockerfile`) so expensive setup happens once
+per OS at image-build time instead of once per test. The `test` and
+`test-package` targets build these automatically; build them explicitly with:
+
+```bash
+make test-base-images PACKAGE=nvidia-tuned          # add NO_CACHE=1 to force a rebuild
+```
+
+These images are local-only and are never pushed to or pulled from a registry.
 
 ### Running tests on macOS
 
