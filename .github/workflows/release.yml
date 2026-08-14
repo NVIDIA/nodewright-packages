@@ -53,7 +53,11 @@ jobs:
       - name: Extract package name from tag
         id: extract
         run: |
-          PACKAGE_NAME=$(echo "${{ github.ref_name }}" | cut -f 1 -d /)
+          PACKAGE_NAME=$(echo "${GITHUB_REF_NAME}" | cut -f 1 -d /)
+          if ! [[ "${PACKAGE_NAME}" =~ ^[a-z][a-z0-9-]*$ ]]; then
+            echo "ERROR: package component '${PACKAGE_NAME}' must match [a-z][a-z0-9-]* (lowercase letters, digits, hyphens only)" >&2
+            exit 1
+          fi
           echo "package_name=${PACKAGE_NAME}" >> "$GITHUB_OUTPUT"
 
       # git-cliff release assets are versioned in the filename
@@ -81,9 +85,9 @@ jobs:
       # panic), matching the committed CHANGELOGs.
       # --strip all removes the changelog header/footer, leaving just the body.
       - name: Generate release notes
-        id: release_notes
+        env:
+          PACKAGE: ${{ steps.extract.outputs.package_name }}
         run: |
-          PACKAGE="${{ steps.extract.outputs.package_name }}"
           TAG="${GITHUB_REF_NAME}"          # e.g. nvidia-setup/0.3.0 or nvidia-setup/0.3.0-rc.1
           VERSION="${TAG#*/}"
           INCLUDE_PATH="${PACKAGE}/**"
@@ -135,10 +139,6 @@ jobs:
             [ -n "${HUMAN}" ] && printf '%s\n\n' "${HUMAN}"
             printf '%s\n' "${BODY}"
           } > "${RUNNER_TEMP:-/tmp}/notes.md"
-          # Use a random delimiter so a literal "EOF" line in release notes can't
-          # truncate the multi-line output variable (GitHub Actions requirement).
-          GH_DELIM="NOTES_EOF_$(openssl rand -hex 8)"
-          { echo "notes<<${GH_DELIM}"; cat "${RUNNER_TEMP:-/tmp}/notes.md"; echo "${GH_DELIM}"; } >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
         env:
@@ -160,9 +160,13 @@ jobs:
             echo "ERROR: tag '${GITHUB_REF_NAME}' does not match <package>/<MAJOR>.<MINOR>.<PATCH> or <package>/<MAJOR>.<MINOR>.<PATCH>-rc.<N>" >&2
             exit 1
           fi
-          if ! gh release view "${{ github.ref_name }}" >/dev/null 2>&1; then
-            gh release create "${{ github.ref_name }}" \
-              --title "${{ github.ref_name }}" \
-              --notes "${{ steps.release_notes.outputs.notes }}" \
+          if ! git check-ref-format "${GITHUB_REF_NAME}"; then
+            echo "ERROR: '${GITHUB_REF_NAME}' is not a valid git ref name" >&2
+            exit 1
+          fi
+          if ! gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release create "${GITHUB_REF_NAME}" \
+              --title "${GITHUB_REF_NAME}" \
+              --notes-file "${RUNNER_TEMP:-/tmp}/notes.md" \
               ${PRERELEASE_FLAG}
           fi
