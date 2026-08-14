@@ -131,6 +131,24 @@ env:
     value: true
 ```
 
+#### APT_ALLOW_INDEX_FAILURE
+
+Controls whether a failed `apt update` aborts the install step on Debian/Ubuntu.
+
+- **Purpose**: A single unreachable third-party repo makes `apt update` exit 100. Under `set -e` that failed the whole package, even when every index the package actually needs refreshed fine.
+- **Values**:
+  - `true` or unset: Log a warning and continue (default)
+  - `false`: Fail the install step on any `apt update` error (previous behavior)
+- **When to use**: Set to `false` on nodes where a stale package index must be treated as fatal.
+- **Behavior**: Only the index refresh is relaxed. The `apt install` that follows is unconditional and still fails loudly if `tuned` is genuinely unavailable.
+
+**Example configuration in SCR:**
+```yaml
+env:
+    name: APT_ALLOW_INDEX_FAILURE
+    value: "false"
+```
+
 ### Configmaps
 
 The package expects configmaps to be available in `${SKYHOOK_DIR}/configmaps/`:

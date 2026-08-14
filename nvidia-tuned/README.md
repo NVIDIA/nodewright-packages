@@ -357,6 +357,7 @@ Both steps are no-ops for every other `service`/`accelerator` pair, so existing 
 |----------|----------|---------|-------------|
 | `TOPO_PATH` | No | `/etc/nccl/topo.xml` | Absolute host path the bundled NCCL topology file is written to. Only used when the configured `service`/`accelerator` pair ships one (today `oci` + `gb300`); otherwise the step is a no-op. Point `NCCL_TOPO_FILE` at the same path in your workloads. |
 | `CONFIGURE_PCIE_ACS` | No | `true` | Set to `false` to skip the PCIe ACS correction and its checks. Only relevant to a `service`/`accelerator` pair that opts in (today `oci` + `gb300`). Use this on nodes whose kernel does not honour `pci=config_acs=`, where the correction cannot take effect and the post-interrupt check would otherwise fail the node. |
+| `APT_ALLOW_INDEX_FAILURE` | No | `true` | Inherited from the `tuned` base package. Lets `apt update` fail without failing the install step, so one unreachable third-party repo in `/etc/apt/sources.list.d` cannot block the package. Set to `false` to restore strict behavior. The `apt install` that follows is unaffected and still fails if the package is genuinely unavailable. |
 
 ## Adding OS-Specific Overrides
 

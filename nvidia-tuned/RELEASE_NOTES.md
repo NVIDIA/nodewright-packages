@@ -20,6 +20,14 @@ example is not itself picked up as release notes):
     - Notable behavior change worth calling out.
 -->
 
+## 0.7.2
+
+Picks up tuned 1.3.2, which stops a single unreachable or stale apt repo from
+failing the install step.
+
+Set `APT_ALLOW_INDEX_FAILURE=false` in the Skyhook custom resource's package
+`env` to restore strict behavior.
+
 ## 0.7.1
 
 Fixes the PCIe ACS checks rejecting a node whose GPU driver is not loaded.
