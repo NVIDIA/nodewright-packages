@@ -25,7 +25,18 @@ case $ID in
     ubuntu* | debian*)
         export DEBIAN_FRONTEND=noninteractive
 
-        apt update -y
+        # Refresh the package indexes. A single unreachable or stale third-party
+        # repo makes `apt update` exit 100, which under `set -e` fails the whole
+        # package even when every index we actually need refreshed fine.
+        # Tolerating that is safe because the `apt install` below is
+        # unconditional and still fails loudly if tuned is genuinely
+        # unavailable. Set APT_ALLOW_INDEX_FAILURE=false on the Skyhook custom
+        # resource's package env to restore strict behavior.
+        if [ "${APT_ALLOW_INDEX_FAILURE:-true}" = "true" ]; then
+            apt update -y || echo "WARN: apt update reported errors; continuing (APT_ALLOW_INDEX_FAILURE=true)" >&2
+        else
+            apt update -y
+        fi
         apt install -o DPKG::Lock::Timeout=60 -y tuned
     ;;
     centos* | redhat* | amzn*)
