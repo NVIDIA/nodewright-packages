@@ -19,3 +19,17 @@ example is not itself picked up as release notes):
 
     - Notable behavior change worth calling out.
 -->
+
+## 1.0.1
+
+`apt update` failures during install no longer fail the package by default.
+
+Same change as tuned 1.3.2: a single unreachable or stale third-party repo makes
+`apt update` exit 100, which under `set -e` aborted the install step even when
+every index the package actually needs refreshed fine. The `apt install` that
+follows is unchanged and still fails loudly if `kdump-tools` is genuinely
+unavailable.
+
+Set `APT_ALLOW_INDEX_FAILURE=false` in the Skyhook custom resource's package
+`env` to restore the previous strict behavior.
+

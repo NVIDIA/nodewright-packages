@@ -38,6 +38,12 @@ path /var/crash
 core_collector makedumpfile -l --message-level 1 -d 31
 ```
 
+## Environment Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `APT_ALLOW_INDEX_FAILURE` | No | `true` | Lets `apt update` fail without failing the install step, so one unreachable third-party repo in `/etc/apt/sources.list.d` cannot block the package. Set to `false` to restore strict behavior. The `apt install` that follows is unaffected and still fails if `kdump-tools` is genuinely unavailable. |
+
 ## Lifecycle Stages
 
 ### Apply Stage (`install_kdump.sh`)
