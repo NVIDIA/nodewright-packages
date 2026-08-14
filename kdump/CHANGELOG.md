@@ -5,7 +5,11 @@
 
 All notable changes to this package will be documented in this file.
 
-## [Unreleased]
+## [1.1.1] - 2026-08-14
+
+### Bug Fixes
+
+- *(tuned)* Tolerate apt index refresh failures during install 
 
 ### New Features
 
@@ -18,6 +22,7 @@ All notable changes to this package will be documented in this file.
 
 feat: add package validation for local and ci and developer docs
 - Update project to follow the template
+- *(general)* Regenerate package changelogs to current tags 
 
 
 ## [1.1.0] - 2025-09-30
