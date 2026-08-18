@@ -50,13 +50,14 @@ IOMMU_PASSTHROUGH_MIN_KERNEL="${IOMMU_PASSTHROUGH_MIN_KERNEL:-6.11}"
 # iommu.passthrough is an early_param and do_early_param() runs the handler on each
 # occurrence in order, so the last value wins. Appending rather than rewriting keeps this
 # correct whether or not the platform ships its own drop-in.
-read -r -d '' DROPIN_CONTENT <<'EOF' || true
+DROPIN_CONTENT="$(cat <<'EOF'
 # Managed by the nvidia-tuned Skyhook package. Do not edit.
 #
 # arm-smmu-v3 before 6.11 cannot attach a PASID to an identity domain, which breaks GPU
 # ATS/SVA under iommu.passthrough=1. Sorts last so this value is the one that applies.
 GRUB_CMDLINE_LINUX="$GRUB_CMDLINE_LINUX iommu.passthrough=0"
 EOF
+)"
 
 # Returns 0 when the configured service/accelerator opts in.
 iommu_enabled() {
@@ -129,6 +130,17 @@ regenerate_grub() {
     fi
 }
 
+# Drop a drop-in this package previously wrote. Without this, `false` cannot restore
+# passthrough and a kernel upgraded past the threshold keeps the workaround pinned on,
+# because the stale file still contributes iommu.passthrough=0 at the next boot.
+remove_dropin() {
+    [[ -f "${IOMMU_GRUB_DROPIN}" ]] || return 0
+
+    rm -f "${IOMMU_GRUB_DROPIN}"
+    regenerate_grub
+    echo "Removed ${IOMMU_GRUB_DROPIN}; a reboot is required to restore IOMMU passthrough"
+}
+
 main() {
     local policy
     policy="$(iommu_policy)"
@@ -139,12 +151,14 @@ main() {
     fi
 
     if [[ "${policy}" == "never" ]]; then
-        echo "IOMMU passthrough workaround switched off via CONFIGURE_IOMMU_PASSTHROUGH; nothing to do"
+        echo "IOMMU passthrough workaround switched off via CONFIGURE_IOMMU_PASSTHROUGH"
+        remove_dropin
         return 0
     fi
 
     if [[ "${policy}" == "auto" ]] && ! kernel_predates_fix; then
-        echo "Kernel $(uname -r) is >= ${IOMMU_PASSTHROUGH_MIN_KERNEL}; nothing to do"
+        echo "Kernel $(uname -r) is >= ${IOMMU_PASSTHROUGH_MIN_KERNEL}; passthrough is fine here"
+        remove_dropin
         return 0
     fi
 

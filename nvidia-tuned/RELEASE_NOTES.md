@@ -27,13 +27,17 @@ Adds an IOMMU passthrough workaround needed to run ACS + DMA-BUF on kernels olde
 
 OCI ships `iommu.passthrough=1`, and arm-smmu-v3 before 6.11 cannot attach a PASID to an
 identity domain, so `nvidia_uvm`'s ATS/SVA bind fails with `-E2BIG` and no CUDA context
-can be created — `cudaMalloc` reports the GPUs as busy on an idle node, taking DCGM, the
+can be created: `cudaMalloc` reports the GPUs as busy on an idle node, taking DCGM, the
 GPU operator validators and every workload with it. The new `configure-iommu-passthrough`
 step writes a `99-iommu-passthrough.cfg` grub drop-in setting `iommu.passthrough=0`.
 
 Defaults to `CONFIGURE_IOMMU_PASSTHROUGH=auto`, applying only on kernels older than
 6.11. Vendor kernels backport, so `auto` can guess wrong either way; set `false` to keep
 passthrough or `true` to force the change.
+
+Setting `false`, or upgrading a node past the threshold under `auto`, removes a drop-in
+this package previously wrote and regenerates GRUB, so passthrough returns on the next
+boot rather than staying pinned off.
 
 Upgrade note: changes the kernel command line, so it takes effect on the next boot via
 the `interrupt: {type: reboot}` this package already requires. Nodes at or above the

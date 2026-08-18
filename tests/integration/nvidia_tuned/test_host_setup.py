@@ -765,7 +765,7 @@ def test_iommu_passthrough_is_a_noop_on_a_fixed_kernel(node):
     new = on_kernel(NEW_KERNEL)
 
     assert step(node, "configure_iommu_passthrough.sh", new) == 0, output(node)
-    assert said(node, "nothing to do"), output(node)
+    assert said(node, "passthrough is fine here"), output(node)
     assert not exists(node, IOMMU_DROPIN)
 
     for check in ("configure_iommu_passthrough_check.sh",
@@ -930,3 +930,41 @@ def test_iommu_passthrough_failure_message_names_cause_impact_and_remedy(node):
     assert said(node, "arm_smmu_write_ctx_desc"), output(node)
     # Remedy: the documented opt-out.
     assert said(node, "CONFIGURE_IOMMU_PASSTHROUGH=false"), output(node)
+
+
+def test_iommu_passthrough_off_removes_a_previously_written_dropin(node):
+    """`false` has to restore passthrough, not just stop maintaining the drop-in.
+
+    A stale drop-in still contributes iommu.passthrough=0 at the next boot, so leaving it
+    in place would make the documented escape hatch unable to do the thing it documents.
+    """
+    configure(node, **OCI_GB300)
+
+    assert step(node, "configure_iommu_passthrough.sh", on_kernel(OLD_KERNEL)) == 0
+    assert exists(node, IOMMU_DROPIN)
+
+    off = on_kernel(OLD_KERNEL, CONFIGURE_IOMMU_PASSTHROUGH="false")
+    assert step(node, "configure_iommu_passthrough.sh", off) == 0, output(node)
+    assert said(node, "reboot is required to restore"), output(node)
+    assert not exists(node, IOMMU_DROPIN)
+
+
+def test_iommu_passthrough_removes_the_dropin_after_a_kernel_upgrade(node):
+    """A node upgraded past the threshold must not keep the workaround pinned on."""
+    configure(node, **OCI_GB300)
+
+    assert step(node, "configure_iommu_passthrough.sh", on_kernel(OLD_KERNEL)) == 0
+    assert exists(node, IOMMU_DROPIN)
+
+    assert step(node, "configure_iommu_passthrough.sh", on_kernel(NEW_KERNEL)) == 0
+    assert said(node, "reboot is required to restore"), output(node)
+    assert not exists(node, IOMMU_DROPIN)
+
+
+def test_iommu_passthrough_removal_is_idempotent(node):
+    """Standing down on a node that never had the drop-in must not claim it removed one."""
+    configure(node, **OCI_GB300)
+    off = on_kernel(OLD_KERNEL, CONFIGURE_IOMMU_PASSTHROUGH="false")
+
+    assert step(node, "configure_iommu_passthrough.sh", off) == 0, output(node)
+    assert not said(node, "Removed"), output(node)

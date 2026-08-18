@@ -250,7 +250,7 @@ spec:
   packages:
     nvidia-tuned:
       image: ghcr.io/nvidia/nodewright-packages/nvidia-tuned
-      version: 0.7.0
+      version: 0.8.0
       interrupt:
         type: reboot
       env:
@@ -289,11 +289,14 @@ host-level steps do need a reboot:
 - **IOMMU passthrough on old kernels.** Needed to run ACS + DMA-BUF on kernels older
   than 6.11. OCI ships `iommu.passthrough=1`, and arm-smmu-v3 before 6.11 cannot attach
   a PASID to an identity domain, so `nvidia_uvm`'s ATS/SVA bind fails with `-E2BIG` and
-  **no CUDA context can be created at all** — `cudaMalloc` reports the GPUs as busy on an
+  **no CUDA context can be created at all**: `cudaMalloc` reports the GPUs as busy on an
   idle node. The `configure-iommu-passthrough` step writes a
   `/etc/default/grub.d/99-iommu-passthrough.cfg` drop-in setting `iommu.passthrough=0`,
   restoring translating domains and with them CUDA, GPUDirect RDMA and DMA-BUF. Defaults
-  to `auto` (apply below 6.11). Independent of the ACS correction; both can be active.
+  to `auto` (apply below 6.11). When the policy stops applying, because the node was
+  switched off or its kernel was upgraded past the threshold, the drop-in is removed and
+  GRUB regenerated, so passthrough comes back on the next boot. Independent of the ACS
+  correction; both can be active.
 - **RDMA VF boot gate.** The `install-rdma-vfs-ready` step installs a
   `rdma-vfs-ready.service` unit that orders before `kubelet.service` and waits for the
   Oracle Cloud Agent to create the RDMA VFs. It is a boot-ordering gate, so it only has
