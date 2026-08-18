@@ -27,6 +27,11 @@
 # Upstream: 6.10 made CD tables allocate-on-demand, 6.11 added S1DSS_BYPASS (PASID on an
 # identity STE). 6.11 is the threshold.
 #
+# Scoped to affected kernels rather than applied everywhere because translating domains
+# cost DMA performance, which is why the platform sets passthrough in the first place. On
+# a kernel with the fix there is nothing to buy with that cost, so applying it there would
+# be a straight regression on nodes that are already healthy.
+#
 # Gated on ${SKYHOOK_DIR}/profiles/service/${service}/iommu-passthrough-${accelerator}.enabled,
 # so pairs without the marker are a no-op. CONFIGURE_IOMMU_PASSTHROUGH picks the policy:
 # auto (default, apply below IOMMU_PASSTHROUGH_MIN_KERNEL), true (always), false (never).

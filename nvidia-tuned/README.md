@@ -295,8 +295,10 @@ host-level steps do need a reboot:
   restoring translating domains and with them CUDA, GPUDirect RDMA and DMA-BUF. Defaults
   to `auto` (apply below 6.11). When the policy stops applying, because the node was
   switched off or its kernel was upgraded past the threshold, the drop-in is removed and
-  GRUB regenerated, so passthrough comes back on the next boot. Independent of the ACS
-  correction; both can be active.
+  GRUB regenerated, so passthrough comes back on the next boot. It is scoped to affected
+  kernels rather than applied everywhere because translating domains cost DMA performance,
+  which is why passthrough is set in the first place; on a kernel with the fix there is no
+  benefit to pay for. Independent of the ACS correction; both can be active.
 - **RDMA VF boot gate.** The `install-rdma-vfs-ready` step installs a
   `rdma-vfs-ready.service` unit that orders before `kubelet.service` and waits for the
   Oracle Cloud Agent to create the RDMA VFs. It is a boot-ordering gate, so it only has
