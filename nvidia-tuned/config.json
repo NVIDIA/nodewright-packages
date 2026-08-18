@@ -1,7 +1,7 @@
 {
     "schema_version": "v1",
     "package_name": "nvidia_tuned",
-    "package_version": "0.7.2",
+    "package_version": "0.8.0",
     "expected_config_files": [
         "accelerator"
     ],
@@ -188,6 +188,18 @@
                 "upgrade_step": false
             },
             {
+                "name": "configure-iommu-passthrough",
+                "path": "configure_iommu_passthrough.sh",
+                "arguments": [],
+                "returncodes": [
+                    0
+                ],
+                "on_host": true,
+                "env": {},
+                "idempotence": false,
+                "upgrade_step": false
+            },
+            {
                 "name": "configure-spcx-cc",
                 "path": "configure_spcx_cc.sh",
                 "arguments": [],
@@ -262,6 +274,18 @@
                 "upgrade_step": false
             },
             {
+                "name": "configure-iommu-passthrough-check",
+                "path": "configure_iommu_passthrough_check.sh",
+                "arguments": [],
+                "returncodes": [
+                    0
+                ],
+                "on_host": true,
+                "env": {},
+                "idempotence": true,
+                "upgrade_step": false
+            },
+            {
                 "name": "configure-spcx-cc-check",
                 "path": "configure_spcx_cc_check.sh",
                 "arguments": [],
@@ -302,6 +326,18 @@
             {
                 "name": "post-interrupt-pcie-acs-check",
                 "path": "post_interrupt_pcie_acs_check.sh",
+                "arguments": [],
+                "returncodes": [
+                    0
+                ],
+                "on_host": true,
+                "env": {},
+                "idempotence": true,
+                "upgrade_step": false
+            },
+            {
+                "name": "post-interrupt-iommu-passthrough-check",
+                "path": "post_interrupt_iommu_passthrough_check.sh",
                 "arguments": [],
                 "returncodes": [
                     0

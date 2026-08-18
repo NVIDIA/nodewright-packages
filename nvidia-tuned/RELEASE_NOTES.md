@@ -20,6 +20,26 @@ example is not itself picked up as release notes):
     - Notable behavior change worth calling out.
 -->
 
+## 0.8.0
+
+Adds an IOMMU passthrough workaround needed to run ACS + DMA-BUF on kernels older than
+6.11, gated on `oci` + `gb300` like the PCIe ACS correction.
+
+OCI ships `iommu.passthrough=1`, and arm-smmu-v3 before 6.11 cannot attach a PASID to an
+identity domain, so `nvidia_uvm`'s ATS/SVA bind fails with `-E2BIG` and no CUDA context
+can be created — `cudaMalloc` reports the GPUs as busy on an idle node, taking DCGM, the
+GPU operator validators and every workload with it. The new `configure-iommu-passthrough`
+step writes a `99-iommu-passthrough.cfg` grub drop-in setting `iommu.passthrough=0`.
+
+Defaults to `CONFIGURE_IOMMU_PASSTHROUGH=auto`, applying only on kernels older than
+6.11. Vendor kernels backport, so `auto` can guess wrong either way; set `false` to keep
+passthrough or `true` to force the change.
+
+Upgrade note: changes the kernel command line, so it takes effect on the next boot via
+the `interrupt: {type: reboot}` this package already requires. Nodes at or above the
+threshold are unaffected. Translating domains cost some DMA performance; the trade is
+against those nodes being unable to run CUDA at all.
+
 ## 0.7.2
 
 Picks up tuned 1.3.2, which stops a single unreachable or stale apt repo from
