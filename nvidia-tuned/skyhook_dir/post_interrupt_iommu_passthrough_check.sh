@@ -135,6 +135,14 @@ main() {
 
     effective="$(effective_passthrough)"
 
+    # Unset is a failure, not a pass. The drop-in sets the token explicitly, so its absence
+    # means nothing this package wrote reached the booted kernel. Accepting it because the
+    # kernel happened to default to translated would hide a drop-in that never applied.
+    if [[ -z "${effective}" ]]; then
+        fail_not_applied \
+            "The booted kernel command line (${PROC_CMDLINE}) carries no iommu.passthrough argument, so the drop-in never reached the kernel. Check for a later-sorting file in /etc/default/grub.d/ that overwrites GRUB_CMDLINE_LINUX, and check which entry GRUB_DEFAULT boots."
+    fi
+
     if [[ "${effective}" == "1" ]]; then
         fail_not_applied \
             "The booted kernel command line still resolves iommu.passthrough to 1. The last occurrence wins, so a file sorting after 99-iommu-passthrough.cfg in /etc/default/grub.d/ is overriding it, or the drop-in never reached grub.cfg. Check which entry GRUB_DEFAULT boots."
@@ -145,7 +153,7 @@ main() {
             "No IOMMU group under ${IOMMU_GROUPS_DIR} is using a translating (DMA or DMA-FQ) domain, so the SMMU is still in bypass. 'dmesg | grep \"Default domain type\"' shows what the kernel resolved at boot."
     fi
 
-    echo "Verified IOMMU translation is active after reboot (iommu.passthrough=${effective:-unset})"
+    echo "Verified IOMMU translation is active after reboot (iommu.passthrough=${effective})"
 }
 
 # The only place an operator will look, so name the cause, the cost and the switch.

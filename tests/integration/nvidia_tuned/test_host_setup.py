@@ -968,3 +968,20 @@ def test_iommu_passthrough_removal_is_idempotent(node):
 
     assert step(node, "configure_iommu_passthrough.sh", off) == 0, output(node)
     assert not said(node, "Removed"), output(node)
+
+
+def test_iommu_passthrough_post_interrupt_check_rejects_an_absent_value(node):
+    """An absent token means nothing this package wrote reached the booted kernel.
+
+    The drop-in sets iommu.passthrough explicitly, so its absence is a drop-in that never
+    applied. Accepting it because the kernel happened to default to a translating domain
+    would report a broken deployment as fixed.
+    """
+    configure(node, **OCI_GB300)
+    env = on_kernel(OLD_KERNEL, **booted(node, "root=x quiet", "DMA-FQ"))
+
+    assert step(node, "post_interrupt_iommu_passthrough_check.sh", env) != 0
+    assert said(node, "carries no iommu.passthrough argument"), output(node)
+    # Still reaches the shared diagnostic rather than exiting early.
+    assert said(node, "NO CUDA context"), output(node)
+    assert said(node, "CONFIGURE_IOMMU_PASSTHROUGH=false"), output(node)
