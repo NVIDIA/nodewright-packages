@@ -47,7 +47,7 @@ regenerate_grub() {
         fi
     else
         echo "ERROR: neither update-grub nor grub2-mkconfig is available"
-        exit 1
+        return 1
     fi
 }
 
@@ -57,8 +57,21 @@ main() {
         return 0
     fi
 
+    # Back the drop-in up before removing it. If GRUB regeneration fails the generated
+    # config still carries iommu.passthrough=0, and leaving the source file deleted would
+    # make the next uninstall report success against a node that still boots with it.
+    local backup
+    backup="$(mktemp)"
+    cp "${IOMMU_GRUB_DROPIN}" "${backup}"
     rm -f "${IOMMU_GRUB_DROPIN}"
-    regenerate_grub
+
+    if ! regenerate_grub; then
+        mv "${backup}" "${IOMMU_GRUB_DROPIN}"
+        echo "ERROR: could not regenerate the bootloader config; restored ${IOMMU_GRUB_DROPIN}"
+        return 1
+    fi
+
+    rm -f "${backup}"
     echo "Removed ${IOMMU_GRUB_DROPIN}; a reboot is required to restore IOMMU passthrough"
 }
 

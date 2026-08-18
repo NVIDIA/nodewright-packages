@@ -24,5 +24,13 @@ set -euo pipefail
 STATE_DIR="${FAKE_GRUB_STATE:-/tmp/fake-grub}"
 mkdir -p "${STATE_DIR}"
 touch "${STATE_DIR}/update-grub-ran"
+
+# FAKE_GRUB_FAIL lets a test drive the failure path: a caller that removes or writes a
+# bootloader drop-in has to leave the host consistent when regeneration does not succeed.
+if [[ -n "${FAKE_GRUB_FAIL:-}" ]]; then
+    echo "error: cannot open /boot/grub/grub.cfg for writing" >&2
+    exit 1
+fi
+
 echo "Generating grub configuration file ..."
 exit 0

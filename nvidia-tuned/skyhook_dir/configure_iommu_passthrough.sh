@@ -131,7 +131,7 @@ regenerate_grub() {
         fi
     else
         echo "ERROR: neither update-grub nor grub2-mkconfig is available"
-        exit 1
+        return 1
     fi
 }
 
@@ -142,8 +142,18 @@ regenerate_grub() {
 remove_dropin() {
     [[ -f "${IOMMU_GRUB_DROPIN}" ]] || return 0
 
+    local backup
+    backup="$(mktemp)"
+    cp "${IOMMU_GRUB_DROPIN}" "${backup}"
     rm -f "${IOMMU_GRUB_DROPIN}"
-    regenerate_grub
+
+    if ! regenerate_grub; then
+        mv "${backup}" "${IOMMU_GRUB_DROPIN}"
+        echo "ERROR: could not regenerate the bootloader config; restored ${IOMMU_GRUB_DROPIN}"
+        exit 1
+    fi
+
+    rm -f "${backup}"
     echo "Removed ${IOMMU_GRUB_DROPIN}; a reboot is required to restore IOMMU passthrough"
 }
 
@@ -180,7 +190,15 @@ main() {
     echo "Kernel $(uname -r) predates ${IOMMU_PASSTHROUGH_MIN_KERNEL}; disabling IOMMU passthrough"
     mkdir -p "$(dirname "${IOMMU_GRUB_DROPIN}")"
     printf '%s\n' "${DROPIN_CONTENT}" > "${IOMMU_GRUB_DROPIN}"
-    regenerate_grub
+
+    # Drop the file again if the bootloader config could not be rebuilt, so the drop-in
+    # never outlives a failed regeneration and mislead the config check into passing.
+    if ! regenerate_grub; then
+        rm -f "${IOMMU_GRUB_DROPIN}"
+        echo "ERROR: could not regenerate the bootloader config; removed ${IOMMU_GRUB_DROPIN}"
+        exit 1
+    fi
+
     echo "Wrote ${IOMMU_GRUB_DROPIN}; a reboot is required for it to take effect"
 }
 

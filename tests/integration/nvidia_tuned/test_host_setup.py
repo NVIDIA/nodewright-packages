@@ -1061,3 +1061,34 @@ def test_iommu_passthrough_uninstall_runs_regardless_of_the_profile_gate(node):
     configure(node, accelerator="h100", service="eks")
     assert step(node, "uninstall_iommu_passthrough.sh") == 0, output(node)
     assert not exists(node, IOMMU_DROPIN)
+
+
+def test_iommu_passthrough_restores_the_dropin_when_grub_regeneration_fails(node):
+    """A failed regeneration must not leave the drop-in deleted.
+
+    The generated bootloader config still carries iommu.passthrough=0 at that point, so
+    dropping the source file would make the next uninstall report success against a node
+    that still boots with the setting and has nothing left to remove.
+    """
+    configure(node, **OCI_GB300)
+    assert step(node, "configure_iommu_passthrough.sh", on_kernel(OLD_KERNEL)) == 0
+    assert exists(node, IOMMU_DROPIN)
+
+    assert step(node, "uninstall_iommu_passthrough.sh", {"FAKE_GRUB_FAIL": "1"}) != 0
+    assert said(node, "restored"), output(node)
+    assert exists(node, IOMMU_DROPIN)
+
+    # The check must agree the uninstall did not finish.
+    assert step(node, "uninstall_iommu_passthrough_check.sh") != 0, output(node)
+    assert said(node, "still present"), output(node)
+
+
+def test_iommu_passthrough_removes_the_dropin_when_grub_regeneration_fails_on_write(node):
+    """Symmetrically, a drop-in must not outlive a failed regeneration on the write path."""
+    configure(node, **OCI_GB300)
+
+    rc = step(node, "configure_iommu_passthrough.sh",
+              on_kernel(OLD_KERNEL, FAKE_GRUB_FAIL="1"))
+    assert rc != 0, output(node)
+    assert said(node, "could not regenerate"), output(node)
+    assert not exists(node, IOMMU_DROPIN)
