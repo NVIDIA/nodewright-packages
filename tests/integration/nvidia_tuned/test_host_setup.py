@@ -1084,7 +1084,7 @@ def test_iommu_passthrough_restores_the_dropin_when_grub_regeneration_fails(node
 
 
 def test_iommu_passthrough_removes_the_dropin_when_grub_regeneration_fails_on_write(node):
-    """Symmetrically, a drop-in must not outlive a failed regeneration on the write path."""
+    """With nothing there before, a failed regeneration must leave nothing behind."""
     configure(node, **OCI_GB300)
 
     rc = step(node, "configure_iommu_passthrough.sh",
@@ -1092,3 +1092,24 @@ def test_iommu_passthrough_removes_the_dropin_when_grub_regeneration_fails_on_wr
     assert rc != 0, output(node)
     assert said(node, "could not regenerate"), output(node)
     assert not exists(node, IOMMU_DROPIN)
+
+
+def test_iommu_passthrough_restores_a_replaced_dropin_when_regeneration_fails(node):
+    """Replacing a stale drop-in must roll back to it, not to nothing.
+
+    The generated config still carries the stale value after a failed regeneration, so
+    deleting the file it came from would strand the host with the setting applied and no
+    source for it. Rollback has to restore what was there, not approximate it.
+    """
+    configure(node, **OCI_GB300)
+    assert sh(node, "mkdir -p /etc/default/grub.d") == 0
+    stale = "# stale drop-in from an older package version\niommu.passthrough=0"
+    assert sh(node, f"printf '%s\\n' {shell_quote(stale)} > {IOMMU_DROPIN}") == 0
+
+    rc = step(node, "configure_iommu_passthrough.sh",
+              on_kernel(OLD_KERNEL, FAKE_GRUB_FAIL="1"))
+    assert rc != 0, output(node)
+    assert said(node, "restored the previous"), output(node)
+    assert exists(node, IOMMU_DROPIN)
+    assert contains(node, IOMMU_DROPIN, "stale drop-in from an older package version")
+    assert not contains(node, IOMMU_DROPIN, "Managed by the nvidia-tuned Skyhook package")

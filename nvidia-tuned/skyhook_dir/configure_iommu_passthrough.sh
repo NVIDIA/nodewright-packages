@@ -188,15 +188,31 @@ main() {
     fi
 
     echo "Kernel $(uname -r) predates ${IOMMU_PASSTHROUGH_MIN_KERNEL}; disabling IOMMU passthrough"
+    # Capture whatever is there now, so a failed regeneration can put the host back as it
+    # was rather than approximating it. Replacing a stale drop-in and then deleting it on
+    # failure would strand the generated config carrying its value with no source file.
+    local backup=""
+    if [[ -f "${IOMMU_GRUB_DROPIN}" ]]; then
+        backup="$(mktemp)"
+        cp "${IOMMU_GRUB_DROPIN}" "${backup}"
+    fi
+
     mkdir -p "$(dirname "${IOMMU_GRUB_DROPIN}")"
     printf '%s\n' "${DROPIN_CONTENT}" > "${IOMMU_GRUB_DROPIN}"
 
-    # Drop the file again if the bootloader config could not be rebuilt, so the drop-in
-    # never outlives a failed regeneration and mislead the config check into passing.
     if ! regenerate_grub; then
-        rm -f "${IOMMU_GRUB_DROPIN}"
-        echo "ERROR: could not regenerate the bootloader config; removed ${IOMMU_GRUB_DROPIN}"
+        if [[ -n "${backup}" ]]; then
+            mv "${backup}" "${IOMMU_GRUB_DROPIN}"
+            echo "ERROR: could not regenerate the bootloader config; restored the previous ${IOMMU_GRUB_DROPIN}"
+        else
+            rm -f "${IOMMU_GRUB_DROPIN}"
+            echo "ERROR: could not regenerate the bootloader config; removed ${IOMMU_GRUB_DROPIN}"
+        fi
         exit 1
+    fi
+
+    if [[ -n "${backup}" ]]; then
+        rm -f "${backup}"
     fi
 
     echo "Wrote ${IOMMU_GRUB_DROPIN}; a reboot is required for it to take effect"
