@@ -728,7 +728,7 @@ def test_iommu_passthrough_is_a_noop_without_the_opt_in_marker(node, configmaps)
     old = on_kernel(OLD_KERNEL)
 
     assert step(node, "configure_iommu_passthrough.sh", old) == 0, output(node)
-    assert said(node, "nothing to do"), output(node)
+    assert said(node, "not enabled for this service/accelerator"), output(node)
     assert not exists(node, IOMMU_DROPIN)
 
     for check in ("configure_iommu_passthrough_check.sh",
@@ -985,3 +985,40 @@ def test_iommu_passthrough_post_interrupt_check_rejects_an_absent_value(node):
     # Still reaches the shared diagnostic rather than exiting early.
     assert said(node, "NO CUDA context"), output(node)
     assert said(node, "CONFIGURE_IOMMU_PASSTHROUGH=false"), output(node)
+
+
+def test_iommu_passthrough_removes_the_dropin_when_the_gate_stops_matching(node):
+    """A node re-profiled away from the opted-in pair must not keep the workaround.
+
+    The step owns this drop-in, so standing down has to take the file with it. Leaving it
+    would keep iommu.passthrough=0 on every later boot while both checks report a no-op.
+    """
+    configure(node, **OCI_GB300)
+    old = on_kernel(OLD_KERNEL)
+
+    assert step(node, "configure_iommu_passthrough.sh", old) == 0, output(node)
+    assert exists(node, IOMMU_DROPIN)
+
+    configure(node, accelerator="h100", service="eks")
+    assert step(node, "configure_iommu_passthrough.sh", old) == 0, output(node)
+    assert said(node, "reboot is required to restore"), output(node)
+    assert not exists(node, IOMMU_DROPIN)
+
+
+@pytest.mark.parametrize("value", ["1", "y", "on", "true", "2"])
+def test_iommu_passthrough_post_interrupt_check_accepts_only_the_disabled_value(
+    node, value
+):
+    """Anything but 0 means something other than this drop-in decided the value.
+
+    The kernel parses iommu.passthrough with kstrtobool(), so y/on/true all enable
+    passthrough. Rejecting just "1" would let those through with a translating group
+    present, reporting a node as fixed when the workaround never applied.
+    """
+    configure(node, **OCI_GB300)
+    env = on_kernel(
+        OLD_KERNEL, **booted(node, f"root=x iommu.passthrough={value}", "DMA-FQ")
+    )
+
+    assert step(node, "post_interrupt_iommu_passthrough_check.sh", env) != 0
+    assert said(node, f"resolves iommu.passthrough to '{value}' rather than 0"), output(node)

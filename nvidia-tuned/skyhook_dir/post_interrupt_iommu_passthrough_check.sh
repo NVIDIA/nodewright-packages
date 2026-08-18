@@ -143,9 +143,12 @@ main() {
             "The booted kernel command line (${PROC_CMDLINE}) carries no iommu.passthrough argument, so the drop-in never reached the kernel. Check for a later-sorting file in /etc/default/grub.d/ that overwrites GRUB_CMDLINE_LINUX, and check which entry GRUB_DEFAULT boots."
     fi
 
-    if [[ "${effective}" == "1" ]]; then
+    # Allowlist rather than rejecting "1". The kernel parses this with kstrtobool(), so
+    # y/on/true/t all enable passthrough, and only the exact value the drop-in writes
+    # proves the drop-in is what decided it.
+    if [[ "${effective}" != "0" ]]; then
         fail_not_applied \
-            "The booted kernel command line still resolves iommu.passthrough to 1. The last occurrence wins, so a file sorting after 99-iommu-passthrough.cfg in /etc/default/grub.d/ is overriding it, or the drop-in never reached grub.cfg. Check which entry GRUB_DEFAULT boots."
+            "The booted kernel command line resolves iommu.passthrough to '${effective}' rather than 0. The last occurrence wins, so a file sorting after 99-iommu-passthrough.cfg in /etc/default/grub.d/ is overriding it, or the drop-in never reached grub.cfg. Check which entry GRUB_DEFAULT boots."
     fi
 
     if ! translation_active; then

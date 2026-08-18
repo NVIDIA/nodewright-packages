@@ -135,9 +135,10 @@ regenerate_grub() {
     fi
 }
 
-# Drop a drop-in this package previously wrote. Without this, `false` cannot restore
-# passthrough and a kernel upgraded past the threshold keeps the workaround pinned on,
-# because the stale file still contributes iommu.passthrough=0 at the next boot.
+# Drop a drop-in this package previously wrote. Called from every path where the step
+# stands down: the profile gate no longer matching, `false`, and a kernel upgraded past
+# the threshold. Without it the stale file keeps contributing iommu.passthrough=0 at the
+# next boot while the step reports a no-op.
 remove_dropin() {
     [[ -f "${IOMMU_GRUB_DROPIN}" ]] || return 0
 
@@ -151,7 +152,8 @@ main() {
     policy="$(iommu_policy)"
 
     if ! iommu_enabled; then
-        echo "IOMMU passthrough workaround not enabled for this service/accelerator; nothing to do"
+        echo "IOMMU passthrough workaround not enabled for this service/accelerator"
+        remove_dropin
         return 0
     fi
 
