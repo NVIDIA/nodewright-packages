@@ -100,18 +100,26 @@ case "${verb}" in
         # `unit` holds the glob the caller passed, e.g. 'doca-spcx-cc@*.service'.
         # Emit one unit name per line; callers take field 1.
         seen=""
-        for marker in "${STATE_DIR}"/enabled.* "${STATE_DIR}"/active.*; do
+        for marker in "${STATE_DIR}"/enabled.* "${STATE_DIR}"/active.* "${STATE_DIR}"/stub.*; do
             [[ -e "${marker}" ]] || continue
             name="${marker##*/}"
+            # A stub.<unit> marker models what systemd lists after the unit file is
+            # removed: the instance is still enumerated under --all, but LOAD reads
+            # not-found. That residue is what a successful uninstall leaves behind.
+            case "${name}" in
+                stub.*) load="not-found inactive dead" ;;
+                *) load="loaded active running" ;;
+            esac
             name="${name#enabled.}"
             name="${name#active.}"
+            name="${name#stub.}"
             case " ${seen} " in *" ${name} "*) continue ;; esac
             seen="${seen} ${name}"
             # Glob matching on the right-hand side is the point: callers pass a
             # pattern such as 'doca-spcx-cc@*.service'.
             # shellcheck disable=SC2053
             if [[ -z "${unit}" || "${name}" == ${unit} ]]; then
-                echo "${name} loaded active running fake unit"
+                echo "${name} ${load} fake unit"
             fi
         done
         ;;

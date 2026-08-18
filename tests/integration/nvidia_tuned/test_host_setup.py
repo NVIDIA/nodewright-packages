@@ -22,14 +22,15 @@ Tests for the nvidia-tuned host setup steps added for OCI GB300.
 Covers:
 - install_rdma_vfs_ready.sh, its config, post-interrupt, and uninstall checks
 - configure_pcie_acs.sh, its config and post-interrupt checks
+- configure_iommu_passthrough.sh, its config and post-interrupt checks
 - the bundled wait-rdma-vfs.sh helper
 
 Both steps self-gate on bundled assets resolved from the service and accelerator
 configmaps, so the no-op path for every other service/accelerator pair is covered too.
 
 These steps do not depend on the OS, so they run against a single base image rather
-than the package TEST_MATRIX. Real systemctl, rdma_topo, and update-grub are replaced
-by the test doubles in fakes/.
+than the package TEST_MATRIX. Real systemctl, rdma_topo, update-grub, and uname are
+replaced by the test doubles in fakes/.
 
 Assertions go through exit codes rather than captured text: a step's output is written
 to a file in the container and matched there with grep. The container exec API returns
@@ -55,6 +56,13 @@ OUTPUT_FILE = "/tmp/step-output"
 UNIT_DEST = "/etc/systemd/system/rdma-vfs-ready.service"
 HELPER_DEST = "/usr/local/sbin/wait-rdma-vfs.sh"
 ACS_DROPIN = "/etc/default/grub.d/config-acs.cfg"
+IOMMU_DROPIN = "/etc/default/grub.d/99-iommu-passthrough.cfg"
+FAKE_CMDLINE = "/tmp/fake-cmdline"
+FAKE_IOMMU_GROUPS = "/tmp/fake-iommu-groups"
+
+# Either side of the 6.11 threshold, where arm-smmu-v3 gained S1DSS_BYPASS.
+OLD_KERNEL = "6.8.0-1060-generic"
+NEW_KERNEL = "6.14.0-1015-generic"
 SYSTEMCTL_CALLS = "/tmp/fake-systemctl/calls"
 
 BUNDLED_DIR = "/skyhook-package/profiles/service/oci/rdma-vfs-ready-gb300"
@@ -682,3 +690,426 @@ def test_pcie_acs_rejects_unreadable_acs_state(node):
     # And it must not be reported as verified.
     assert step(node, "post_interrupt_pcie_acs_check.sh", unreadable) != 0
     assert said(node, "did not take effect on this node"), output(node)
+
+
+# ---------------------------------------------------------------------------
+# configure_iommu_passthrough.sh
+#
+# The policy turns on `uname -r`, so these pin it through the uname fake rather than
+# inheriting whatever kernel the test host happens to run.
+# ---------------------------------------------------------------------------
+
+
+def on_kernel(version: str, **extra) -> dict:
+    """Step env with the reported kernel version pinned."""
+    return {"FAKE_UNAME_R": version, **extra}
+
+
+def booted(node: DockerTestRunner, cmdline: str, *group_types: str) -> dict:
+    """Stage a fake booted state and return the env that points the check at it.
+
+    cmdline is written verbatim so a test can place iommu.passthrough more than once;
+    group_types become one sysfs group each, which is how translation is detected.
+    """
+    cmds = [f"printf '%s\\n' {shell_quote(cmdline)} > {FAKE_CMDLINE}",
+            f"rm -rf {FAKE_IOMMU_GROUPS}"]
+    for index, group_type in enumerate(group_types):
+        cmds.append(f"mkdir -p {FAKE_IOMMU_GROUPS}/{index}")
+        cmds.append(
+            f"printf '%s\\n' {shell_quote(group_type)} > {FAKE_IOMMU_GROUPS}/{index}/type"
+        )
+    assert sh(node, " && ".join(cmds)) == 0
+    return {"PROC_CMDLINE": FAKE_CMDLINE, "IOMMU_GROUPS_DIR": FAKE_IOMMU_GROUPS}
+
+
+@pytest.mark.parametrize("configmaps", OTHER_SHAPES, ids=OTHER_SHAPE_IDS)
+def test_iommu_passthrough_is_a_noop_without_the_opt_in_marker(node, configmaps):
+    configure(node, **configmaps)
+    old = on_kernel(OLD_KERNEL)
+
+    assert step(node, "configure_iommu_passthrough.sh", old) == 0, output(node)
+    assert said(node, "not enabled for this service/accelerator"), output(node)
+    assert not exists(node, IOMMU_DROPIN)
+
+    for check in ("configure_iommu_passthrough_check.sh",
+                  "post_interrupt_iommu_passthrough_check.sh"):
+        assert step(node, check, old) == 0, output(node)
+        assert said(node, "nothing to verify"), output(node)
+
+
+def test_iommu_passthrough_writes_the_dropin_on_an_affected_kernel(node):
+    configure(node, **OCI_GB300)
+
+    assert step(node, "configure_iommu_passthrough.sh", on_kernel(OLD_KERNEL)) == 0
+    assert said(node, "reboot is required"), output(node)
+    assert contains(node, IOMMU_DROPIN, "iommu.passthrough=0")
+    assert exists(node, "/tmp/fake-grub/update-grub-ran")
+
+
+def test_iommu_passthrough_appends_rather_than_replacing(node):
+    """The drop-in must supersede an earlier producer without depending on one.
+
+    It contributes by appending to $GRUB_CMDLINE_LINUX, so it is correct whether or not
+    the platform ships a drop-in of its own, and sorts last so its value is the one the
+    kernel acts on.
+    """
+    configure(node, **OCI_GB300)
+
+    assert step(node, "configure_iommu_passthrough.sh", on_kernel(OLD_KERNEL)) == 0
+    assert contains(node, IOMMU_DROPIN, 'GRUB_CMDLINE_LINUX="$GRUB_CMDLINE_LINUX')
+
+
+def test_iommu_passthrough_is_a_noop_on_a_fixed_kernel(node):
+    """At or above the threshold the kernel handles PASID on an identity domain."""
+    configure(node, **OCI_GB300)
+    new = on_kernel(NEW_KERNEL)
+
+    assert step(node, "configure_iommu_passthrough.sh", new) == 0, output(node)
+    assert said(node, "passthrough is fine here"), output(node)
+    assert not exists(node, IOMMU_DROPIN)
+
+    for check in ("configure_iommu_passthrough_check.sh",
+                  "post_interrupt_iommu_passthrough_check.sh"):
+        assert step(node, check, new) == 0, output(node)
+
+
+def test_iommu_passthrough_is_idempotent_across_config_passes(node):
+    configure(node, **OCI_GB300)
+    old = on_kernel(OLD_KERNEL)
+
+    assert step(node, "configure_iommu_passthrough.sh", old) == 0, output(node)
+    assert sh(node, f"cp {IOMMU_DROPIN} /tmp/iommu-dropin.first") == 0
+    assert step(node, "configure_iommu_passthrough.sh", old) == 0, output(node)
+
+    assert said(node, "already current"), output(node)
+    assert same(node, "/tmp/iommu-dropin.first", IOMMU_DROPIN)
+
+
+def test_iommu_passthrough_rewrites_a_stale_dropin(node):
+    """A drop-in left by an older package version is corrected, not silently kept."""
+    configure(node, **OCI_GB300)
+    assert sh(node, "mkdir -p /etc/default/grub.d") == 0
+    assert sh(node, f"printf '%s\\n' '# stale' > {IOMMU_DROPIN}") == 0
+
+    assert step(node, "configure_iommu_passthrough.sh", on_kernel(OLD_KERNEL)) == 0
+    assert contains(node, IOMMU_DROPIN, "iommu.passthrough=0")
+
+
+@pytest.mark.parametrize("value", ["false", "FALSE", "0", "no", "off"])
+def test_iommu_passthrough_can_be_switched_off_by_the_operator(node, value):
+    """The escape hatch for a kernel carrying a backported fix uname cannot see."""
+    configure(node, **OCI_GB300)
+    off = on_kernel(OLD_KERNEL, CONFIGURE_IOMMU_PASSTHROUGH=value)
+
+    assert step(node, "configure_iommu_passthrough.sh", off) == 0, output(node)
+    assert said(node, "switched off"), output(node)
+    assert not exists(node, IOMMU_DROPIN)
+
+    # Both checks stand down, so a switched-off node never fails post-interrupt.
+    for check in ("configure_iommu_passthrough_check.sh",
+                  "post_interrupt_iommu_passthrough_check.sh"):
+        assert step(node, check, off) == 0, output(node)
+        assert said(node, "switched off"), output(node)
+
+
+@pytest.mark.parametrize("value", ["true", "TRUE", "1", "yes", "on"])
+def test_iommu_passthrough_can_be_forced_on_a_fixed_kernel(node, value):
+    """`true` overrides the version check, for a kernel auto reads wrongly."""
+    configure(node, **OCI_GB300)
+
+    rc = step(node, "configure_iommu_passthrough.sh",
+              on_kernel(NEW_KERNEL, CONFIGURE_IOMMU_PASSTHROUGH=value))
+    assert rc == 0, output(node)
+    assert said(node, "reboot is required"), output(node)
+    assert contains(node, IOMMU_DROPIN, "iommu.passthrough=0")
+
+
+def test_iommu_passthrough_treats_an_unparseable_kernel_as_new_enough(node):
+    """Applying a boot-affecting change to an unknown platform is the worse failure."""
+    configure(node, **OCI_GB300)
+
+    assert step(node, "configure_iommu_passthrough.sh", on_kernel("not-a-version")) == 0
+    assert said(node, "cannot parse kernel version"), output(node)
+    assert not exists(node, IOMMU_DROPIN)
+
+
+def test_iommu_passthrough_config_check_fails_when_nothing_was_written(node):
+    configure(node, **OCI_GB300)
+
+    assert step(node, "configure_iommu_passthrough_check.sh", on_kernel(OLD_KERNEL)) != 0
+    assert said(node, "no bootloader drop-in"), output(node)
+
+
+@pytest.mark.parametrize(
+    ("dropin", "accepted"),
+    [
+        ('GRUB_CMDLINE_LINUX="$GRUB_CMDLINE_LINUX iommu.passthrough=0"', True),
+        ("iommu.passthrough=0", True),
+        ("\tiommu.passthrough=0", True),
+        ("# iommu.passthrough=0", False),
+        ("  # iommu.passthrough=0", False),
+        ('GRUB_CMDLINE_LINUX="$GRUB_CMDLINE_LINUX" # iommu.passthrough=0', False),
+        ("# example only, nothing active here", False),
+    ],
+    ids=[
+        "assignment",
+        "bare",
+        "tab-indented",
+        "comment",
+        "indented-comment",
+        "inline-comment",
+        "no-token",
+    ],
+)
+def test_iommu_passthrough_config_check_only_accepts_an_active_setting(
+    node, dropin, accepted
+):
+    """A commented example must not satisfy the pre-reboot check, but indentation must."""
+    configure(node, **OCI_GB300)
+    assert sh(node, "mkdir -p /etc/default/grub.d") == 0
+    assert sh(node, f"printf '%s\\n' {shell_quote(dropin)} > {IOMMU_DROPIN}") == 0
+
+    rc = step(node, "configure_iommu_passthrough_check.sh", on_kernel(OLD_KERNEL))
+    if accepted:
+        assert rc == 0, output(node)
+        assert said(node, "pending reboot"), output(node)
+    else:
+        assert rc != 0, output(node)
+        assert said(node, "does not contain an active"), output(node)
+
+
+def test_iommu_passthrough_post_interrupt_check_accepts_a_translated_node(node):
+    configure(node, **OCI_GB300)
+    env = on_kernel(OLD_KERNEL,
+                    **booted(node, "root=x iommu.passthrough=1 quiet iommu.passthrough=0",
+                             "DMA-FQ", "DMA-FQ"))
+
+    assert step(node, "post_interrupt_iommu_passthrough_check.sh", env) == 0, output(node)
+    assert said(node, "translation is active"), output(node)
+
+
+def test_iommu_passthrough_post_interrupt_check_reads_the_last_cmdline_value(node):
+    """The token legitimately appears twice; only the last one is what the kernel used.
+
+    A drop-in that sorts before another producer leaves iommu.passthrough=1 in effect
+    while =0 is still present on the command line. Matching the token anywhere would
+    report that node as fixed, which is the failure this check exists to catch.
+    """
+    configure(node, **OCI_GB300)
+    env = on_kernel(OLD_KERNEL,
+                    **booted(node, "root=x iommu.passthrough=0 quiet iommu.passthrough=1",
+                             "identity", "identity"))
+
+    assert step(node, "post_interrupt_iommu_passthrough_check.sh", env) != 0
+    assert said(node, "resolves iommu.passthrough to '1' rather than 0"), output(node)
+
+
+def test_iommu_passthrough_post_interrupt_check_requires_translation_to_be_live(node):
+    """A correct command line is not evidence on its own; the SMMU must have acted."""
+    configure(node, **OCI_GB300)
+    env = on_kernel(OLD_KERNEL,
+                    **booted(node, "root=x iommu.passthrough=1 quiet iommu.passthrough=0",
+                             "identity", "identity"))
+
+    assert step(node, "post_interrupt_iommu_passthrough_check.sh", env) != 0
+    assert said(node, "still in bypass"), output(node)
+
+
+def test_iommu_passthrough_failure_message_names_cause_impact_and_remedy(node):
+    """Whoever investigates the failure must not need to read the source to act."""
+    configure(node, **OCI_GB300)
+    env = on_kernel(OLD_KERNEL,
+                    **booted(node, "root=x iommu.passthrough=1", "identity"))
+
+    assert step(node, "post_interrupt_iommu_passthrough_check.sh", env) != 0
+
+    # Cause: the workaround did not reach the booted kernel.
+    assert said(node, "did not take effect on this node"), output(node)
+    # Impact: no CUDA context can be created, and where to look to confirm.
+    assert said(node, "NO CUDA context"), output(node)
+    assert said(node, "arm_smmu_write_ctx_desc"), output(node)
+    # Remedy: the documented opt-out.
+    assert said(node, "CONFIGURE_IOMMU_PASSTHROUGH=false"), output(node)
+
+
+def test_iommu_passthrough_off_removes_a_previously_written_dropin(node):
+    """`false` has to restore passthrough, not just stop maintaining the drop-in.
+
+    A stale drop-in still contributes iommu.passthrough=0 at the next boot, so leaving it
+    in place would make the documented escape hatch unable to do the thing it documents.
+    """
+    configure(node, **OCI_GB300)
+
+    assert step(node, "configure_iommu_passthrough.sh", on_kernel(OLD_KERNEL)) == 0
+    assert exists(node, IOMMU_DROPIN)
+
+    off = on_kernel(OLD_KERNEL, CONFIGURE_IOMMU_PASSTHROUGH="false")
+    assert step(node, "configure_iommu_passthrough.sh", off) == 0, output(node)
+    assert said(node, "reboot is required to restore"), output(node)
+    assert not exists(node, IOMMU_DROPIN)
+
+
+def test_iommu_passthrough_removes_the_dropin_after_a_kernel_upgrade(node):
+    """A node upgraded past the threshold must not keep the workaround pinned on."""
+    configure(node, **OCI_GB300)
+
+    assert step(node, "configure_iommu_passthrough.sh", on_kernel(OLD_KERNEL)) == 0
+    assert exists(node, IOMMU_DROPIN)
+
+    assert step(node, "configure_iommu_passthrough.sh", on_kernel(NEW_KERNEL)) == 0
+    assert said(node, "reboot is required to restore"), output(node)
+    assert not exists(node, IOMMU_DROPIN)
+
+
+def test_iommu_passthrough_removal_is_idempotent(node):
+    """Standing down on a node that never had the drop-in must not claim it removed one."""
+    configure(node, **OCI_GB300)
+    off = on_kernel(OLD_KERNEL, CONFIGURE_IOMMU_PASSTHROUGH="false")
+
+    assert step(node, "configure_iommu_passthrough.sh", off) == 0, output(node)
+    assert not said(node, "Removed"), output(node)
+
+
+def test_iommu_passthrough_post_interrupt_check_rejects_an_absent_value(node):
+    """An absent token means nothing this package wrote reached the booted kernel.
+
+    The drop-in sets iommu.passthrough explicitly, so its absence is a drop-in that never
+    applied. Accepting it because the kernel happened to default to a translating domain
+    would report a broken deployment as fixed.
+    """
+    configure(node, **OCI_GB300)
+    env = on_kernel(OLD_KERNEL, **booted(node, "root=x quiet", "DMA-FQ"))
+
+    assert step(node, "post_interrupt_iommu_passthrough_check.sh", env) != 0
+    assert said(node, "carries no iommu.passthrough argument"), output(node)
+    # Still reaches the shared diagnostic rather than exiting early.
+    assert said(node, "NO CUDA context"), output(node)
+    assert said(node, "CONFIGURE_IOMMU_PASSTHROUGH=false"), output(node)
+
+
+def test_iommu_passthrough_removes_the_dropin_when_the_gate_stops_matching(node):
+    """A node re-profiled away from the opted-in pair must not keep the workaround.
+
+    The step owns this drop-in, so standing down has to take the file with it. Leaving it
+    would keep iommu.passthrough=0 on every later boot while both checks report a no-op.
+    """
+    configure(node, **OCI_GB300)
+    old = on_kernel(OLD_KERNEL)
+
+    assert step(node, "configure_iommu_passthrough.sh", old) == 0, output(node)
+    assert exists(node, IOMMU_DROPIN)
+
+    configure(node, accelerator="h100", service="eks")
+    assert step(node, "configure_iommu_passthrough.sh", old) == 0, output(node)
+    assert said(node, "reboot is required to restore"), output(node)
+    assert not exists(node, IOMMU_DROPIN)
+
+
+@pytest.mark.parametrize("value", ["1", "y", "on", "true", "2"])
+def test_iommu_passthrough_post_interrupt_check_accepts_only_the_disabled_value(
+    node, value
+):
+    """Anything but 0 means something other than this drop-in decided the value.
+
+    The kernel parses iommu.passthrough with kstrtobool(), so y/on/true all enable
+    passthrough. Rejecting just "1" would let those through with a translating group
+    present, reporting a node as fixed when the workaround never applied.
+    """
+    configure(node, **OCI_GB300)
+    env = on_kernel(
+        OLD_KERNEL, **booted(node, f"root=x iommu.passthrough={value}", "DMA-FQ")
+    )
+
+    assert step(node, "post_interrupt_iommu_passthrough_check.sh", env) != 0
+    assert said(node, f"resolves iommu.passthrough to '{value}' rather than 0"), output(node)
+
+
+def test_iommu_passthrough_uninstall_removes_the_dropin(node):
+    """Removing the package must not leave iommu.passthrough=0 forced on every boot."""
+    configure(node, **OCI_GB300)
+
+    assert step(node, "configure_iommu_passthrough.sh", on_kernel(OLD_KERNEL)) == 0
+    assert exists(node, IOMMU_DROPIN)
+
+    assert step(node, "uninstall_iommu_passthrough.sh") == 0, output(node)
+    assert said(node, "reboot is required to restore"), output(node)
+    assert not exists(node, IOMMU_DROPIN)
+
+    assert step(node, "uninstall_iommu_passthrough_check.sh") == 0, output(node)
+    assert said(node, "drop-in is removed"), output(node)
+
+
+def test_iommu_passthrough_uninstall_is_a_noop_when_never_configured(node):
+    """Uninstall keys on host state, so a node that never had the drop-in is fine."""
+    configure(node, **OCI_GB300)
+
+    assert step(node, "uninstall_iommu_passthrough.sh") == 0, output(node)
+    assert said(node, "is not present; nothing to remove"), output(node)
+    assert step(node, "uninstall_iommu_passthrough_check.sh") == 0, output(node)
+
+
+def test_iommu_passthrough_uninstall_runs_regardless_of_the_profile_gate(node):
+    """Uninstall must clean up after a custom resource whose configmaps have changed.
+
+    Gating on the bundled marker would strand the drop-in on a node that was re-profiled
+    before the package was removed.
+    """
+    configure(node, **OCI_GB300)
+    assert step(node, "configure_iommu_passthrough.sh", on_kernel(OLD_KERNEL)) == 0
+    assert exists(node, IOMMU_DROPIN)
+
+    configure(node, accelerator="h100", service="eks")
+    assert step(node, "uninstall_iommu_passthrough.sh") == 0, output(node)
+    assert not exists(node, IOMMU_DROPIN)
+
+
+def test_iommu_passthrough_restores_the_dropin_when_grub_regeneration_fails(node):
+    """A failed regeneration must not leave the drop-in deleted.
+
+    The generated bootloader config still carries iommu.passthrough=0 at that point, so
+    dropping the source file would make the next uninstall report success against a node
+    that still boots with the setting and has nothing left to remove.
+    """
+    configure(node, **OCI_GB300)
+    assert step(node, "configure_iommu_passthrough.sh", on_kernel(OLD_KERNEL)) == 0
+    assert exists(node, IOMMU_DROPIN)
+
+    assert step(node, "uninstall_iommu_passthrough.sh", {"FAKE_GRUB_FAIL": "1"}) != 0
+    assert said(node, "restored"), output(node)
+    assert exists(node, IOMMU_DROPIN)
+
+    # The check must agree the uninstall did not finish.
+    assert step(node, "uninstall_iommu_passthrough_check.sh") != 0, output(node)
+    assert said(node, "still present"), output(node)
+
+
+def test_iommu_passthrough_removes_the_dropin_when_grub_regeneration_fails_on_write(node):
+    """With nothing there before, a failed regeneration must leave nothing behind."""
+    configure(node, **OCI_GB300)
+
+    rc = step(node, "configure_iommu_passthrough.sh",
+              on_kernel(OLD_KERNEL, FAKE_GRUB_FAIL="1"))
+    assert rc != 0, output(node)
+    assert said(node, "could not regenerate"), output(node)
+    assert not exists(node, IOMMU_DROPIN)
+
+
+def test_iommu_passthrough_restores_a_replaced_dropin_when_regeneration_fails(node):
+    """Replacing a stale drop-in must roll back to it, not to nothing.
+
+    The generated config still carries the stale value after a failed regeneration, so
+    deleting the file it came from would strand the host with the setting applied and no
+    source for it. Rollback has to restore what was there, not approximate it.
+    """
+    configure(node, **OCI_GB300)
+    assert sh(node, "mkdir -p /etc/default/grub.d") == 0
+    stale = "# stale drop-in from an older package version\niommu.passthrough=0"
+    assert sh(node, f"printf '%s\\n' {shell_quote(stale)} > {IOMMU_DROPIN}") == 0
+
+    rc = step(node, "configure_iommu_passthrough.sh",
+              on_kernel(OLD_KERNEL, FAKE_GRUB_FAIL="1"))
+    assert rc != 0, output(node)
+    assert said(node, "restored the previous"), output(node)
+    assert exists(node, IOMMU_DROPIN)
+    assert contains(node, IOMMU_DROPIN, "stale drop-in from an older package version")
+    assert not contains(node, IOMMU_DROPIN, "Managed by the nvidia-tuned Skyhook package")

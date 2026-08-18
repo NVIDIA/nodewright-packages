@@ -1,0 +1,7 @@
+# Marker: opt this service/accelerator pair in to the IOMMU passthrough workaround run
+# by skyhook_dir/configure_iommu_passthrough.sh. The file is a switch; its contents are
+# ignored.
+#
+# Needed to run ACS + DMA-BUF on kernels older than 6.11, whose arm-smmu-v3 cannot
+# attach a PASID to an identity domain. Requires a reboot, so a custom resource
+# selecting this pair must declare `interrupt: {type: reboot}`.

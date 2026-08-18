@@ -564,3 +564,43 @@ def test_spcx_cc_off_tolerates_processes_owned_by_something_else(node):
     assert step(node, "configure_spcx_cc_check.sh") == 0, output(node)
     assert said(node, "is off"), output(node)
     assert said(node, "running from outside this package"), output(node)
+
+
+def test_spcx_cc_uninstall_check_ignores_not_found_stubs(node):
+    """A successful uninstall leaves not-found stubs, and they must not fail the check.
+
+    Removing the template unit file is what makes each instance not-found, and systemd
+    keeps them enumerated under `--all` until they are garbage collected. The device
+    units udev created still reference them, so they survive daemon-reload, and
+    reset-failed does not clear them because they are inactive/dead rather than failed.
+    Counting them made the check unpassable on a node that had actually been cleaned up,
+    which blocked every nvidia-tuned upgrade.
+    """
+    configure(node, spcx_cc="on", **OCI_GB300)
+    stage_rails(node)
+    assert step(node, "configure_spcx_cc.sh") == 0, output(node)
+    assert step(node, "uninstall_spcx_cc.sh") == 0, output(node)
+
+    # What the node looks like afterwards: unit file and rule gone, stubs still listed.
+    for rail in ("mlx5_bond_0", "mlx5_bond_1"):
+        unit = f"doca-spcx-cc@{rail}.service"
+        assert sh(node, f"touch /tmp/fake-systemctl/stub.{unit}") == 0
+
+    assert step(node, "uninstall_spcx_cc_check.sh") == 0, output(node)
+    assert said(node, "units are removed"), output(node)
+
+
+def test_spcx_cc_uninstall_check_still_fails_on_a_loaded_unit(node):
+    """Ignoring not-found must not weaken the assertion for a unit that is still loaded."""
+    configure(node, spcx_cc="on", **OCI_GB300)
+    stage_rails(node)
+    assert step(node, "configure_spcx_cc.sh") == 0, output(node)
+    assert step(node, "uninstall_spcx_cc.sh") == 0, output(node)
+
+    # A still-loaded instance is a real uninstall failure, stub or not.
+    assert sh(node, "touch /tmp/fake-systemctl/active.doca-spcx-cc@mlx5_bond_0.service") == 0
+    assert sh(node, "touch /tmp/fake-systemctl/stub.doca-spcx-cc@mlx5_bond_1.service") == 0
+
+    assert step(node, "uninstall_spcx_cc_check.sh") != 0, output(node)
+    assert said(node, "still known to systemd"), output(node)
+    assert said(node, "doca-spcx-cc@mlx5_bond_0.service"), output(node)

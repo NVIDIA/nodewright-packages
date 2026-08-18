@@ -20,6 +20,45 @@ example is not itself picked up as release notes):
     - Notable behavior change worth calling out.
 -->
 
+## 0.8.0
+
+Adds an IOMMU passthrough workaround needed to run ACS + DMA-BUF on kernels older than
+6.11, gated on `oci` + `gb300` like the PCIe ACS correction.
+
+OCI ships `iommu.passthrough=1`, and arm-smmu-v3 before 6.11 cannot attach a PASID to an
+identity domain, so `nvidia_uvm`'s ATS/SVA bind fails with `-E2BIG` and no CUDA context
+can be created: `cudaMalloc` reports the GPUs as busy on an idle node, taking DCGM, the
+GPU operator validators and every workload with it. The new `configure-iommu-passthrough`
+step writes a `99-iommu-passthrough.cfg` grub drop-in setting `iommu.passthrough=0`.
+
+Defaults to `CONFIGURE_IOMMU_PASSTHROUGH=auto`, applying only on kernels older than
+6.11. Vendor kernels backport, so `auto` can guess wrong either way; set `false` to keep
+passthrough or `true` to force the change.
+
+Setting `false`, or upgrading a node past the threshold under `auto`, removes a drop-in
+this package previously wrote and regenerates GRUB, so passthrough returns on the next
+boot rather than staying pinned off. Uninstalling the package removes it too, unlike the
+PCIe ACS drop-in, which corrects a hardware misconfiguration and is deliberately left in
+place.
+
+Upgrade note: changes the kernel command line, so it takes effect on the next boot via
+the `interrupt: {type: reboot}` this package already requires. Nodes at or above the
+threshold are unaffected. Translating domains cost some DMA performance; the trade is
+against those nodes being unable to run CUDA at all.
+
+Also fixes the Spectrum-X congestion control uninstall check rejecting a node whose units were
+already removed, which blocked every nvidia-tuned upgrade on an affected node.
+
+Removing the template unit file is what makes each instance `not-found`, and systemd keeps
+those stubs enumerated under `systemctl list-units --all` until they are garbage collected.
+The device units udev created still reference them, so they survive `daemon-reload`, and
+`reset-failed` does not clear them because they are inactive/dead rather than failed. The
+check counted any listed instance, so a node that had been cleaned up correctly could never
+pass, and the uninstall step retried until it backed off.
+
+The check now ignores instances whose LOAD column reads `not-found`. A unit that is still
+loaded remains a failure.
+
 ## 0.7.2
 
 Picks up tuned 1.3.2, which stops a single unreachable or stale apt repo from

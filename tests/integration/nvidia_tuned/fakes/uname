@@ -16,21 +16,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Test double for update-grub. Records that it ran so tests can assert the bootloader
-# config was regenerated after the ACS drop-in was written.
+# Test double for uname. Reports FAKE_UNAME_R for `uname -r` so tests can pin the kernel
+# version the IOMMU passthrough policy sees. Every other invocation, and any invocation
+# with FAKE_UNAME_R unset, defers to the real binary.
 
 set -euo pipefail
 
-STATE_DIR="${FAKE_GRUB_STATE:-/tmp/fake-grub}"
-mkdir -p "${STATE_DIR}"
-touch "${STATE_DIR}/update-grub-ran"
-
-# FAKE_GRUB_FAIL lets a test drive the failure path: a caller that removes or writes a
-# bootloader drop-in has to leave the host consistent when regeneration does not succeed.
-if [[ -n "${FAKE_GRUB_FAIL:-}" ]]; then
-    echo "error: cannot open /boot/grub/grub.cfg for writing" >&2
-    exit 1
+if [[ "${1:-}" == "-r" && -n "${FAKE_UNAME_R:-}" ]]; then
+    echo "${FAKE_UNAME_R}"
+    exit 0
 fi
 
-echo "Generating grub configuration file ..."
-exit 0
+exec /usr/bin/uname "$@"

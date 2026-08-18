@@ -250,7 +250,7 @@ spec:
   packages:
     nvidia-tuned:
       image: ghcr.io/nvidia/nodewright-packages/nvidia-tuned
-      version: 0.7.0
+      version: 0.8.0
       interrupt:
         type: reboot
       env:
@@ -286,6 +286,19 @@ host-level steps do need a reboot:
   `pci=config_acs=`; on a node whose kernel does not, set `CONFIGURE_PCIE_ACS=false`
   (see the environment variables below), keep `nvidia_peermem` loaded, and keep
   `NCCL_DMABUF_ENABLE=0` set.
+- **IOMMU passthrough on old kernels.** Needed to run ACS + DMA-BUF on kernels older
+  than 6.11. OCI ships `iommu.passthrough=1`, and arm-smmu-v3 before 6.11 cannot attach
+  a PASID to an identity domain, so `nvidia_uvm`'s ATS/SVA bind fails with `-E2BIG` and
+  **no CUDA context can be created at all**: `cudaMalloc` reports the GPUs as busy on an
+  idle node. The `configure-iommu-passthrough` step writes a
+  `/etc/default/grub.d/99-iommu-passthrough.cfg` drop-in setting `iommu.passthrough=0`,
+  restoring translating domains and with them CUDA, GPUDirect RDMA and DMA-BUF. Defaults
+  to `auto` (apply below 6.11). When the policy stops applying, because the node was
+  switched off or its kernel was upgraded past the threshold, the drop-in is removed and
+  GRUB regenerated, so passthrough comes back on the next boot. It is scoped to affected
+  kernels rather than applied everywhere because translating domains cost DMA performance,
+  which is why passthrough is set in the first place; on a kernel with the fix there is no
+  benefit to pay for. Independent of the ACS correction; both can be active.
 - **RDMA VF boot gate.** The `install-rdma-vfs-ready` step installs a
   `rdma-vfs-ready.service` unit that orders before `kubelet.service` and waits for the
   Oracle Cloud Agent to create the RDMA VFs. It is a boot-ordering gate, so it only has
@@ -357,6 +370,7 @@ Both steps are no-ops for every other `service`/`accelerator` pair, so existing 
 |----------|----------|---------|-------------|
 | `TOPO_PATH` | No | `/etc/nccl/topo.xml` | Absolute host path the bundled NCCL topology file is written to. Only used when the configured `service`/`accelerator` pair ships one (today `oci` + `gb300`); otherwise the step is a no-op. Point `NCCL_TOPO_FILE` at the same path in your workloads. |
 | `CONFIGURE_PCIE_ACS` | No | `true` | Set to `false` to skip the PCIe ACS correction and its checks. Only relevant to a `service`/`accelerator` pair that opts in (today `oci` + `gb300`). Use this on nodes whose kernel does not honour `pci=config_acs=`, where the correction cannot take effect and the post-interrupt check would otherwise fail the node. |
+| `CONFIGURE_IOMMU_PASSTHROUGH` | No | `auto` | Controls the IOMMU passthrough workaround for kernels whose arm-smmu-v3 cannot attach a PASID to an identity domain. `auto` applies it only when the running kernel is older than 6.11; `true` always applies it; `false` never does and skips the checks. Only relevant to a `service`/`accelerator` pair that opts in (today `oci` + `gb300`). Set `false` on a node whose kernel carries a backported fix that the version check cannot see. |
 | `APT_ALLOW_INDEX_FAILURE` | No | `true` | Inherited from the `tuned` base package. Lets `apt update` fail without failing the install step, so one unreachable third-party repo in `/etc/apt/sources.list.d` cannot block the package. Set to `false` to restore strict behavior. The `apt install` that follows is unaffected and still fails if the package is genuinely unavailable. |
 
 ## Adding OS-Specific Overrides
