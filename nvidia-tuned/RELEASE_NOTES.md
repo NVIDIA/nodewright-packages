@@ -44,6 +44,19 @@ the `interrupt: {type: reboot}` this package already requires. Nodes at or above
 threshold are unaffected. Translating domains cost some DMA performance; the trade is
 against those nodes being unable to run CUDA at all.
 
+Also fixes the Spectrum-X congestion control uninstall check rejecting a node whose units were
+already removed, which blocked every nvidia-tuned upgrade on an affected node.
+
+Removing the template unit file is what makes each instance `not-found`, and systemd keeps
+those stubs enumerated under `systemctl list-units --all` until they are garbage collected.
+The device units udev created still reference them, so they survive `daemon-reload`, and
+`reset-failed` does not clear them because they are inactive/dead rather than failed. The
+check counted any listed instance, so a node that had been cleaned up correctly could never
+pass, and the uninstall step retried until it backed off.
+
+The check now ignores instances whose LOAD column reads `not-found`. A unit that is still
+loaded remains a failure.
+
 ## 0.7.2
 
 Picks up tuned 1.3.2, which stops a single unreachable or stale apt repo from

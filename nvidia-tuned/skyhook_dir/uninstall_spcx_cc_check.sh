@@ -43,8 +43,15 @@ main() {
         exit 1
     fi
 
+    # Ignore units whose LOAD column is not-found. Removing the template unit file is
+    # exactly what makes an instance not-found, and systemd keeps the stub listed under
+    # --all until it is garbage collected, so a successful uninstall leaves these behind.
+    # Counting them made the check unpassable: the device units udev created still
+    # reference the instances, so the stubs survive daemon-reload, and reset-failed does
+    # not clear them because they are inactive/dead rather than failed. Only a unit that
+    # is still loaded means the uninstall did not finish.
     local remaining
-    remaining="$(systemctl list-units --all --plain --no-legend 'doca-spcx-cc@*.service' 2>/dev/null | awk '{print $1}')"
+    remaining="$(systemctl list-units --all --plain --no-legend 'doca-spcx-cc@*.service' 2>/dev/null | awk '$2 != "not-found" {print $1}')"
     if [[ -n "${remaining}" ]]; then
         echo "ERROR: doca-spcx-cc@ unit(s) still known to systemd:"
         local unit
