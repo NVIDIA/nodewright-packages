@@ -901,7 +901,7 @@ def test_iommu_passthrough_post_interrupt_check_reads_the_last_cmdline_value(nod
                              "identity", "identity"))
 
     assert step(node, "post_interrupt_iommu_passthrough_check.sh", env) != 0
-    assert said(node, "still resolves iommu.passthrough to 1"), output(node)
+    assert said(node, "resolves iommu.passthrough to '1' rather than 0"), output(node)
 
 
 def test_iommu_passthrough_post_interrupt_check_requires_translation_to_be_live(node):
