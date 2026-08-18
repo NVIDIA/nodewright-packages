@@ -5,13 +5,28 @@
 
 All notable changes to this package will be documented in this file.
 
+## [0.8.0] - 2026-08-18
+
+### New Features
+
+- *(nvidia-tuned)* Disable IOMMU passthrough on kernels needing it for ACS + DMA-BUF 
+
+
+## [0.7.2] - 2026-08-14
+
+### Bug Fixes
+
+- *(tuned)* Tolerate apt index refresh failures during install 
+
+### Other Tasks
+
+- *(general)* Remove fixed per-container overhead and per-test tuned installs 
+
 ## [0.7.1] - 2026-08-10
 
 ### Bug Fixes
 
-- *(nvidia-tuned)* Verify PCIe ACS independently of GPU driver state
-- *(nvidia-tuned)* Require an ACS result record before accepting ACS values
-
+- *(nvidia-tuned)* Verify PCIe ACS independently of GPU driver state 
 
 ## [0.7.0] - 2026-08-10
 
