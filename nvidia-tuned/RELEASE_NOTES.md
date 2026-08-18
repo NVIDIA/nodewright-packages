@@ -37,7 +37,9 @@ passthrough or `true` to force the change.
 
 Setting `false`, or upgrading a node past the threshold under `auto`, removes a drop-in
 this package previously wrote and regenerates GRUB, so passthrough returns on the next
-boot rather than staying pinned off.
+boot rather than staying pinned off. Uninstalling the package removes it too, unlike the
+PCIe ACS drop-in, which corrects a hardware misconfiguration and is deliberately left in
+place.
 
 Upgrade note: changes the kernel command line, so it takes effect on the next boot via
 the `interrupt: {type: reboot}` this package already requires. Nodes at or above the

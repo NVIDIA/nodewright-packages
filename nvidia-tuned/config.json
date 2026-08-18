@@ -32,6 +32,18 @@
                 "upgrade_step": false
             },
             {
+                "name": "uninstall-iommu-passthrough",
+                "path": "uninstall_iommu_passthrough.sh",
+                "arguments": [],
+                "returncodes": [
+                    0
+                ],
+                "on_host": true,
+                "env": {},
+                "idempotence": true,
+                "upgrade_step": false
+            },
+            {
                 "name": "uninstall",
                 "path": "uninstall_tuned.sh",
                 "arguments": [],
@@ -60,6 +72,18 @@
             {
                 "name": "uninstall-spcx-cc-check",
                 "path": "uninstall_spcx_cc_check.sh",
+                "arguments": [],
+                "returncodes": [
+                    0
+                ],
+                "on_host": true,
+                "env": {},
+                "idempotence": true,
+                "upgrade_step": false
+            },
+            {
+                "name": "uninstall-iommu-passthrough-check",
+                "path": "uninstall_iommu_passthrough_check.sh",
                 "arguments": [],
                 "returncodes": [
                     0

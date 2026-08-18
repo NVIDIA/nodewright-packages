@@ -1022,3 +1022,42 @@ def test_iommu_passthrough_post_interrupt_check_accepts_only_the_disabled_value(
 
     assert step(node, "post_interrupt_iommu_passthrough_check.sh", env) != 0
     assert said(node, f"resolves iommu.passthrough to '{value}' rather than 0"), output(node)
+
+
+def test_iommu_passthrough_uninstall_removes_the_dropin(node):
+    """Removing the package must not leave iommu.passthrough=0 forced on every boot."""
+    configure(node, **OCI_GB300)
+
+    assert step(node, "configure_iommu_passthrough.sh", on_kernel(OLD_KERNEL)) == 0
+    assert exists(node, IOMMU_DROPIN)
+
+    assert step(node, "uninstall_iommu_passthrough.sh") == 0, output(node)
+    assert said(node, "reboot is required to restore"), output(node)
+    assert not exists(node, IOMMU_DROPIN)
+
+    assert step(node, "uninstall_iommu_passthrough_check.sh") == 0, output(node)
+    assert said(node, "drop-in is removed"), output(node)
+
+
+def test_iommu_passthrough_uninstall_is_a_noop_when_never_configured(node):
+    """Uninstall keys on host state, so a node that never had the drop-in is fine."""
+    configure(node, **OCI_GB300)
+
+    assert step(node, "uninstall_iommu_passthrough.sh") == 0, output(node)
+    assert said(node, "is not present; nothing to remove"), output(node)
+    assert step(node, "uninstall_iommu_passthrough_check.sh") == 0, output(node)
+
+
+def test_iommu_passthrough_uninstall_runs_regardless_of_the_profile_gate(node):
+    """Uninstall must clean up after a custom resource whose configmaps have changed.
+
+    Gating on the bundled marker would strand the drop-in on a node that was re-profiled
+    before the package was removed.
+    """
+    configure(node, **OCI_GB300)
+    assert step(node, "configure_iommu_passthrough.sh", on_kernel(OLD_KERNEL)) == 0
+    assert exists(node, IOMMU_DROPIN)
+
+    configure(node, accelerator="h100", service="eks")
+    assert step(node, "uninstall_iommu_passthrough.sh") == 0, output(node)
+    assert not exists(node, IOMMU_DROPIN)
