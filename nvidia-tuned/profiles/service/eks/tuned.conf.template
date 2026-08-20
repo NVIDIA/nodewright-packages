@@ -3,3 +3,9 @@ summary=NVIDIA AWS profile with MAC address policy configuration
 
 [script]
 script=${i:PROFILE_DIR}/script.sh
+
+[sysctl]
+# From https://aws.amazon.com/blogs/networking-and-content-delivery/best-practices-for-tcp-connection-management-on-ec2/
+net.ipv4.tcp_keepalive_time = 240 # Start probes after 4 minutes idle
+net.ipv4.tcp_keepalive_intvl = 60 # Send probe every 60 seconds
+net.ipv4.tcp_keepalive_probes = 3 # Send 3 probes before giving up
