@@ -20,6 +20,31 @@ example is not itself picked up as release notes):
     - Notable behavior change worth calling out.
 -->
 
+## 0.8.1
+
+Rebases the GB200 and GB300 `performance` hugepage allocation on the 64k page-size kernel
+(`linux-image-*-aws-64k`) that `nvidia-setup` installs on these arm64 platforms.
+
+A 64k granule registers 2M, 512M and 16G huge pages, and with three page-table levels
+there is no PUD, so 1G does not exist. The previous
+`hugepagesz=2M hugepages=5128 hugepagesz=1G hugepages=2` had its 1G clause rejected at
+boot and the `hugepages=2` paired with it dropped too, silently leaving those nodes with
+10G of 2M pages rather than the intended 12G. The replacement allocates `4 x 512M` for the
+same 2G of large pages, so the total stays at roughly 12G.
+
+`default_hugepagesz=2M` is now set explicitly. The default huge page size follows the PMD
+level, which is 2M on a 4k granule but 512M on a 64k one, so without pinning it a caller
+that maps hugetlb without requesting a size would draw from the 4-page 512M pool instead
+of the 5128-page 2M one.
+
+Upgrade note: on a node still running a 4k page-size kernel this inverts, because 512M is
+not a valid size there. Such a node keeps the 5128 x 2M pool and loses the 2G of large
+pages. Kubernetes resource names track the kernel as well: a 64k node advertises
+`hugepages-2Mi`, `hugepages-512Mi` and `hugepages-16Gi`, so a pod spec or admission policy
+that requests `hugepages-1Gi` will not schedule there.
+
+The `vr200` performance profile still carries the 1G clause and is unchanged.
+
 ## 0.8.0
 
 Adds an IOMMU passthrough workaround needed to run ACS + DMA-BUF on kernels older than
