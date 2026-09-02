@@ -1,0 +1,17 @@
+[main]
+summary=NVIDIA RKE2 service profile: keeps the accelerator's bootloader tuning
+
+# RKE2 runs on hosts the operator owns outright, so unlike bcm this service keeps the
+# reboot-requiring [bootloader] tuning its accelerator profile carries rather than
+# re-rooting onto a bootloader-free base. A custom resource selecting service=rke2 must
+# therefore declare `interrupt: {type: reboot}`.
+#
+# No accelerator overrides ship alongside this template on purpose: with no
+# nvidia-{accelerator}-{intent}.conf in this directory, deploy_service_profile() includes
+# the OS workload profile unchanged, so every accelerator falls through with its own
+# [bootloader] stanza intact.
+#
+# No [script] here on purpose either: only one [script] survives tuned's include chain,
+# so a stanza here would suppress the containerd_service.sh that the gb200 and vr200
+# performance profiles carry. The grub.d work this service needs runs as the
+# configure-bootloader lifecycle step instead (skyhook_dir/configure_bootloader.sh).

@@ -20,7 +20,8 @@ This package requires **tuned >= 2.19**. The following operating systems are sup
 > profiles live under `profiles/os/ubuntu/26.04/`. The base profiles keep the
 > reboot-requiring `[bootloader]` tuning (same as gb200); with `service=bcm`, vr200
 > uses a bootloader-free profile chain (`nvidia-vr200-noreboot-base`) so the tuning
-> applies without a reboot. There is no `service=eks` vr200 profile yet.
+> applies without a reboot. Use `service=rke2` instead to keep that tuning and take a
+> reboot for it. There is no `service=eks` vr200 profile.
 
 | OS | Version | Status | Notes |
 |----|---------|--------|-------|
@@ -75,6 +76,9 @@ profiles/
     │   ├── tuned.conf.template
     │   ├── script.sh            # Sources common/mac-address-policy.sh, invokes common/bootloader.sh
     │   └── nvidia-h100-inference.conf   # AKS-compatible inference override (drops kernel-6.8 EEVDF sysctls)
+    ├── rke2/
+    │   ├── tuned.conf.template  # No [script], no overrides: accelerators fall through with [bootloader] intact
+    │   └── bootloader.enabled   # Opts the service in to the configure-bootloader lifecycle step
     └── oci/
         ├── tuned.conf.template  # RDMA IPv6 defaults for OCI's IPv6/SLAAC RoCE fabric
         ├── script.sh            # Re-enables IPv6 on existing mlx5 RDMA VFs
@@ -317,6 +321,72 @@ host-level steps do need a reboot:
 Both steps are no-ops for every other `service`/`accelerator` pair, so existing `eks`,
 `aks`, and `bcm` deployments are unaffected and still need no `interrupt`.
 
+**RKE2 tuning** (VR200 on RKE2: keeps the profile's kernel command line, takes a reboot):
+
+```yaml
+apiVersion: skyhook.nvidia.com/v1alpha1
+kind: Skyhook
+metadata:
+  name: nvidia-tuned-rke2
+spec:
+  nodeSelectors:
+    matchLabels:
+      nvidia.com/gpu.present: "true"
+  packages:
+    nvidia-tuned:
+      image: ghcr.io/nvidia/nodewright-packages/nvidia-tuned
+      version: 0.9.0
+      interrupt:
+        type: reboot
+      configInterrupts:
+        intent:
+          type: reboot
+        accelerator:
+          type: reboot
+      configMap:
+        intent: performance
+        accelerator: vr200
+        service: rke2
+```
+
+`interrupt: {type: reboot}` is required. Where `bcm` re-roots vr200 onto a
+bootloader-free base so nothing needs a reboot, `rke2` is the opposite trade: it ships no
+profile overrides at all, so each accelerator falls through to its own workload profile
+with the `[bootloader]` stanza intact, and the node reboots to pick it up.
+
+Keeping the stanza is not enough on its own. tuned resolves it to
+`/etc/tuned/bootcmdline` and then rewrites `/etc/default/grub`, but Ubuntu assembles
+`GRUB_CMDLINE_LINUX_DEFAULT` from `/etc/default/grub.d/` instead, so that rewrite is
+ignored and the cmdline silently never applies. The `configure-bootloader` step closes
+that gap: it writes a `/etc/default/grub.d/99-nvidia-tuned-cmdline.cfg` drop-in sourcing
+tuned's file, then regenerates grub. It appends to `GRUB_CMDLINE_LINUX_DEFAULT` rather
+than replacing it, so the platform's own arguments (serial console, most importantly)
+survive. The step is gated on `profiles/service/{service}/bootloader.enabled` and is a
+no-op for every service that does not ship the marker, so `eks`, `aks`, `bcm`, and `oci`
+are unaffected. It uses its own filename rather than the `99_tuned.cfg` the `eks` and
+`aks` profiles write, and only ever removes a file carrying its own marker line, so it
+cannot disturb theirs.
+
+After the reboot, `post-interrupt-bootloader-check` asserts every argument in
+`/etc/tuned/bootcmdline` is present in `/proc/cmdline`. This is the check worth having:
+grub quietly failing to pick the drop-in up is invisible from the config stage, and
+without it a node comes up labelled as tuned while running none of the tuning.
+
+Uninstalling removes the drop-in and regenerates grub, so the cmdline goes away on the
+next boot rather than outliving the package.
+
+> **Accelerator support:** the service ships no accelerator-specific files, so support is
+> exactly whatever workload profiles exist. `gb200` and `vr200` work across all three
+> intents; `gb300` ships a `performance` profile only, so that is the only intent
+> available there (this is a property of the accelerator, not of `rke2`). `vr200`
+> remains Ubuntu 26.04 only.
+>
+> | Accelerator | `performance` | `inference` | `multiNodeTraining` |
+> |---|---|---|---|
+> | `gb200` | yes | yes | yes |
+> | `gb300` | yes | no profile | no profile |
+> | `vr200` | yes | yes | yes |
+
 ### ConfigMap Fields
 
 | Field | Required | Default | Description |
@@ -354,6 +424,7 @@ Both steps are no-ops for every other `service`/`accelerator` pair, so existing 
 | `h100` | NVIDIA H100 GPU |
 | `gb200` | NVIDIA GB200 GPU |
 | `gb300` | NVIDIA GB300 GPU (`performance` intent only) |
+| `vr200` | NVIDIA VR200 GPU (Ubuntu 26.04 only) |
 
 ### Services (specify in `service`)
 
@@ -362,6 +433,7 @@ Both steps are no-ops for every other `service`/`accelerator` pair, so existing 
 | `eks` | eks-specific settings (MAC address policy for CNI) |
 | `aks` | aks-specific settings (MAC address policy, grub.d bootloader workaround for Ubuntu) |
 | `bcm` | bcm-specific settings (bootloader-free vr200 chain, applies without a reboot) |
+| `rke2` | rke2-specific settings (keeps the accelerator's `[bootloader]` tuning and lands it on the host through grub.d; requires `interrupt: {type: reboot}`) |
 | `oci` | oci-specific settings (RDMA IPv6 defaults, NCCL topology file, PCIe ACS correction, RDMA VF boot gate, and Spectrum-X congestion control on gb300; requires `interrupt: {type: reboot}`) |
 
 ### Environment Variables
@@ -427,7 +499,7 @@ See the [tuned package README](../tuned/README.md) for complete documentation on
 
 ## Version
 
-- **Package Version**: 0.7.1
+- **Package Version**: 0.9.0
 - **Base Package**: tuned (latest via preprocess.sh)
 - **Schema Version**: v1
 

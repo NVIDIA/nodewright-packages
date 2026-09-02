@@ -1,7 +1,7 @@
 {
     "schema_version": "v1",
     "package_name": "nvidia_tuned",
-    "package_version": "0.8.0",
+    "package_version": "0.9.0",
     "expected_config_files": [
         "accelerator"
     ],
@@ -34,6 +34,18 @@
             {
                 "name": "uninstall-iommu-passthrough",
                 "path": "uninstall_iommu_passthrough.sh",
+                "arguments": [],
+                "returncodes": [
+                    0
+                ],
+                "on_host": true,
+                "env": {},
+                "idempotence": true,
+                "upgrade_step": false
+            },
+            {
+                "name": "uninstall-bootloader",
+                "path": "uninstall_bootloader.sh",
                 "arguments": [],
                 "returncodes": [
                     0
@@ -84,6 +96,18 @@
             {
                 "name": "uninstall-iommu-passthrough-check",
                 "path": "uninstall_iommu_passthrough_check.sh",
+                "arguments": [],
+                "returncodes": [
+                    0
+                ],
+                "on_host": true,
+                "env": {},
+                "idempotence": true,
+                "upgrade_step": false
+            },
+            {
+                "name": "uninstall-bootloader-check",
+                "path": "uninstall_bootloader_check.sh",
                 "arguments": [],
                 "returncodes": [
                     0
@@ -246,6 +270,18 @@
                 "env": {},
                 "idempotence": true,
                 "upgrade_step": false
+            },
+            {
+                "name": "configure-bootloader",
+                "path": "configure_bootloader.sh",
+                "arguments": [],
+                "returncodes": [
+                    0
+                ],
+                "on_host": true,
+                "env": {},
+                "idempotence": false,
+                "upgrade_step": false
             }
         ],
         "config-check": [
@@ -332,6 +368,18 @@
                 "env": {},
                 "idempotence": true,
                 "upgrade_step": false
+            },
+            {
+                "name": "configure-bootloader-check",
+                "path": "configure_bootloader_check.sh",
+                "arguments": [],
+                "returncodes": [
+                    0
+                ],
+                "on_host": true,
+                "env": {},
+                "idempotence": true,
+                "upgrade_step": false
             }
         ],
         "post-interrupt-check": [
@@ -362,6 +410,18 @@
             {
                 "name": "post-interrupt-iommu-passthrough-check",
                 "path": "post_interrupt_iommu_passthrough_check.sh",
+                "arguments": [],
+                "returncodes": [
+                    0
+                ],
+                "on_host": true,
+                "env": {},
+                "idempotence": true,
+                "upgrade_step": false
+            },
+            {
+                "name": "post-interrupt-bootloader-check",
+                "path": "post_interrupt_bootloader_check.sh",
                 "arguments": [],
                 "returncodes": [
                     0

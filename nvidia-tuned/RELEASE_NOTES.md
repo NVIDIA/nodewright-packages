@@ -20,6 +20,45 @@ example is not itself picked up as release notes):
     - Notable behavior change worth calling out.
 -->
 
+## 0.9.0
+
+Adds an `rke2` service that keeps the accelerator's reboot-requiring `[bootloader]`
+tuning instead of stripping it, and a `configure-bootloader` step that actually lands it
+on the host.
+
+`bcm` and `rke2` are the two halves of the same trade for the same accelerators. `bcm`
+re-roots onto a bootloader-free base so nothing needs a reboot; `rke2` ships no profile
+overrides at all, so each accelerator falls through to its own workload profile with the
+`[bootloader]` stanza intact. A custom resource selecting `service=rke2` must therefore
+declare `interrupt: {type: reboot}`. Supported on `gb200` and `vr200` across all three
+intents, and on `gb300` for `performance` (the only intent that accelerator ships).
+
+Keeping the stanza is not sufficient by itself. tuned resolves it to
+`/etc/tuned/bootcmdline` and then rewrites `/etc/default/grub`, but Ubuntu builds
+`GRUB_CMDLINE_LINUX_DEFAULT` from `/etc/default/grub.d/`, so that rewrite is ignored and
+the cmdline never reaches the kernel. The new `configure-bootloader` step writes a
+`99-nvidia-tuned-cmdline.cfg` drop-in sourcing tuned's file and regenerates grub. Unlike
+the older in-profile script the `eks` and `aks` services use, it appends to
+`GRUB_CMDLINE_LINUX_DEFAULT` rather than replacing it, so a bare-metal host keeps its
+serial console arguments.
+
+The step runs as a package lifecycle step rather than a tuned `[script]` on purpose. Only
+one `[script]` survives tuned's include chain, so a service profile that declares one
+suppresses the `containerd_service.sh` that the gb200 and vr200 performance profiles
+carry. Operators on `eks` with `gb200` are hitting that today; `rke2` avoids it by
+shipping no `[script]` at all.
+
+New `post-interrupt-bootloader-check` asserts every argument in `/etc/tuned/bootcmdline`
+is present in `/proc/cmdline` after the reboot. Grub failing to pick the drop-in up is
+invisible from the config stage, so without this a node comes up reporting success while
+running none of the tuning it was selected for.
+
+Uninstall removes the drop-in and regenerates grub, so the cmdline does not outlive the
+package. Both the removal here and the stand-down when a node stops selecting an opted-in
+service are scoped to a marker line the step writes, and the file has its own name rather
+than the `99_tuned.cfg` the `eks` and `aks` profiles write. Nothing this release adds can
+remove or overwrite a drop-in those services own; their behavior is unchanged.
+
 ## 0.8.0
 
 Adds an IOMMU passthrough workaround needed to run ACS + DMA-BUF on kernels older than

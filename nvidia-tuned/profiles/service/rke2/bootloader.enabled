@@ -1,0 +1,12 @@
+# Marker: opt this service in to the grub.d bootloader step run by
+# skyhook_dir/configure_bootloader.sh. The file is a switch; its contents are ignored.
+#
+# Unlike the pcie-acs-* and iommu-passthrough-* markers this one is service-wide rather
+# than per-accelerator: every accelerator reached through this service wants its
+# [bootloader] cmdline on the host, so there is nothing to select between.
+#
+# Ubuntu builds its kernel command line from /etc/default/grub.d/ rather than the
+# /etc/default/grub rewrite tuned performs itself, so without the drop-in this step
+# writes, a profile's [bootloader] stanza never reaches the booted kernel. Landing on the
+# kernel command line means a custom resource selecting this service must declare
+# `interrupt: {type: reboot}`.
