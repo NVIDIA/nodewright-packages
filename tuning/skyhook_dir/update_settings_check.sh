@@ -41,7 +41,7 @@ if [ -f ${SKYHOOK_DIR}/configmaps/sysctl.conf ]; then
         if [ $(grep -cF "${line}" /etc/sysctl.d/999-${package_name}-tuning.conf) -eq 0 ]; then
             failures=$(printf "%s\n%s" "$failures" "not in sysctl: ${line}")
         fi
-    done  <<< $(grep -vE '^[[:space:]]*(#|$)' ${SKYHOOK_DIR}/configmaps/sysctl.conf)
+    done < <(grep -vE '^[[:space:]]*(#|$)' "${SKYHOOK_DIR}/configmaps/sysctl.conf")
 fi
 
 if [ -f ${SKYHOOK_DIR}/configmaps/ulimit.conf ]; then
@@ -53,7 +53,7 @@ if [ -f ${SKYHOOK_DIR}/configmaps/ulimit.conf ]; then
         if [ $(grep -cF "hard ${name} ${value}" /etc/security/limits.d/999-${package_name}-tuning.conf) -eq 0 ]; then
             failures=$(printf "%s\n%s" "$failures" "No ${line} setting in /etc/security/limits.d/999-${package_name}-tuning.conf")
         fi
-    done  <<< $(grep -vE '^[[:space:]]*(#|$)' ${SKYHOOK_DIR}/configmaps/ulimit.conf)
+    done < <(grep -vE '^[[:space:]]*(#|$)' "${SKYHOOK_DIR}/configmaps/ulimit.conf")
 fi
 
 if [ -n "$failures" ]; then
