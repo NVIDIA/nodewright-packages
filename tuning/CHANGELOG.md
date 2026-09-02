@@ -5,11 +5,19 @@
 
 All notable changes to this package will be documented in this file.
 
-## [Unreleased]
+## [1.1.7] - 2026-09-02
+
+### Bug Fixes
+
+- *(tuning)* Update tuning package check script to work with older versions of bash 
 
 ### New Features
 
 - *(changelog)* Tag-range generator, split CHANGELOG/RELEASE_NOTES, release helper
+
+### Other Tasks
+
+- *(general)* Regenerate package changelogs to current tags 
 
 
 ## [1.1.6] - 2026-05-20
