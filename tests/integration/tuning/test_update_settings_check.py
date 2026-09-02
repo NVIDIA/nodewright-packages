@@ -44,6 +44,12 @@ from tests.helpers.docker_test import DockerTestRunner
 SKYHOOK_RESOURCE_ID = "1_tuning_1.1.5"
 PACKAGE_NAME_FROM_RESOURCE_ID = "tuning"
 SYSCTL_DROP_IN = f"/etc/sysctl.d/999-{PACKAGE_NAME_FROM_RESOURCE_ID}-tuning.conf"
+BASH_4_2_BASE_IMAGE = "centos:7"
+
+MULTILINE_SYSCTL = (
+    "fs.inotify.max_user_watches=1048576\n"
+    "fs.inotify.max_user_instances=65535\n"
+)
 
 # Reproduces nvidia-tuning-gke/profiles/h100/inference/sysctl.conf exactly,
 # including the comment header containing "[sysctl]" that broke the check
@@ -115,6 +121,19 @@ def test_check_succeeds_with_h100_style_comment_containing_brackets(base_image):
     `not in sysctl: # H100 inference ...` and exited 1.
     """
     runner = _start_container_with_configmaps(base_image, H100_INFERENCE_SYSCTL)
+    try:
+        _simulate_install_copy(runner)
+        result = _run_check(runner)
+        output = result.output.decode("utf-8", errors="replace")
+        assert result.exit_code == 0, f"check exited non-zero:\n{output}"
+        assert "not in sysctl:" not in output, output
+    finally:
+        runner.cleanup()
+
+
+def test_check_preserves_multiline_sysctl_input_on_bash_4_2():
+    """Regression: Bash 4.2 must check each sysctl assignment separately."""
+    runner = _start_container_with_configmaps(BASH_4_2_BASE_IMAGE, MULTILINE_SYSCTL)
     try:
         _simulate_install_copy(runner)
         result = _run_check(runner)
