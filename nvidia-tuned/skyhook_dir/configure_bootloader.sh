@@ -24,6 +24,15 @@
 # is ignored and the profile's cmdline silently never applies. This step writes a
 # /etc/default/grub.d/ drop-in that sources tuned's file, then regenerates grub.
 #
+# DEBIAN-FAMILY ONLY. Sourcing /etc/default/grub.d/*.cfg is a Debian/Ubuntu patch to
+# grub-mkconfig. RHEL-family grub2-mkconfig reads /etc/default/grub and /etc/grub.d/ and
+# ignores that directory entirely, so the drop-in would be written, grub would regenerate
+# happily, and the arguments would never reach the kernel. The package as a whole falls
+# back to os/common profiles on untested distributions, so this step cannot assume the
+# OS gate happened upstream and checks for itself. It fails rather than skipping quietly:
+# a node that reports success while running none of the tuning it was selected for is the
+# worse outcome. Set CONFIGURE_BOOTLOADER=false to opt out deliberately.
+#
 # Gated on ${SKYHOOK_DIR}/profiles/service/${service}/bootloader.enabled, so services
 # without the marker are a no-op. The marker is service-wide rather than per-accelerator:
 # every accelerator reached through such a service wants its cmdline on the host.
@@ -41,8 +50,14 @@ PROFILES_DIR="${SKYHOOK_DIR}/profiles"
 # Overridable so tests can point at a stub.
 TUNED_GRUB_DROPIN="${TUNED_GRUB_DROPIN:-/etc/default/grub.d/99-nvidia-tuned-cmdline.cfg}"
 TUNED_BOOTCMDLINE="${TUNED_BOOTCMDLINE:-/etc/tuned/bootcmdline}"
+OS_RELEASE="${OS_RELEASE:-/etc/os-release}"
 
-# 99_ sorts after every numbered producer, so this assignment is evaluated last and its
+# Identifies a drop-in this package owns. The eks and aks services write their own
+# grub.d file from inside the tuned profile; scoping removal to our marker keeps this
+# step from deleting theirs when it stands down on a node running one of them.
+DROPIN_MARKER="Managed by the nvidia-tuned Skyhook package (configure_bootloader.sh)"
+
+# 99- sorts after every numbered producer, so this assignment is evaluated last and its
 # arguments win where a token is set twice.
 #
 # Appends to GRUB_CMDLINE_LINUX_DEFAULT rather than replacing it, which is where this
@@ -57,7 +72,7 @@ TUNED_BOOTCMDLINE="${TUNED_BOOTCMDLINE:-/etc/tuned/bootcmdline}"
 # Unquoted heredoc: ${TUNED_BOOTCMDLINE} is baked in now, the escaped names stay literal
 # for grub to expand at config-generation time.
 DROPIN_CONTENT="$(cat <<EOF
-# Managed by the nvidia-tuned Skyhook package (configure_bootloader.sh). Do not edit.
+# ${DROPIN_MARKER}. Do not edit.
 #
 # Sources the cmdline tuned resolved from the active profile's [bootloader] stanza.
 # Without this, a profile's [bootloader] settings never reach the kernel on Ubuntu.
@@ -68,14 +83,19 @@ fi
 EOF
 )"
 
-# Identifies a drop-in this package owns. The eks and aks services write their own
-# grub.d file from inside the tuned profile; scoping removal to our marker keeps this
-# step from deleting theirs when it stands down on a node running one of them.
-DROPIN_MARKER="Managed by the nvidia-tuned Skyhook package (configure_bootloader.sh)"
-
 # Returns 0 when the drop-in exists and this package wrote it.
 dropin_is_ours() {
     [[ -f "${TUNED_GRUB_DROPIN}" ]] && grep -qF "${DROPIN_MARKER}" "${TUNED_GRUB_DROPIN}"
+}
+
+# Returns 0 unless CONFIGURE_BOOTLOADER switches the step off.
+bootloader_requested() {
+    local setting
+    setting="$(printf '%s' "${CONFIGURE_BOOTLOADER:-true}" | tr '[:upper:]' '[:lower:]')"
+    case "${setting}" in
+        false | 0 | no | off) return 1 ;;
+        *) return 0 ;;
+    esac
 }
 
 # Returns 0 when the configured service opts in.
@@ -89,20 +109,56 @@ bootloader_enabled() {
     [[ -f "${PROFILES_DIR}/service/${service}/bootloader.enabled" ]]
 }
 
-# Mirrors the fallback chain in kdump's update_grub_config().
+# Returns 0 on a distribution whose grub-mkconfig sources /etc/default/grub.d/*.cfg.
+#
+# Checks ID and ID_LIKE so Debian derivatives that do carry the patch (Pop, Mint, and the
+# vendor Ubuntu rebuilds these nodes run) are recognised without an explicit allowlist.
+bootloader_os_supported() {
+    local ids
+
+    [[ -r "${OS_RELEASE}" ]] || return 1
+    # set +u inside the subshell: os-release is a fragment, not a script of ours.
+    ids="$(
+        set +u
+        # shellcheck source=/dev/null
+        . "${OS_RELEASE}" 2>/dev/null
+        printf '%s %s' "${ID:-}" "${ID_LIKE:-}"
+    )"
+
+    case " ${ids} " in
+        *" debian "* | *" ubuntu "*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# Reports the distribution for error messages.
+os_pretty_name() {
+    (
+        set +u
+        # shellcheck source=/dev/null
+        . "${OS_RELEASE}" 2>/dev/null
+        printf '%s' "${PRETTY_NAME:-${ID:-unknown}}"
+    )
+}
+
+# Debian-family only, so update-grub is the mechanism. No grub2-mkconfig fallback: it
+# would regenerate a RHEL-family grub.cfg that ignores the drop-in, turning an
+# unsupported platform into a silent no-op instead of a visible failure.
 regenerate_grub() {
-    if command -v update-grub >/dev/null 2>&1; then
-        update-grub
-    elif command -v grub2-mkconfig >/dev/null 2>&1; then
-        if [[ -d /boot/grub2 ]]; then
-            grub2-mkconfig -o /boot/grub2/grub.cfg
-        else
-            grub2-mkconfig -o /boot/efi/EFI/redhat/grub.cfg
-        fi
-    else
-        echo "ERROR: neither update-grub nor grub2-mkconfig is available"
+    if [[ -n "${SKIP_SYSTEM_OPERATIONS:-}" ]]; then
+        echo "SKIP_SYSTEM_OPERATIONS set: not regenerating the bootloader config"
+        return 0
+    fi
+
+    if ! command -v update-grub >/dev/null 2>&1; then
+        echo "ERROR: update-grub is not available, so the drop-in cannot be applied."
+        echo "  This step supports GRUB on Debian-family distributions. A node booting"
+        echo "  through something else (systemd-boot, a UKI) needs CONFIGURE_BOOTLOADER=false"
+        echo "  and its kernel arguments set by whatever owns them."
         return 1
     fi
+
+    update-grub
 }
 
 # Drop a drop-in this package previously wrote. Called when the service gate stops
@@ -126,11 +182,47 @@ remove_dropin() {
     echo "Removed ${TUNED_GRUB_DROPIN}; a reboot is required to drop the profile cmdline"
 }
 
+# The only place an operator will look, so name the cause and both ways forward.
+fail_unsupported_os() {
+    cat <<EOF
+ERROR: This node's distribution does not support the bootloader mechanism this step uses.
+
+  Detected: $(os_pretty_name)
+
+  The step writes ${TUNED_GRUB_DROPIN} and relies on grub-mkconfig sourcing
+  /etc/default/grub.d/*.cfg, which is a Debian/Ubuntu patch. RHEL-family grub2-mkconfig
+  reads /etc/default/grub and /etc/grub.d/ and ignores that directory, so the drop-in
+  would be written, GRUB would regenerate without error, and none of the profile's kernel
+  arguments would reach the booted kernel.
+
+  This fails rather than passing quietly because the alternative is a node that reports
+  success while running none of the tuning it was selected for.
+
+  Either:
+    - use a service that does not carry [bootloader] tuning (bcm re-roots the same
+      accelerators onto a bootloader-free profile chain), or
+    - set CONFIGURE_BOOTLOADER=false in the package env on the custom resource to skip
+      this step and its checks, and set the kernel arguments by another route.
+EOF
+    exit 1
+}
+
 main() {
+    if ! bootloader_requested; then
+        echo "Bootloader step switched off via CONFIGURE_BOOTLOADER; nothing to configure"
+        return 0
+    fi
+
     if ! bootloader_enabled; then
         echo "Bootloader drop-in not enabled for this service; nothing to configure"
         remove_dropin
         return 0
+    fi
+
+    # After the service gate, so an unsupported distribution running a service that never
+    # wanted a drop-in is not failed for it.
+    if ! bootloader_os_supported; then
+        fail_unsupported_os
     fi
 
     # Not fatal. The drop-in guards on the file, so it starts contributing as soon as

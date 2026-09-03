@@ -1055,16 +1055,66 @@ def test_prepare_nvidia_profiles_rke2_marker_not_deployed(base_image):
         runner.cleanup()
 
 
+
+# --- configure_bootloader.sh and friends --------------------------------------------
+#
+# The grub.d drop-in only works on Debian-family distributions: sourcing
+# /etc/default/grub.d/*.cfg is a Debian/Ubuntu patch to grub-mkconfig, and RHEL-family
+# grub2-mkconfig ignores that directory. The step fails loudly there rather than writing
+# a file nothing reads, so the matrix's rockylinux:9 entry exercises the rejection path
+# while the Debian-family entries exercise the working one.
+
+# Cleared so the stub update-grub actually runs. run_script_in_container sets
+# SKIP_SYSTEM_OPERATIONS=true for the whole suite, and the step honours it by not
+# touching the bootloader at all, which is the behavior test_..._skips_system_operations
+# covers separately.
+RUN_ENV = {**STUB_ENV, "SKIP_SYSTEM_OPERATIONS": ""}
+
+STUB_OS_RELEASE = "/tmp/os-release-stub"
+
+# A RHEL-family os-release, for exercising the rejection path on Debian-family images.
+RHEL_OS_RELEASE = 'ID="rocky"\\nID_LIKE="rhel centos fedora"\\nPRETTY_NAME="Rocky Linux 9.4"\\n'
+
+
+def _is_debian_family(base_image: str) -> bool:
+    return "ubuntu" in base_image or "debian" in base_image
+
+
+def _skip_non_debian(base_image):
+    """The drop-in mechanism is Debian-family only; the step fails elsewhere by design."""
+    if not _is_debian_family(base_image):
+        pytest.skip(f"grub.d drop-ins are Debian-family only; skipping for {base_image}")
+
+
+def _write_os_release(runner: DockerTestRunner, path: str, contents: str):
+    runner.container.exec_run(["bash", "-c", f"printf '{contents}' > {path}"], workdir="/")
+
+
+def _install_failing_grub_stub(runner: DockerTestRunner):
+    """Stub update-grub as failing, to exercise the rollback paths."""
+    runner.container.exec_run(
+        ["bash", "-c", "printf '#!/bin/sh\\nexit 3\\n' > /usr/local/bin/update-grub "
+                       "&& chmod +x /usr/local/bin/update-grub"],
+        workdir="/",
+    )
+
+
+def _rke2_container(runner: DockerTestRunner, intent="performance", accelerator="gb200"):
+    configmaps = {"accelerator": accelerator, "intent": intent, "service": "rke2"}
+    create_container_for_testing(runner, configmaps)
+    return configmaps
+
+
 def test_configure_bootloader_writes_dropin(base_image):
-    """configure_bootloader.sh writes a drop-in that resolves to the profile cmdline."""
+    """The drop-in is written, grub is regenerated, and it resolves to the profile cmdline."""
+    _skip_non_debian(base_image)
     runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
     try:
-        configmaps = {"accelerator": "gb200", "intent": "performance", "service": "rke2"}
-        create_container_for_testing(runner, configmaps)
+        _rke2_container(runner)
         _install_grub_stub(runner)
         _write_bootcmdline(runner, STUB_BOOTCMDLINE, SAMPLE_CMDLINE)
 
-        result = _run_with_env(runner, "configure_bootloader.sh", STUB_ENV)
+        result = _run_with_env(runner, "configure_bootloader.sh", RUN_ENV)
         assert_exit_code(result, 0)
         assert runner.file_exists(STUB_DROPIN), f"drop-in was not written to {STUB_DROPIN}"
         assert runner.file_exists("/tmp/update-grub.ran"), "grub was not regenerated"
@@ -1077,9 +1127,169 @@ def test_configure_bootloader_writes_dropin(base_image):
         for token in SAMPLE_CMDLINE.split():
             assert token in resolved, f"{token} missing from resolved cmdline: {resolved!r}"
 
-        # The check step agrees.
-        check = _run_with_env(runner, "configure_bootloader_check.sh", STUB_ENV)
+        check = _run_with_env(runner, "configure_bootloader_check.sh", RUN_ENV)
         assert_exit_code(check, 0)
+    finally:
+        runner.cleanup()
+
+
+def test_configure_bootloader_refreshes_on_cmdline_change(base_image):
+    """A changed cmdline regenerates grub even though the drop-in is byte-identical.
+
+    The drop-in only sources /etc/tuned/bootcmdline, so changing intent rewrites that
+    file while leaving the drop-in unchanged. Short-circuiting on unchanged drop-in
+    content would leave the node booting the previous intent's cmdline.
+    """
+    _skip_non_debian(base_image)
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        _rke2_container(runner)
+        _install_grub_stub(runner)
+        _write_bootcmdline(runner, STUB_BOOTCMDLINE, SAMPLE_CMDLINE)
+        assert_exit_code(_run_with_env(runner, "configure_bootloader.sh", RUN_ENV), 0)
+        before = runner.get_file_contents(STUB_DROPIN)
+
+        # New cmdline, and clear the regeneration marker so the rerun is what we observe.
+        runner.container.exec_run(["bash", "-c", "rm -f /tmp/update-grub.ran"], workdir="/")
+        changed = "iommu.passthrough=1 numa_balancing=disable hugepagesz=1G hugepages=2"
+        _write_bootcmdline(runner, STUB_BOOTCMDLINE, changed)
+
+        result = _run_with_env(runner, "configure_bootloader.sh", RUN_ENV)
+        assert_exit_code(result, 0)
+        assert runner.file_exists("/tmp/update-grub.ran"), \
+            "grub must be regenerated when the sourced cmdline changes"
+        assert runner.get_file_contents(STUB_DROPIN) == before, \
+            "the drop-in itself should not change; only the file it sources does"
+
+        resolved = runner.container.exec_run(
+            ["bash", "-c", f'. {STUB_DROPIN}; printf "%s" "$GRUB_CMDLINE_LINUX_DEFAULT"'],
+            workdir="/",
+        ).output.decode("utf-8", errors="replace")
+        assert "hugepages=2" in resolved, f"resolved cmdline not refreshed: {resolved!r}"
+        assert "hugepages=8192" not in resolved, f"stale cmdline still resolving: {resolved!r}"
+    finally:
+        runner.cleanup()
+
+
+def test_configure_bootloader_restores_dropin_when_grub_fails(base_image):
+    """A failed regeneration puts the previous drop-in back rather than stranding a new one."""
+    _skip_non_debian(base_image)
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        _rke2_container(runner)
+        _install_grub_stub(runner)
+        _write_bootcmdline(runner, STUB_BOOTCMDLINE, SAMPLE_CMDLINE)
+        assert_exit_code(_run_with_env(runner, "configure_bootloader.sh", RUN_ENV), 0)
+        original = runner.get_file_contents(STUB_DROPIN)
+
+        _install_failing_grub_stub(runner)
+        result = _run_with_env(runner, "configure_bootloader.sh", RUN_ENV)
+        assert result.exit_code != 0, "a failed grub regeneration must fail the step"
+        assert runner.file_exists(STUB_DROPIN), "the previous drop-in was not restored"
+        assert runner.get_file_contents(STUB_DROPIN) == original, \
+            "the restored drop-in does not match what was there before"
+    finally:
+        runner.cleanup()
+
+
+def test_configure_bootloader_removes_new_dropin_when_grub_fails(base_image):
+    """With no previous drop-in, a failed regeneration leaves nothing behind.
+
+    Keeping it would strand a file the generated grub.cfg never referenced, which the
+    next run would then treat as current.
+    """
+    _skip_non_debian(base_image)
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        _rke2_container(runner)
+        _install_failing_grub_stub(runner)
+        _write_bootcmdline(runner, STUB_BOOTCMDLINE, SAMPLE_CMDLINE)
+
+        result = _run_with_env(runner, "configure_bootloader.sh", RUN_ENV)
+        assert result.exit_code != 0, "a failed grub regeneration must fail the step"
+        assert not runner.file_exists(STUB_DROPIN), \
+            "a drop-in grub never accepted must not be left on the host"
+    finally:
+        runner.cleanup()
+
+
+def test_configure_bootloader_skips_system_operations(base_image):
+    """SKIP_SYSTEM_OPERATIONS keeps the step off the real bootloader.
+
+    The suite sets this for every step, so without the guard a missing stub would let a
+    test regenerate the host's GRUB configuration.
+    """
+    _skip_non_debian(base_image)
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        _rke2_container(runner)
+        _install_grub_stub(runner)
+        _write_bootcmdline(runner, STUB_BOOTCMDLINE, SAMPLE_CMDLINE)
+
+        # STUB_ENV keeps the suite-wide SKIP_SYSTEM_OPERATIONS=true in place.
+        result = _run_with_env(runner, "configure_bootloader.sh", STUB_ENV)
+        assert_exit_code(result, 0)
+        assert_output_contains(result.stdout, "SKIP_SYSTEM_OPERATIONS set")
+        assert not runner.file_exists("/tmp/update-grub.ran"), \
+            "update-grub ran despite SKIP_SYSTEM_OPERATIONS"
+        # The drop-in is still written; only the bootloader regeneration is skipped.
+        assert runner.file_exists(STUB_DROPIN)
+    finally:
+        runner.cleanup()
+
+
+def test_configure_bootloader_rejects_unsupported_os(base_image):
+    """RHEL-family nodes fail loudly instead of getting a drop-in grub never reads.
+
+    On the matrix's rockylinux:9 entry this runs against the real /etc/os-release; on the
+    Debian-family entries it runs against a stub, so the path is covered either way.
+    """
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        _rke2_container(runner)
+        _install_grub_stub(runner)
+        _write_bootcmdline(runner, STUB_BOOTCMDLINE, SAMPLE_CMDLINE)
+
+        env = dict(RUN_ENV)
+        if _is_debian_family(base_image):
+            _write_os_release(runner, STUB_OS_RELEASE, RHEL_OS_RELEASE)
+            env["OS_RELEASE"] = STUB_OS_RELEASE
+
+        result = _run_with_env(runner, "configure_bootloader.sh", env)
+        assert result.exit_code != 0, "the step must fail on a distribution it cannot support"
+        assert_output_contains(result.stdout, "does not support the bootloader mechanism")
+        assert not runner.file_exists(STUB_DROPIN), \
+            "no drop-in should be written on a platform that cannot read it"
+        assert not runner.file_exists("/tmp/update-grub.ran"), \
+            "grub must not be regenerated on an unsupported platform"
+    finally:
+        runner.cleanup()
+
+
+def test_configure_bootloader_disabled_by_env(base_image):
+    """CONFIGURE_BOOTLOADER=false is the escape hatch, and silences all three checks.
+
+    This is what an operator sets on a node whose kernel arguments are owned elsewhere,
+    including any RHEL-family node that would otherwise be failed by the OS gate.
+    """
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        _rke2_container(runner)
+        _install_grub_stub(runner)
+        _write_bootcmdline(runner, STUB_BOOTCMDLINE, SAMPLE_CMDLINE)
+
+        env = {**RUN_ENV, "CONFIGURE_BOOTLOADER": "false", "PROC_CMDLINE": STUB_PROC_CMDLINE}
+        for script in (
+            "configure_bootloader.sh",
+            "configure_bootloader_check.sh",
+            "post_interrupt_bootloader_check.sh",
+        ):
+            result = _run_with_env(runner, script, env)
+            assert_exit_code(result, 0)
+            assert_output_contains(result.stdout, "switched off via CONFIGURE_BOOTLOADER")
+
+        assert not runner.file_exists(STUB_DROPIN), "no drop-in should be written when switched off"
+        assert not runner.file_exists("/tmp/update-grub.ran"), "grub must not be regenerated"
     finally:
         runner.cleanup()
 
@@ -1090,15 +1300,14 @@ def test_configure_bootloader_preserves_platform_cmdline(base_image):
     Replacing GRUB_CMDLINE_LINUX_DEFAULT (what the older eks/aks script does) drops the
     serial console arguments an operator needs to reach a node that fails to boot.
     """
+    _skip_non_debian(base_image)
     runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
     try:
-        configmaps = {"accelerator": "gb200", "intent": "performance", "service": "rke2"}
-        create_container_for_testing(runner, configmaps)
+        _rke2_container(runner)
         _install_grub_stub(runner)
         _write_bootcmdline(runner, STUB_BOOTCMDLINE, SAMPLE_CMDLINE)
 
-        result = _run_with_env(runner, "configure_bootloader.sh", STUB_ENV)
-        assert_exit_code(result, 0)
+        assert_exit_code(_run_with_env(runner, "configure_bootloader.sh", RUN_ENV), 0)
 
         resolved = runner.container.exec_run(
             [
@@ -1110,15 +1319,18 @@ def test_configure_bootloader_preserves_platform_cmdline(base_image):
             workdir="/",
         ).output.decode("utf-8", errors="replace")
 
-        assert "console=ttyS0,115200n8" in resolved, \
-            f"platform cmdline was dropped: {resolved!r}"
+        assert "console=ttyS0,115200n8" in resolved, f"platform cmdline was dropped: {resolved!r}"
         assert "hugepages=8192" in resolved, f"profile cmdline was not appended: {resolved!r}"
     finally:
         runner.cleanup()
 
 
 def test_configure_bootloader_noop_for_other_service(base_image):
-    """Services without the marker (bcm here) get no drop-in and no grub regeneration."""
+    """Services without the marker (bcm here) get no drop-in and no grub regeneration.
+
+    The service gate is checked before the OS gate, so this holds on every base image:
+    a service that never wanted a drop-in is not failed for the platform it runs on.
+    """
     runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
     try:
         configmaps = {"accelerator": "gb200", "intent": "performance", "service": "bcm"}
@@ -1126,14 +1338,13 @@ def test_configure_bootloader_noop_for_other_service(base_image):
         _install_grub_stub(runner)
         _write_bootcmdline(runner, STUB_BOOTCMDLINE, SAMPLE_CMDLINE)
 
-        result = _run_with_env(runner, "configure_bootloader.sh", STUB_ENV)
+        result = _run_with_env(runner, "configure_bootloader.sh", RUN_ENV)
         assert_exit_code(result, 0)
         assert_output_contains(result.stdout, "not enabled for this service")
         assert not runner.file_exists(STUB_DROPIN), \
             "bcm must not get a bootloader drop-in; it applies without a reboot"
 
-        # And its check is a no-op rather than a failure.
-        check = _run_with_env(runner, "configure_bootloader_check.sh", STUB_ENV)
+        check = _run_with_env(runner, "configure_bootloader_check.sh", RUN_ENV)
         assert_exit_code(check, 0)
     finally:
         runner.cleanup()
@@ -1141,20 +1352,20 @@ def test_configure_bootloader_noop_for_other_service(base_image):
 
 def test_configure_bootloader_stands_down_when_service_changes(base_image):
     """Switching off rke2 removes the drop-in rather than leaving it applying forever."""
+    _skip_non_debian(base_image)
     runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
     try:
-        configmaps = {"accelerator": "gb200", "intent": "performance", "service": "rke2"}
-        create_container_for_testing(runner, configmaps)
+        _rke2_container(runner)
         _install_grub_stub(runner)
         _write_bootcmdline(runner, STUB_BOOTCMDLINE, SAMPLE_CMDLINE)
 
-        assert_exit_code(_run_with_env(runner, "configure_bootloader.sh", STUB_ENV), 0)
+        assert_exit_code(_run_with_env(runner, "configure_bootloader.sh", RUN_ENV), 0)
         assert runner.file_exists(STUB_DROPIN)
 
         runner.container.exec_run(
             ["bash", "-c", "echo bcm > /skyhook-package/configmaps/service"], workdir="/"
         )
-        result = _run_with_env(runner, "configure_bootloader.sh", STUB_ENV)
+        result = _run_with_env(runner, "configure_bootloader.sh", RUN_ENV)
         assert_exit_code(result, 0)
         assert not runner.file_exists(STUB_DROPIN), \
             "drop-in must be removed once the service stops opting in"
@@ -1164,13 +1375,13 @@ def test_configure_bootloader_stands_down_when_service_changes(base_image):
 
 def test_configure_bootloader_check_fails_without_dropin(base_image):
     """The check fails when the step was requested but left nothing behind."""
+    _skip_non_debian(base_image)
     runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
     try:
-        configmaps = {"accelerator": "gb200", "intent": "performance", "service": "rke2"}
-        create_container_for_testing(runner, configmaps)
+        _rke2_container(runner)
         _write_bootcmdline(runner, STUB_BOOTCMDLINE, SAMPLE_CMDLINE)
 
-        result = _run_with_env(runner, "configure_bootloader_check.sh", STUB_ENV)
+        result = _run_with_env(runner, "configure_bootloader_check.sh", RUN_ENV)
         assert result.exit_code != 0, "check should fail when no drop-in exists"
         assert_output_contains(result.stdout, "no drop-in exists")
     finally:
@@ -1183,10 +1394,10 @@ def test_configure_bootloader_check_fails_on_inert_dropin(base_image):
     This is the failure worth catching early: a commented-out or overwritten drop-in
     reads as installed but leaves the node booting untuned.
     """
+    _skip_non_debian(base_image)
     runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
     try:
-        configmaps = {"accelerator": "gb200", "intent": "performance", "service": "rke2"}
-        create_container_for_testing(runner, configmaps)
+        _rke2_container(runner)
         _write_bootcmdline(runner, STUB_BOOTCMDLINE, SAMPLE_CMDLINE)
         runner.container.exec_run(
             [
@@ -1198,7 +1409,7 @@ def test_configure_bootloader_check_fails_on_inert_dropin(base_image):
             workdir="/",
         )
 
-        result = _run_with_env(runner, "configure_bootloader_check.sh", STUB_ENV)
+        result = _run_with_env(runner, "configure_bootloader_check.sh", RUN_ENV)
         assert result.exit_code != 0, "check should fail on a drop-in that resolves to nothing"
         assert_output_contains(result.stdout, "does not resolve to the profile's cmdline")
     finally:
@@ -1207,20 +1418,20 @@ def test_configure_bootloader_check_fails_on_inert_dropin(base_image):
 
 def test_post_interrupt_bootloader_check_passes_when_cmdline_live(base_image):
     """After the reboot, every profile argument is present on the booted cmdline."""
+    _skip_non_debian(base_image)
     runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
     try:
-        configmaps = {"accelerator": "gb200", "intent": "performance", "service": "rke2"}
-        create_container_for_testing(runner, configmaps)
+        _rke2_container(runner)
         _write_bootcmdline(runner, STUB_BOOTCMDLINE, SAMPLE_CMDLINE)
         runner.container.exec_run(
-            ["bash", "-c", f"printf 'BOOT_IMAGE=/vmlinuz ro %s\\n' '{SAMPLE_CMDLINE}' > {STUB_PROC_CMDLINE}"],
+            ["bash", "-c",
+             f"printf 'BOOT_IMAGE=/vmlinuz ro %s\\n' '{SAMPLE_CMDLINE}' > {STUB_PROC_CMDLINE}"],
             workdir="/",
         )
 
         result = _run_with_env(
-            runner,
-            "post_interrupt_bootloader_check.sh",
-            {**STUB_ENV, "PROC_CMDLINE": STUB_PROC_CMDLINE},
+            runner, "post_interrupt_bootloader_check.sh",
+            {**RUN_ENV, "PROC_CMDLINE": STUB_PROC_CMDLINE},
         )
         assert_exit_code(result, 0)
         assert_output_contains(result.stdout, "live after reboot")
@@ -1230,10 +1441,10 @@ def test_post_interrupt_bootloader_check_passes_when_cmdline_live(base_image):
 
 def test_post_interrupt_bootloader_check_fails_when_cmdline_absent(base_image):
     """A reboot that did not pick the drop-in up fails the node rather than passing it."""
+    _skip_non_debian(base_image)
     runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
     try:
-        configmaps = {"accelerator": "gb200", "intent": "performance", "service": "rke2"}
-        create_container_for_testing(runner, configmaps)
+        _rke2_container(runner)
         _write_bootcmdline(runner, STUB_BOOTCMDLINE, SAMPLE_CMDLINE)
         # Booted without the profile arguments, e.g. a later-sorting grub.d file won.
         runner.container.exec_run(
@@ -1242,9 +1453,8 @@ def test_post_interrupt_bootloader_check_fails_when_cmdline_absent(base_image):
         )
 
         result = _run_with_env(
-            runner,
-            "post_interrupt_bootloader_check.sh",
-            {**STUB_ENV, "PROC_CMDLINE": STUB_PROC_CMDLINE},
+            runner, "post_interrupt_bootloader_check.sh",
+            {**RUN_ENV, "PROC_CMDLINE": STUB_PROC_CMDLINE},
         )
         assert result.exit_code != 0, "check should fail when the cmdline did not take effect"
         assert_output_contains(result.stdout, "did not take effect")
@@ -1255,22 +1465,43 @@ def test_post_interrupt_bootloader_check_fails_when_cmdline_absent(base_image):
 
 def test_uninstall_bootloader_removes_dropin(base_image):
     """Uninstall removes the drop-in so the cmdline does not outlive the package."""
+    _skip_non_debian(base_image)
     runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
     try:
-        configmaps = {"accelerator": "gb200", "intent": "performance", "service": "rke2"}
-        create_container_for_testing(runner, configmaps)
+        _rke2_container(runner)
         _install_grub_stub(runner)
         _write_bootcmdline(runner, STUB_BOOTCMDLINE, SAMPLE_CMDLINE)
 
-        assert_exit_code(_run_with_env(runner, "configure_bootloader.sh", STUB_ENV), 0)
+        assert_exit_code(_run_with_env(runner, "configure_bootloader.sh", RUN_ENV), 0)
         assert runner.file_exists(STUB_DROPIN)
 
-        result = _run_with_env(runner, "uninstall_bootloader.sh", STUB_ENV)
+        result = _run_with_env(runner, "uninstall_bootloader.sh", RUN_ENV)
         assert_exit_code(result, 0)
         assert not runner.file_exists(STUB_DROPIN), "uninstall left the drop-in behind"
 
-        check = _run_with_env(runner, "uninstall_bootloader_check.sh", STUB_ENV)
+        check = _run_with_env(runner, "uninstall_bootloader_check.sh", RUN_ENV)
         assert_exit_code(check, 0)
+    finally:
+        runner.cleanup()
+
+
+def test_uninstall_bootloader_skips_system_operations(base_image):
+    """Uninstall honours SKIP_SYSTEM_OPERATIONS too; it is a registered lifecycle step."""
+    _skip_non_debian(base_image)
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        _rke2_container(runner)
+        _install_grub_stub(runner)
+        _write_bootcmdline(runner, STUB_BOOTCMDLINE, SAMPLE_CMDLINE)
+        assert_exit_code(_run_with_env(runner, "configure_bootloader.sh", RUN_ENV), 0)
+        runner.container.exec_run(["bash", "-c", "rm -f /tmp/update-grub.ran"], workdir="/")
+
+        result = _run_with_env(runner, "uninstall_bootloader.sh", STUB_ENV)
+        assert_exit_code(result, 0)
+        assert_output_contains(result.stdout, "SKIP_SYSTEM_OPERATIONS set")
+        assert not runner.file_exists("/tmp/update-grub.ran"), \
+            "update-grub ran despite SKIP_SYSTEM_OPERATIONS"
+        assert not runner.file_exists(STUB_DROPIN), "the drop-in should still be removed"
     finally:
         runner.cleanup()
 
@@ -1279,10 +1510,9 @@ def test_uninstall_bootloader_is_idempotent(base_image):
     """Removing a drop-in that was never written is a no-op, not a failure."""
     runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
     try:
-        configmaps = {"accelerator": "gb200", "intent": "performance", "service": "rke2"}
-        create_container_for_testing(runner, configmaps)
+        _rke2_container(runner)
 
-        result = _run_with_env(runner, "uninstall_bootloader.sh", STUB_ENV)
+        result = _run_with_env(runner, "uninstall_bootloader.sh", RUN_ENV)
         assert_exit_code(result, 0)
         assert_output_contains(result.stdout, "nothing to remove")
     finally:
@@ -1312,10 +1542,9 @@ def test_configure_bootloader_leaves_foreign_dropin_alone(base_image):
             workdir="/",
         )
 
-        result = _run_with_env(runner, "configure_bootloader.sh", STUB_ENV)
+        result = _run_with_env(runner, "configure_bootloader.sh", RUN_ENV)
         assert_exit_code(result, 0)
-        assert runner.file_exists(STUB_DROPIN), \
-            "the step removed a drop-in another service owns"
+        assert runner.file_exists(STUB_DROPIN), "the step removed a drop-in another service owns"
         assert "GRUB_CMDLINE_LINUX_DEFAULT" in runner.get_file_contents(STUB_DROPIN), \
             "the foreign drop-in was modified"
     finally:
@@ -1339,14 +1568,12 @@ def test_uninstall_bootloader_leaves_foreign_dropin_alone(base_image):
             workdir="/",
         )
 
-        result = _run_with_env(runner, "uninstall_bootloader.sh", STUB_ENV)
+        result = _run_with_env(runner, "uninstall_bootloader.sh", RUN_ENV)
         assert_exit_code(result, 0)
         assert_output_contains(result.stdout, "nothing to remove")
-        assert runner.file_exists(STUB_DROPIN), \
-            "uninstall removed a drop-in another service owns"
+        assert runner.file_exists(STUB_DROPIN), "uninstall removed a drop-in another service owns"
 
-        # And the uninstall check does not report a failed uninstall for it either.
-        check = _run_with_env(runner, "uninstall_bootloader_check.sh", STUB_ENV)
+        check = _run_with_env(runner, "uninstall_bootloader_check.sh", RUN_ENV)
         assert_exit_code(check, 0)
     finally:
         runner.cleanup()

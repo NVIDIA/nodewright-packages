@@ -48,6 +48,15 @@ suppresses the `containerd_service.sh` that the gb200 and vr200 performance prof
 carry. Operators on `eks` with `gb200` are hitting that today; `rke2` avoids it by
 shipping no `[script]` at all.
 
+The step is Debian-family only and fails on anything else. Sourcing
+`/etc/default/grub.d/*.cfg` is a Debian/Ubuntu patch to `grub-mkconfig`; RHEL-family
+`grub2-mkconfig` ignores that directory, so the drop-in would be written, GRUB would
+regenerate without error, and nothing would reach the kernel. Since this package falls
+back to `os/common` profiles on untested distributions, the step checks `ID`/`ID_LIKE`
+itself rather than assuming an OS gate upstream. Set `CONFIGURE_BOOTLOADER=false` to skip
+the step and its checks on such a node, or use `service=bcm` for a bootloader-free chain
+on the same accelerators.
+
 New `post-interrupt-bootloader-check` asserts every argument in `/etc/tuned/bootcmdline`
 is present in `/proc/cmdline` after the reboot. Grub failing to pick the drop-in up is
 invisible from the config stage, so without this a node comes up reporting success while

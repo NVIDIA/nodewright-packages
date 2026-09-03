@@ -375,6 +375,17 @@ without it a node comes up labelled as tuned while running none of the tuning.
 Uninstalling removes the drop-in and regenerates grub, so the cmdline goes away on the
 next boot rather than outliving the package.
 
+The step is **Debian-family only**, and fails on anything else rather than passing
+quietly. Sourcing `/etc/default/grub.d/*.cfg` is a Debian/Ubuntu patch to
+`grub-mkconfig`; RHEL-family `grub2-mkconfig` reads `/etc/default/grub` and
+`/etc/grub.d/` and ignores that directory entirely. On a RHEL-family node the drop-in
+would be written, GRUB would regenerate without error, and none of the arguments would
+reach the kernel, so the node would report success while running none of its tuning.
+Because the package falls back to `os/common` profiles on untested distributions, the
+step cannot assume an OS gate happened upstream and checks `ID`/`ID_LIKE` itself. On such
+a node, either use `service=bcm` (same accelerators, bootloader-free chain, no reboot) or
+set `CONFIGURE_BOOTLOADER=false` and set the kernel arguments by another route.
+
 > **Accelerator support:** the service ships no accelerator-specific files, so support is
 > exactly whatever workload profiles exist. `gb200` and `vr200` work across all three
 > intents; `gb300` ships a `performance` profile only, so that is the only intent
@@ -443,6 +454,7 @@ next boot rather than outliving the package.
 | `TOPO_PATH` | No | `/etc/nccl/topo.xml` | Absolute host path the bundled NCCL topology file is written to. Only used when the configured `service`/`accelerator` pair ships one (today `oci` + `gb300`); otherwise the step is a no-op. Point `NCCL_TOPO_FILE` at the same path in your workloads. |
 | `CONFIGURE_PCIE_ACS` | No | `true` | Set to `false` to skip the PCIe ACS correction and its checks. Only relevant to a `service`/`accelerator` pair that opts in (today `oci` + `gb300`). Use this on nodes whose kernel does not honour `pci=config_acs=`, where the correction cannot take effect and the post-interrupt check would otherwise fail the node. |
 | `CONFIGURE_IOMMU_PASSTHROUGH` | No | `auto` | Controls the IOMMU passthrough workaround for kernels whose arm-smmu-v3 cannot attach a PASID to an identity domain. `auto` applies it only when the running kernel is older than 6.11; `true` always applies it; `false` never does and skips the checks. Only relevant to a `service`/`accelerator` pair that opts in (today `oci` + `gb300`). Set `false` on a node whose kernel carries a backported fix that the version check cannot see. |
+| `CONFIGURE_BOOTLOADER` | No | `true` | Set to `false` to skip the bootloader drop-in step and all three of its checks. Only relevant to a service that ships `bootloader.enabled` (today `rke2`). Use it on a node whose kernel arguments are owned by something else, and on any RHEL-family node, where the step fails by design (see the RKE2 tuning section above). |
 | `APT_ALLOW_INDEX_FAILURE` | No | `true` | Inherited from the `tuned` base package. Lets `apt update` fail without failing the install step, so one unreachable third-party repo in `/etc/apt/sources.list.d` cannot block the package. Set to `false` to restore strict behavior. The `apt install` that follows is unaffected and still fails if the package is genuinely unavailable. |
 
 ## Adding OS-Specific Overrides

@@ -45,20 +45,22 @@ dropin_is_ours() {
     [[ -f "${TUNED_GRUB_DROPIN}" ]] && grep -qF "${DROPIN_MARKER}" "${TUNED_GRUB_DROPIN}"
 }
 
-# Mirrors the fallback chain in kdump's update_grub_config().
+# Mirrors regenerate_grub() in configure_bootloader.sh. update-grub only: the drop-in is
+# written on Debian-family nodes exclusively, so that is the only place there is one to
+# remove, and a grub2-mkconfig fallback here would regenerate a config that never
+# referenced it.
 regenerate_grub() {
-    if command -v update-grub >/dev/null 2>&1; then
-        update-grub
-    elif command -v grub2-mkconfig >/dev/null 2>&1; then
-        if [[ -d /boot/grub2 ]]; then
-            grub2-mkconfig -o /boot/grub2/grub.cfg
-        else
-            grub2-mkconfig -o /boot/efi/EFI/redhat/grub.cfg
-        fi
-    else
-        echo "ERROR: neither update-grub nor grub2-mkconfig is available"
+    if [[ -n "${SKIP_SYSTEM_OPERATIONS:-}" ]]; then
+        echo "SKIP_SYSTEM_OPERATIONS set: not regenerating the bootloader config"
+        return 0
+    fi
+
+    if ! command -v update-grub >/dev/null 2>&1; then
+        echo "ERROR: update-grub is not available, so the removal cannot be applied to grub.cfg"
         return 1
     fi
+
+    update-grub
 }
 
 main() {

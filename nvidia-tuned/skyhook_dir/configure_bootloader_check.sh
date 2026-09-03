@@ -32,6 +32,35 @@ PROFILES_DIR="${SKYHOOK_DIR}/profiles"
 
 TUNED_GRUB_DROPIN="${TUNED_GRUB_DROPIN:-/etc/default/grub.d/99-nvidia-tuned-cmdline.cfg}"
 TUNED_BOOTCMDLINE="${TUNED_BOOTCMDLINE:-/etc/tuned/bootcmdline}"
+OS_RELEASE="${OS_RELEASE:-/etc/os-release}"
+
+# Mirrors bootloader_requested() in configure_bootloader.sh.
+bootloader_requested() {
+    local setting
+    setting="$(printf '%s' "${CONFIGURE_BOOTLOADER:-true}" | tr '[:upper:]' '[:lower:]')"
+    case "${setting}" in
+        false | 0 | no | off) return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
+# Mirrors bootloader_os_supported() in configure_bootloader.sh.
+bootloader_os_supported() {
+    local ids
+
+    [[ -r "${OS_RELEASE}" ]] || return 1
+    ids="$(
+        set +u
+        # shellcheck source=/dev/null
+        . "${OS_RELEASE}" 2>/dev/null
+        printf '%s %s' "${ID:-}" "${ID_LIKE:-}"
+    )"
+
+    case " ${ids} " in
+        *" debian "* | *" ubuntu "*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
 
 # Mirrors bootloader_enabled() in configure_bootloader.sh.
 bootloader_enabled() {
@@ -69,9 +98,22 @@ generated_cmdline() {
 main() {
     local expected generated token tokens=() missing=()
 
+    if ! bootloader_requested; then
+        echo "Bootloader step switched off via CONFIGURE_BOOTLOADER; nothing to verify"
+        return 0
+    fi
+
     if ! bootloader_enabled; then
         echo "Bootloader drop-in not enabled for this service; nothing to verify"
         return 0
+    fi
+
+    # Reachable only if configure_bootloader.sh was bypassed; it fails on this platform.
+    # Passing here would certify a drop-in that grub never reads.
+    if ! bootloader_os_supported; then
+        echo "ERROR: this distribution's grub-mkconfig does not source /etc/default/grub.d/*.cfg,"
+        echo "  so the drop-in cannot take effect. Set CONFIGURE_BOOTLOADER=false to skip this step."
+        exit 1
     fi
 
     if [[ ! -f "${TUNED_GRUB_DROPIN}" ]]; then
