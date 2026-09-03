@@ -159,6 +159,60 @@ runs:
         # attestation pushed to the registry, not a storage record.
         create-storage-record: false
 
+    # actions/attest-build-provenance above and cosign sign below both attach
+    # to the same OCI referrers fallback tag (sha256-<digest>), because GHCR
+    # does not implement the referrers API. Each attach is a read-modify-write
+    # of that tag, so when cosign reads it before the attestation is visible it
+    # rewrites the index with only its own signature and the provenance
+    # referrer is dropped (this is what failed the nvidia-tuned/0.9.0 release
+    # build). Block until the attestation reads back, so cosign appends to the
+    # index instead of replacing it.
+    - name: Wait for provenance attestation to be readable
+      if: inputs.generate_attestation == 'true' && inputs.sign_image == 'true' && inputs.push == 'true'
+      shell: bash
+      env:
+        REGISTRY: ${{ inputs.registry }}
+        REPOSITORY: ${{ inputs.image_name }}/${{ inputs.package_name }}
+        DIGEST: ${{ steps.push.outputs.digest }}
+        REGISTRY_TOKEN: ${{ inputs.github_token }}
+      run: |
+        set -euo pipefail
+
+        # OCI repository names must be lowercase; image_name carries the
+        # uppercase org from github.repository (NVIDIA/...).
+        repository="${REPOSITORY,,}"
+        fallback_tag="sha256-${DIGEST#sha256:}"
+        manifest_url="https://${REGISTRY}/v2/${repository}/manifests/${fallback_tag}"
+
+        # Standard registry token exchange: the unauthenticated request answers
+        # with the realm and service to ask a pull token for.
+        challenge="$(curl -sSI "${manifest_url}" | grep -i '^www-authenticate:' || true)"
+        token=""
+        if [[ -n "${challenge}" ]]; then
+          realm="$(sed -n 's/.*realm="\([^"]*\)".*/\1/p' <<<"${challenge}")"
+          service="$(sed -n 's/.*service="\([^"]*\)".*/\1/p' <<<"${challenge}")"
+          token="$(curl -sS -u "${GITHUB_ACTOR}:${REGISTRY_TOKEN}" --get \
+            --data-urlencode "service=${service}" \
+            --data-urlencode "scope=repository:${repository}:pull" \
+            "${realm}" | jq -r '.token // .access_token // empty')"
+        fi
+
+        for attempt in $(seq 1 30); do
+          if curl -sS -H "Authorization: Bearer ${token}" \
+              -H 'Accept: application/vnd.oci.image.index.v1+json' \
+              "${manifest_url}" \
+            | jq -e '[.manifests[]?.annotations."dev.sigstore.bundle.predicateType"]
+                     | index("https://slsa.dev/provenance/v1")' > /dev/null 2>&1; then
+            echo "Provenance referrer visible on ${fallback_tag} after ${attempt} attempt(s)."
+            exit 0
+          fi
+          sleep 2
+        done
+
+        echo "ERROR: the provenance attestation for ${DIGEST} was not readable from ${REGISTRY}/${repository} after 60s." >&2
+        echo "Signing now would drop it from the referrers index, so failing instead." >&2
+        exit 1
+
     - name: Install cosign
       if: inputs.sign_image == 'true'
       uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
