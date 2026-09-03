@@ -5,12 +5,22 @@
 
 All notable changes to this package will be documented in this file.
 
+## [0.9.0] - 2026-09-03
+
+### New Features
+
+- *(nvidia-tuned)* Add rke2 service keeping the accelerator's bootloader tuning 
+
+
 ## [0.8.0] - 2026-08-18
 
 ### New Features
 
 - *(nvidia-tuned)* Disable IOMMU passthrough on kernels needing it for ACS + DMA-BUF 
 
+### Other Tasks
+
+- *(nvidia-tuned)* Update changelog for 0.8.0
 
 ## [0.7.2] - 2026-08-14
 
