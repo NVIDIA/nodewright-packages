@@ -54,7 +54,11 @@ profiles/
 │   │   ├── nvidia-h100-multiNodeTraining/
 │   │   ├── nvidia-gb200-performance/
 │   │   ├── nvidia-gb200-inference/
-│   │   └── nvidia-gb200-multiNodeTraining/
+│   │   ├── nvidia-gb200-multiNodeTraining/
+│   │   ├── nvidia-gb300-performance/
+│   │   ├── nvidia-gb300-noreboot-base/  # Bootloader-free chain used by service=oci
+│   │   ├── nvidia-gb300-inference/             # Shim: includes nvidia-gb300-performance
+│   │   └── nvidia-gb300-multiNodeTraining/     # Shim: includes nvidia-gb300-performance
 │   ├── ubuntu/
 │   │   ├── 22.04/          # Mix of symlinks and OS-specific overrides
 │   │   └── 24.04/          # Symlinks to os/common/ (override when needed)
@@ -83,6 +87,8 @@ profiles/
         ├── tuned.conf.template  # RDMA IPv6 defaults for OCI's IPv6/SLAAC RoCE fabric
         ├── script.sh            # Re-enables IPv6 on existing mlx5 RDMA VFs
         ├── nvidia-gb300-performance.conf   # Re-roots gb300 onto the bootloader-free base
+        ├── nvidia-gb300-inference.conf     # Shim: same re-root for intent=inference
+        ├── nvidia-gb300-multiNodeTraining.conf  # Shim: same re-root for intent=multiNodeTraining
         ├── nccl-topo-gb300.xml  # Installed to ${TOPO_PATH} by the write-nccl-topo config step
         ├── pcie-acs-gb300.enabled          # Opts gb300 in to the configure-pcie-acs config step
         ├── rdma-vfs-ready-gb300/           # Installed by the install-rdma-vfs-ready config step
@@ -138,6 +144,9 @@ Examples:
 | `gb200` | `performance` | `nvidia-gb200-performance` |
 | `gb200` | `inference` | `nvidia-gb200-inference` |
 | `gb200` | `multiNodeTraining` | `nvidia-gb200-multiNodeTraining` |
+| `gb300` | `performance` | `nvidia-gb300-performance` |
+| `gb300` | `inference` | `nvidia-gb300-inference` *(shim onto `nvidia-gb300-performance`)* |
+| `gb300` | `multiNodeTraining` | `nvidia-gb300-multiNodeTraining` *(shim onto `nvidia-gb300-performance`)* |
 | `vr200` | `performance` | `nvidia-vr200-performance` |
 | `vr200` | `inference` | `nvidia-vr200-inference` |
 | `vr200` | `multiNodeTraining` | `nvidia-vr200-multiNodeTraining` |
@@ -388,14 +397,15 @@ set `CONFIGURE_BOOTLOADER=false` and set the kernel arguments by another route.
 
 > **Accelerator support:** the service ships no accelerator-specific files, so support is
 > exactly whatever workload profiles exist. `gb200` and `vr200` work across all three
-> intents; `gb300` ships a `performance` profile only, so that is the only intent
-> available there (this is a property of the accelerator, not of `rke2`). `vr200`
-> remains Ubuntu 26.04 only.
+> intents. `gb300` works across all three as well, but `inference` and
+> `multiNodeTraining` are shim profiles that resolve to `nvidia-gb300-performance`: the
+> intent is accepted and applies the performance tuning rather than failing, and there is
+> no gb300-specific inference or training delta yet. `vr200` remains Ubuntu 26.04 only.
 >
 > | Accelerator | `performance` | `inference` | `multiNodeTraining` |
 > |---|---|---|---|
 > | `gb200` | yes | yes | yes |
-> | `gb300` | yes | no profile | no profile |
+> | `gb300` | yes | shim (= `performance`) | shim (= `performance`) |
 > | `vr200` | yes | yes | yes |
 
 ### ConfigMap Fields
@@ -407,7 +417,9 @@ set `CONFIGURE_BOOTLOADER=false` and set the kernel arguments by another route.
 | `service` | No | — | Service name (e.g., `eks`). If specified, service profile wraps the workload profile. Ignored when `accelerator=generic` |
 | `spcx_cc` | No | `on` | DOCA Spectrum-X congestion control. Set to `off` (or `false`, `0`, `no`) to disable it and tear down any units this package installed. Only relevant to a `service`/`accelerator` pair that ships the assets (today `oci` + `gb300`). A node with `spcx_cc: off` does not need DOCA installed. Changing this key re-runs the step, so it can be toggled without a package version bump. |
 
-> **gb300 / oci:** `gb300` ships a `performance` profile only. The base
+> **gb300 / oci:** `gb300` ships real tuning for `performance` only; `inference` and
+> `multiNodeTraining` are shims onto it, and `oci` carries matching shims so all three
+> intents stay on the bootloader-free chain. The base
 > `nvidia-gb300-performance` profile keeps the reboot-requiring `[bootloader]` tuning
 > (same as gb200); with `service=oci`, gb300 uses a bootloader-free profile chain
 > (`nvidia-gb300-noreboot-base`) so the tuning itself applies without a reboot. The
@@ -434,7 +446,7 @@ set `CONFIGURE_BOOTLOADER=false` and set the kernel arguments by another route.
 | `generic` | Baseline tuning for any NVIDIA GPU (self-contained, no intent/service required) |
 | `h100` | NVIDIA H100 GPU |
 | `gb200` | NVIDIA GB200 GPU |
-| `gb300` | NVIDIA GB300 GPU (`performance` intent only) |
+| `gb300` | NVIDIA GB300 GPU (`inference` and `multiNodeTraining` resolve to the `performance` profile) |
 | `vr200` | NVIDIA VR200 GPU (Ubuntu 26.04 only) |
 
 ### Services (specify in `service`)

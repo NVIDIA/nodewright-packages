@@ -20,7 +20,7 @@ example is not itself picked up as release notes):
     - Notable behavior change worth calling out.
 -->
 
-## 0.9.1
+## 0.10.0
 
 Rebases the GB200, GB300 and VR200 `performance` hugepage allocation on the 64k page-size
 kernel these arm64 platforms run: the `linux-image-*-aws-64k` that `nvidia-setup` installs
@@ -42,6 +42,16 @@ of the 5128-page 2M one.
 
 The `inference` profiles are unaffected: each overrides `cmdline_hugepages` with a 2M-only
 allocation, so they never requested a 1G pool.
+
+GB300 also gains `inference` and `multiNodeTraining` profiles. `prepare_nvidia_profiles.sh`
+builds the profile name as `nvidia-<accelerator>-<intent>` and exits non-zero when that
+directory is missing, so those two intents previously failed the package on gb300 rather
+than falling back to anything. Both new profiles are shims that include
+`nvidia-gb300-performance` and add nothing, because no gb300-specific inference or
+training tuning has been measured yet; the intent is accepted and the node gets the
+performance tuning. `service=oci` carries matching shims onto `nvidia-gb300-noreboot-base`
+so all three intents stay on the bootloader-free chain there. Nothing existing changes:
+gb200, h100 and vr200 keep the intent profiles they already shipped.
 
 Upgrade note: on a node still running a 4k page-size kernel this inverts, because 512M is
 not a valid size there. Such a node keeps the 5128 x 2M pool and loses the 2G of large
