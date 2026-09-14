@@ -109,11 +109,15 @@ runs:
     - name: Run preprocess script
       id: preprocess
       shell: bash
+      # package_name goes through env rather than inline ${{ }} expansion. On the
+      # PR path it is a directory name taken from the contributor's tree, so an
+      # inline expansion would splice that name into the script as shell.
       env:
         PACKAGE_VERSIONS: ${{ steps.package-versions.outputs.PACKAGE_VERSIONS }}
+        PACKAGE_NAME: ${{ inputs.package_name }}
       run: |
         echo "PACKAGE_VERSIONS from previous step: ${PACKAGE_VERSIONS}"
-        PREPROCESS_SCRIPT="${{ inputs.package_name }}/preprocess.sh"
+        PREPROCESS_SCRIPT="${PACKAGE_NAME}/preprocess.sh"
         if [ -f "$PREPROCESS_SCRIPT" ]; then
           echo "Running preprocess script: $PREPROCESS_SCRIPT"
           chmod +x "$PREPROCESS_SCRIPT"
@@ -238,9 +242,12 @@ runs:
     - name: Save image info
       if: inputs.save_image_info == 'true'
       shell: bash
+      env:
+        IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+        PACKAGE_NAME: ${{ inputs.package_name }}
       run: |
         mkdir -p /tmp/image-info
-        echo "${{ steps.meta.outputs.tags }}" > /tmp/image-info/${{ inputs.package_name }}.txt
+        echo "${IMAGE_TAGS}" > "/tmp/image-info/${PACKAGE_NAME}.txt"
 
     - name: Upload image info
       if: inputs.save_image_info == 'true'
