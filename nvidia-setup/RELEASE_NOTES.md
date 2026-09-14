@@ -20,7 +20,37 @@ example is not itself picked up as release notes):
     - Notable behavior change worth calling out.
 -->
 
-## 0.6.1
+## 0.7.0
+
+The EFA step now skips only when EFA is actually installed, and its check passes on the
+same condition. Both previously accepted traces that a failed install leaves behind.
+
+`install-efa-driver.sh` skipped, and `install_efa_driver_check.sh` passed, when any of
+three things were true: `/opt/amazon/efa` existed, `ldconfig` listed any `libfabric`, or
+dkms reported efa installed. Only the third is evidence. `/opt/amazon/efa` survives an
+install that failed partway, and `libfabric` ships in unrelated distro packages. A node
+whose efa postinstall aborted therefore had the step skipped and the check pass while EFA
+was not installed.
+
+The dkms branch of the check could not fire in any case:
+`dkms status | grep -q efa | grep -q "installed"` pipes from a `grep -q`, which writes
+nothing to stdout, so the second grep always read an empty stream and failed.
+
+Both callers now use `efa_driver_installed` in `utilities.sh`, which requires dpkg to have
+the efa package fully configured (a half-configured package is what an aborted DKMS
+postinstall leaves) and dkms to report the module installed. It does not require the module
+to be built for the running kernel, because apply installs EFA before rebooting onto a
+newly installed kernel, so a kernel skew at apply-check time is expected.
+
+Upgrade note: this is a behavior change, and it is meant to surface work that silently did
+not happen. A node carrying a broken or partial EFA install has been passing
+`install_efa_driver_check.sh`; on this version it fails that check instead, with the
+specific reason on stderr (the dpkg state, or that dkms has no installed module). That is
+a node that needed attention already. Expect previously-green nodes to go red, and treat
+each as a real EFA install to repair rather than a regression in the check.
+
+### Interrupted dpkg state is now repaired on every apt call
+
 
 Every apt invocation in the package now self-heals an interrupted dpkg state instead of
 only the kernel install.

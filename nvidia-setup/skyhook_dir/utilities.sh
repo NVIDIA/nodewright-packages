@@ -186,3 +186,44 @@ dpkg_repair() {
 
   dpkg --configure -a
 }
+
+# Report whether the EFA driver is genuinely installed.
+#
+# Leftover traces are not an install. A failed install leaves /opt/amazon/efa
+# behind, and libfabric ships in unrelated distro packages, so neither is
+# evidence that this package's work succeeded. Treating them as evidence is how
+# a node with a half-configured efa reported the step complete. The two signals
+# that do mean something:
+#
+#   1. dpkg has the efa package fully configured. A DKMS postinstall that aborts
+#      leaves it half-configured, which is not an install.
+#   2. dkms reports the efa kernel module built and installed.
+#
+# Deliberately does not require the module to be built for the running kernel.
+# apply installs EFA before the reboot onto a newly installed kernel, so a
+# kernel skew at apply-check time is expected rather than a fault.
+# Returns: 0 when EFA is installed, 1 otherwise, with the reason on stderr.
+efa_driver_installed() {
+  local pkg_state=""
+
+  if command -v dpkg-query >/dev/null 2>&1; then
+    pkg_state="$(dpkg-query -W -f '${db:Status-Status}' efa 2>/dev/null || true)"
+  fi
+
+  if [ "${pkg_state}" != "installed" ]; then
+    echo "EFA: dpkg reports the efa package as '${pkg_state:-absent}', not installed" >&2
+    return 1
+  fi
+
+  if ! command -v dkms >/dev/null 2>&1; then
+    echo "EFA: dkms is not available, so the kernel module cannot be confirmed" >&2
+    return 1
+  fi
+
+  if ! dkms status efa 2>/dev/null | grep -q 'installed'; then
+    echo "EFA: dkms does not report the efa module as installed" >&2
+    return 1
+  fi
+
+  return 0
+}

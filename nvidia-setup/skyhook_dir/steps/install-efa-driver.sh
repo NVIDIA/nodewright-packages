@@ -20,14 +20,22 @@ set -e
 EFA_VERSION="${1:?EFA version required}"
 export DEBIAN_FRONTEND=noninteractive
 
-# Skip if EFA is already installed (same criteria as install_efa_driver_check.sh)
-efa_already_installed() {
-  [ -d /opt/amazon/efa ] && return 0
-  ldconfig -p 2>/dev/null | grep -q libfabric && return 0
-  dkms status 2>/dev/null | grep -q 'efa.*installed' && return 0
-  return 1
-}
-if efa_already_installed; then
+# Load helpers (nvidia-setup skyhook_dir layout)
+if [ -f "${SKYHOOK_DIR:-}/skyhook_dir/utilities.sh" ]; then
+  # shellcheck source=../utilities.sh
+  . "${SKYHOOK_DIR}/skyhook_dir/utilities.sh"
+elif [ -f "$(dirname "$0")/../utilities.sh" ]; then
+  # shellcheck source=../utilities.sh
+  . "$(dirname "$0")/../utilities.sh"
+else
+  echo "ERROR: utilities.sh not found" >&2
+  exit 1
+fi
+
+# Skip only when EFA is actually installed (same criteria as
+# install_efa_driver_check.sh). Anything short of that is a reason to install,
+# not a reason to skip.
+if efa_driver_installed; then
   echo "EFA already installed, skipping."
   exit 0
 fi

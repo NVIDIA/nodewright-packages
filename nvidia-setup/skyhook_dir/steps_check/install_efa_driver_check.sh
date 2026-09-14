@@ -17,20 +17,23 @@
 # limitations under the License.
 
 set -e
-# EFA installer typically installs to /opt/amazon/efa; check for presence
-if [ -d /opt/amazon/efa ]; then
+
+# Load helpers (nvidia-setup skyhook_dir layout)
+if [ -f "${SKYHOOK_DIR:-}/skyhook_dir/utilities.sh" ]; then
+  # shellcheck source=../utilities.sh
+  . "${SKYHOOK_DIR}/skyhook_dir/utilities.sh"
+elif [ -f "$(dirname "$0")/../utilities.sh" ]; then
+  # shellcheck source=../utilities.sh
+  . "$(dirname "$0")/../utilities.sh"
+else
+  echo "ERROR: utilities.sh not found" >&2
+  exit 1
+fi
+
+# efa_driver_installed prints the specific reason to stderr when it fails.
+if efa_driver_installed; then
   exit 0
 fi
 
-# Fallback: check for libfabric or known EFA lib
-if ldconfig -p 2>/dev/null | grep -q libfabric; then
-  exit 0
-fi
-
-# Check DKMS
-if dkms status | grep -q efa | grep -q "installed"; then
-  exit 0
-fi
-
-echo "EFA driver not found (expected /opt/amazon/efa or libfabric)" >&2
+echo "EFA driver is not installed" >&2
 exit 1
