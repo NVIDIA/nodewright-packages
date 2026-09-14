@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
@@ -24,7 +24,10 @@
 #
 # Exit code 0 = the scenario behaved as specified, 1 = it did not.
 
-set -uo pipefail
+# -e on purpose: the step scripts that source utilities.sh all run under `set -e`,
+# so the helpers must behave correctly with it active. Expected-failure paths in
+# the scenarios below use `||` or a condition, which `set -e` does not trip on.
+set -euo pipefail
 
 SCENARIO="${SCENARIO:?SCENARIO must be set}"
 [ -n "${SKYHOOK_DIR:-}" ] || { echo "SKYHOOK_DIR must be set" >&2; exit 1; }
@@ -86,6 +89,10 @@ dkms() {
     remove)
       shift
       echo "remove $*" >> "${DKMS_LOG}"
+      if [ "${FAIL_DKMS_REMOVE:-false}" = "true" ]; then
+        echo "Error! Could not remove module." >&2
+        return 1
+      fi
       touch "${CLEARED_MARKER}"
       ;;
   esac
@@ -138,10 +145,20 @@ case "${SCENARIO}" in
     dpkg_needs_configure && fail "a clean database must not report as interrupted"
     ;;
 
-  # Half-configured packages need `dpkg --configure -a` even with no journal.
+  # Packages parked mid-operation need `dpkg --configure -a` even with no journal.
   needs_configure_half_configured)
     FAKE_PKG_STATES="half-configured"
     dpkg_needs_configure || fail "expected half-configured packages to be detected"
+    ;;
+
+  needs_configure_half_installed)
+    FAKE_PKG_STATES="half-installed"
+    dpkg_needs_configure || fail "expected half-installed packages to be detected"
+    ;;
+
+  needs_configure_unpacked)
+    FAKE_PKG_STATES="unpacked"
+    dpkg_needs_configure || fail "expected unpacked packages to be detected"
     ;;
 
   # The happy path must not repair or retry.
@@ -223,6 +240,49 @@ case "${SCENARIO}" in
     [ "${status}" = "100" ] || fail "expected the apt exit code to survive, got ${status}"
     [ "$(repairs)" = "1" ] || fail "expected a single repair attempt, got $(repairs)"
     [ "$(attempts)" = "1" ] || fail "must not retry after a failed repair"
+    ;;
+
+  # dkms prints one line per kernel and arch, so the same module/version appears
+  # repeatedly. That is one entry to remove, not an ambiguous match.
+  repair_multi_kernel_entries_removed_once)
+    FAKE_PKG_STATES="half-configured"
+    DKMS_CONFLICT="efa-3.0.0"
+    FAKE_DKMS_STATUS="efa/3.0.0, 6.17.0-1019-aws, x86_64: installed
+efa/3.0.0, 6.14.0-1018-aws, x86_64: installed
+efa/3.0.0, 6.14.0-1018-aws-64k, aarch64: installed"
+    apt_with_dpkg_heal apt-get upgrade -y || fail "repeated kernel lines must not block the repair"
+    [ "$(removals)" = "1" ] || fail "expected exactly 1 removal, got $(removals)"
+    grep -q '^remove efa/3.0.0 --all$' "${DKMS_LOG}" || fail "wrong entry removed: $(cat "${DKMS_LOG}")"
+    ;;
+
+  # "<module>-<version>" is lossy: foo-bar/1.2 and foo/bar-1.2 both render to
+  # foo-bar-1.2. `dkms remove --all` is destructive, so refuse to guess.
+  repair_refuses_ambiguous_dkms_match)
+    FAKE_PKG_STATES="half-configured"
+    DKMS_CONFLICT="foo-bar-1.2"
+    FAKE_DKMS_STATUS="foo-bar/1.2, 6.17.0-1019-aws, x86_64: installed
+foo/bar-1.2, 6.17.0-1019-aws, x86_64: installed"
+    status=0
+    apt_with_dpkg_heal apt-get upgrade -y || status=$?
+    [ "${status}" = "100" ] || fail "expected the apt exit code to survive, got ${status}"
+    [ "$(removals)" = "0" ] || fail "must not remove anything when the match is ambiguous"
+    [ "$(attempts)" = "1" ] || fail "must not retry when the repair was refused"
+    ;;
+
+  # A failed `dkms remove` must not be reported as a successful repair.
+  repair_propagates_failed_dkms_remove)
+    FAKE_PKG_STATES="half-configured"
+    DKMS_CONFLICT="efa-3.0.0"
+    FAKE_DKMS_STATUS="efa/3.0.0, 6.17.0-1019-aws, x86_64: installed"
+    FAIL_DKMS_REMOVE="true"
+    status=0
+    apt_with_dpkg_heal apt-get upgrade -y || status=$?
+    [ "${status}" = "100" ] || fail "expected the apt exit code to survive, got ${status}"
+    [ "$(removals)" = "1" ] || fail "expected the removal to have been attempted"
+    [ "$(attempts)" = "1" ] || fail "must not retry after a failed removal"
+    # The distinguishing assertion: a swallowed removal failure would fall
+    # through to a second `dpkg --configure -a` that cannot possibly work.
+    [ "$(repairs)" = "1" ] || fail "must not configure again after a failed removal, got $(repairs)"
     ;;
 
   *)

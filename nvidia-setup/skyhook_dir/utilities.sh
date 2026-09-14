@@ -125,6 +125,12 @@ dkms_remove_stale() {
     return 1
   fi
 
+  # Collect every distinct module/version whose "<module>-<version>" matches.
+  # dkms prints one line per kernel and arch for the same pair, so the same
+  # module/version legitimately appears several times and must be counted once.
+  local matches=""
+  local match_count=0
+
   while IFS= read -r line; do
     # `dkms status` lines lead with "<module>/<version>" then ',' or ':'.
     ident="${line%%,*}"
@@ -136,17 +142,41 @@ dkms_remove_stale() {
       continue
     fi
 
-    if [ "${module}-${version}" = "${target}" ]; then
-      echo "nvidia-setup: removing stale DKMS module ${module}/${version} so its postinst can re-add it" >&2
-      dkms remove "${module}/${version}" --all
-      return 0
+    if [ "${module}-${version}" != "${target}" ]; then
+      continue
     fi
+
+    case " ${matches} " in
+      *" ${module}/${version} "*) continue ;;
+    esac
+    matches="${matches} ${module}/${version}"
+    match_count=$((match_count + 1))
   done <<DKMS_STATUS
 $(dkms status 2>/dev/null)
 DKMS_STATUS
 
-  echo "nvidia-setup: no dkms status entry matches '${target}'; cannot repair" >&2
-  return 1
+  if [ "${match_count}" -eq 0 ]; then
+    echo "nvidia-setup: no dkms status entry matches '${target}'; cannot repair" >&2
+    return 1
+  fi
+
+  # "<module>-<version>" is lossy: foo-bar/1.2 and foo/bar-1.2 both render to
+  # foo-bar-1.2. `dkms remove --all` destroys a module across every kernel, so
+  # guessing between candidates is not acceptable; refuse and let the failure
+  # surface instead.
+  if [ "${match_count}" -gt 1 ]; then
+    echo "nvidia-setup: '${target}' matches more than one dkms entry (${matches# }); refusing to guess which to remove" >&2
+    return 1
+  fi
+
+  local entry="${matches# }"
+  echo "nvidia-setup: removing stale DKMS module ${entry} so its postinst can re-add it" >&2
+  if ! dkms remove "${entry}" --all; then
+    echo "nvidia-setup: 'dkms remove ${entry} --all' failed; cannot repair" >&2
+    return 1
+  fi
+
+  return 0
 }
 
 # Repair a dpkg database that apt refused to work with.
@@ -158,6 +188,13 @@ DKMS_STATUS
 # half-configured and every later apt command dies on it: repair and retry both
 # hit the same wall and the node is wedged until the stale tree entry goes. When
 # that is the reported failure, drop the entry and configure once more.
+#
+# The configure output is captured rather than streamed because it has to be
+# parsed for that message. Streaming and capturing at once needs either a
+# pipeline (which puts the exit status in a subshell) or process substitution
+# (which races the reader), and neither is worth it for a step that is bounded
+# by the number of half-configured packages. The long-running apt commands in
+# apt_with_dpkg_heal are unaffected and still stream.
 # Returns: 0 when the database is usable again.
 dpkg_repair() {
   local output

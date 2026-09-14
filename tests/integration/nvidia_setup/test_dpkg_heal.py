@@ -63,8 +63,10 @@ def _run_scenario(scenario: str) -> int:
         # A numerically-named journal file in <admindir>/updates/ is apt's own
         # trigger (debSystem::CheckUpdates).
         "needs_configure_journal",
-        # Packages parked in half-configured need a repair even with no journal.
+        # Packages parked mid-operation need a repair even with no journal.
         "needs_configure_half_configured",
+        "needs_configure_half_installed",
+        "needs_configure_unpacked",
         # A clean database must not report as interrupted.
         "needs_configure_clean",
         # Unrelated leftovers in updates/ are not journal files.
@@ -124,3 +126,19 @@ def test_repair_propagates_unresolvable_dkms_conflict():
 def test_repair_propagates_non_dkms_configure_failure():
     """A configure failure that is not a DKMS conflict must propagate untouched."""
     assert _run_scenario("repair_propagates_non_dkms_configure_failure") == 0
+
+
+def test_repair_treats_multi_kernel_entries_as_one():
+    """dkms prints a line per kernel and arch; that is one entry to remove, not ambiguity."""
+    assert _run_scenario("repair_multi_kernel_entries_removed_once") == 0
+
+
+def test_repair_refuses_ambiguous_dkms_match():
+    """foo-bar/1.2 and foo/bar-1.2 both render to foo-bar-1.2; `dkms remove --all` is
+    destructive, so an ambiguous match must be refused rather than guessed."""
+    assert _run_scenario("repair_refuses_ambiguous_dkms_match") == 0
+
+
+def test_repair_propagates_failed_dkms_remove():
+    """A failed removal must not fall through to a configure that cannot work."""
+    assert _run_scenario("repair_propagates_failed_dkms_remove") == 0

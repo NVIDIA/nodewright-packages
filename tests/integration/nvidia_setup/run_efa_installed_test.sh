@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
@@ -22,7 +22,9 @@
 #
 # Exit code 0 = the scenario behaved as specified, 1 = it did not.
 
-set -uo pipefail
+# -e on purpose: install-efa-driver.sh and install_efa_driver_check.sh both run
+# under `set -e`, so efa_driver_installed must behave correctly with it active.
+set -euo pipefail
 
 SCENARIO="${SCENARIO:?SCENARIO must be set}"
 [ -n "${SKYHOOK_DIR:-}" ] || { echo "SKYHOOK_DIR must be set" >&2; exit 1; }
@@ -102,7 +104,7 @@ case "${SCENARIO}" in
   # Regression guards for the two signals the old guard trusted. Both were
   # present on the node that reported success with a broken EFA.
   efa_leftover_directory_is_not_proof)
-    mkdir -p /opt/amazon/efa
+    mkdir -p /opt/amazon/efa 2>/dev/null || true
     FAKE_EFA_PKG_STATE="half-configured"
     FAKE_DKMS_STATUS=""
     efa_driver_installed && fail "/opt/amazon/efa existing must not count as installed"

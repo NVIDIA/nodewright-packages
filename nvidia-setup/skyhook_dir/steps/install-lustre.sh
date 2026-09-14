@@ -66,19 +66,21 @@ build_from_source() {
   local HEADERS_PATH="/usr/src/linux-headers-${FULL_KERNEL_VER}"
   echo "Building lustre '${LUSTRE_REF}' for kernel ${FULL_KERNEL_VER} ..."
   apt_with_dpkg_heal apt-get update
-  BUILD_DEPS="flex bison libyaml-dev libyaml-cpp-dev libnl-3-dev libnl-genl-3-dev \
-libreadline-dev pkg-config git gcc-12 g++-12 libtool quilt automake autoconf \
-module-assistant debhelper rsync libpython3-dev swig libext2fs-dev libkeyutils-dev libaio-dev \
-libmount-dev libssl-dev libselinux1-dev linux-headers-generic build-essential"
-  REMOVE_DEPS=""
-  for pkg in ${BUILD_DEPS}; do
-    if ! dpkg -s "$pkg" >/dev/null 2>&1; then
-      REMOVE_DEPS="${REMOVE_DEPS} ${pkg}"
+  BUILD_DEPS=(
+    flex bison libyaml-dev libyaml-cpp-dev libnl-3-dev libnl-genl-3-dev
+    libreadline-dev pkg-config git gcc-12 g++-12 libtool quilt automake autoconf
+    module-assistant debhelper rsync libpython3-dev swig libext2fs-dev libkeyutils-dev libaio-dev
+    libmount-dev libssl-dev libselinux1-dev linux-headers-generic build-essential
+  )
+  REMOVE_DEPS=()
+  for pkg in "${BUILD_DEPS[@]}"; do
+    if ! dpkg -s "${pkg}" >/dev/null 2>&1; then
+      REMOVE_DEPS+=("${pkg}")
     fi
   done
   if [ -z "${SKIP_SYSTEM_OPERATIONS:-}" ]; then
   apt_with_dpkg_heal apt-get install -y -o DPkg::Lock::Timeout=60 --no-install-recommends \
-    -o "Dpkg::Options::=--force-confdef" -o "Dpkg::Options::=--force-confold" ${BUILD_DEPS}
+    -o "Dpkg::Options::=--force-confdef" -o "Dpkg::Options::=--force-confold" "${BUILD_DEPS[@]}"
   else
     echo "Skipping build dependencies install for test environment."
   fi
@@ -92,9 +94,9 @@ libmount-dev libssl-dev libselinux1-dev linux-headers-generic build-essential"
     sh autogen.sh
     ./configure --with-linux="${HEADERS_PATH}" --disable-server
     make -j"$(nproc)" debs
-    apt_with_dpkg_heal dpkg -i debs/lustre-client-modules-${FULL_KERNEL_VER}_*.deb
-    if [ -n "${REMOVE_DEPS// }" ]; then
-      apt_with_dpkg_heal apt-get purge -y ${REMOVE_DEPS}
+    apt_with_dpkg_heal dpkg -i debs/lustre-client-modules-"${FULL_KERNEL_VER}"_*.deb
+    if [ "${#REMOVE_DEPS[@]}" -gt 0 ]; then
+      apt_with_dpkg_heal apt-get purge -y "${REMOVE_DEPS[@]}"
     fi
   else
     echo "Skipping lustre build for test environment."
