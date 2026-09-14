@@ -106,7 +106,83 @@ apt_with_dpkg_heal() {
     return "${status}"
   fi
 
-  echo "nvidia-setup: '$*' failed and dpkg is in an interrupted state; running 'dpkg --configure -a' and retrying once..." >&2
-  dpkg --configure -a
+  echo "nvidia-setup: '$*' failed and dpkg is in an interrupted state; repairing and retrying once..." >&2
+  dpkg_repair || return "${status}"
   "$@"
+}
+
+# Remove the DKMS tree entry that a postinst reported as already present.
+# Takes the string dkms prints, "<module>-<version>", and resolves it against
+# `dkms status` rather than splitting on the last hyphen, because module names
+# contain hyphens too (nvidia-peermem-1.2.3 splits three different ways).
+# Returns: 0 when a matching entry was removed, 1 otherwise.
+dkms_remove_stale() {
+  local target="$1"
+  local line ident module version
+
+  if ! command -v dkms >/dev/null 2>&1; then
+    echo "nvidia-setup: dkms reported '${target}' but dkms is not installed; cannot repair" >&2
+    return 1
+  fi
+
+  while IFS= read -r line; do
+    # `dkms status` lines lead with "<module>/<version>" then ',' or ':'.
+    ident="${line%%,*}"
+    ident="${ident%%:*}"
+    module="${ident%%/*}"
+    version="${ident#*/}"
+    # module = version means the line had no '/', so it is not a status entry.
+    if [ -z "${module}" ] || [ -z "${version}" ] || [ "${module}" = "${version}" ]; then
+      continue
+    fi
+
+    if [ "${module}-${version}" = "${target}" ]; then
+      echo "nvidia-setup: removing stale DKMS module ${module}/${version} so its postinst can re-add it" >&2
+      dkms remove "${module}/${version}" --all
+      return 0
+    fi
+  done <<DKMS_STATUS
+$(dkms status 2>/dev/null)
+DKMS_STATUS
+
+  echo "nvidia-setup: no dkms status entry matches '${target}'; cannot repair" >&2
+  return 1
+}
+
+# Repair a dpkg database that apt refused to work with.
+#
+# `dpkg --configure -a` is enough for an ordinary interrupted state, but not for
+# a DKMS package whose postinst aborts with
+#   Error! DKMS tree already contains: <module>-<version>
+# That postinst fails the same way every time, so the package stays
+# half-configured and every later apt command dies on it: repair and retry both
+# hit the same wall and the node is wedged until the stale tree entry goes. When
+# that is the reported failure, drop the entry and configure once more.
+# Returns: 0 when the database is usable again.
+dpkg_repair() {
+  local output
+  local status=0
+
+  output="$(dpkg --configure -a 2>&1)" || status=$?
+  printf '%s\n' "${output}"
+
+  if [ "${status}" -eq 0 ]; then
+    return 0
+  fi
+
+  local stale
+  stale="$(printf '%s\n' "${output}" \
+    | sed -n 's/.*DKMS tree already contains: *\([^[:space:]]*\).*/\1/p' \
+    | sort -u)"
+
+  if [ -z "${stale}" ]; then
+    return "${status}"
+  fi
+
+  local entry
+  for entry in ${stale}; do
+    dkms_remove_stale "${entry}" || return "${status}"
+  done
+
+  dpkg --configure -a
 }

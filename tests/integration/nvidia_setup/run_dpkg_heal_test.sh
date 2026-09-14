@@ -39,14 +39,32 @@ trap 'rm -rf "${DPKG_ADMINDIR}"' EXIT
 
 REPAIR_LOG="${DPKG_ADMINDIR}/repair.log"
 ATTEMPT_LOG="${DPKG_ADMINDIR}/attempts.log"
+DKMS_LOG="${DPKG_ADMINDIR}/dkms.log"
+CLEARED_MARKER="${DPKG_ADMINDIR}/dkms-cleared"
 : > "${REPAIR_LOG}"
 : > "${ATTEMPT_LOG}"
+: > "${DKMS_LOG}"
 
-# Stub dpkg: record that `dpkg --configure -a` ran, and clear the journal so the
-# retry sees a repaired database, exactly as the real command would.
+# Stub dpkg. `dpkg --configure -a` clears the journal the way the real command
+# would. DKMS_CONFLICT reproduces a postinst that aborts on a stale DKMS tree
+# entry: it keeps failing, identically, until the entry is removed.
 dpkg() {
   if [ "${1:-}" = "--configure" ] && [ "${2:-}" = "-a" ]; then
     echo "configure-a" >> "${REPAIR_LOG}"
+
+    if [ -n "${DKMS_CONFLICT:-}" ] && [ ! -f "${CLEARED_MARKER}" ]; then
+      echo "Setting up the package ..."
+      echo "Error! DKMS tree already contains: ${DKMS_CONFLICT}" >&2
+      echo "You cannot add the same module/version combo more than once." >&2
+      echo "dpkg: error processing package (--configure):" >&2
+      return 1
+    fi
+
+    if [ "${CONFIGURE_FAILS_UNRELATED:-false}" = "true" ]; then
+      echo "dpkg: dependency problems prevent configuration" >&2
+      return 1
+    fi
+
     rm -f "${DPKG_ADMINDIR}/updates"/*
     return 0
   fi
@@ -58,12 +76,33 @@ dpkg-query() {
   printf '%s\n' "${FAKE_PKG_STATES:-installed}"
 }
 
-# Stub apt-get: fails until the dpkg journal is gone, so a run only succeeds
-# once a repair has happened. FORCE_FAIL makes it fail unconditionally.
+# Stub dkms. `dkms status` returns whatever the scenario staged; `dkms remove`
+# records the exact arguments and clears the conflict.
+dkms() {
+  case "${1:-}" in
+    status)
+      [ -n "${FAKE_DKMS_STATUS:-}" ] && printf '%s\n' "${FAKE_DKMS_STATUS}"
+      ;;
+    remove)
+      shift
+      echo "remove $*" >> "${DKMS_LOG}"
+      touch "${CLEARED_MARKER}"
+      ;;
+  esac
+  return 0
+}
+
+# Stub apt-get: fails while the dpkg journal is present or a DKMS conflict is
+# outstanding, so a run only succeeds once the right repair has happened.
+# FORCE_FAIL makes it fail unconditionally, for an unrelated-failure scenario.
 apt-get() {
   echo "apt-get $*" >> "${ATTEMPT_LOG}"
   if [ "${FORCE_FAIL:-false}" = "true" ]; then
     echo "E: something unrelated went wrong" >&2
+    return 100
+  fi
+  if [ -n "${DKMS_CONFLICT:-}" ] && [ ! -f "${CLEARED_MARKER}" ]; then
+    echo "E: Sub-process /usr/bin/dpkg returned an error code (1)" >&2
     return 100
   fi
   if compgen -G "${DPKG_ADMINDIR}/updates/*" > /dev/null; then
@@ -80,6 +119,7 @@ fail() { echo "FAIL (${SCENARIO}): $*" >&2; exit 1; }
 
 attempts() { wc -l < "${ATTEMPT_LOG}" | tr -d ' '; }
 repairs()  { wc -l < "${REPAIR_LOG}"  | tr -d ' '; }
+removals() { wc -l < "${DKMS_LOG}"    | tr -d ' '; }
 
 case "${SCENARIO}" in
   # dpkg_needs_configure: a numerically-named journal file is apt's own trigger.
@@ -134,6 +174,55 @@ case "${SCENARIO}" in
     [ "${status}" = "100" ] || fail "expected exit 100 to be preserved, got ${status}"
     [ "$(repairs)" = "0" ] || fail "must not repair when dpkg is healthy"
     [ "$(attempts)" = "1" ] || fail "must not retry when dpkg is healthy"
+    ;;
+
+  # The efa failure: the postinst aborts on a stale DKMS tree entry, so
+  # `dpkg --configure -a` alone can never succeed. The entry must go first.
+  repair_removes_stale_dkms_module)
+    FAKE_PKG_STATES="half-configured"
+    DKMS_CONFLICT="efa-3.0.0"
+    FAKE_DKMS_STATUS="efa/3.0.0, 6.17.0-1019-aws, x86_64: installed"
+    apt_with_dpkg_heal apt-get upgrade -y || fail "expected recovery to succeed"
+    grep -q '^remove efa/3.0.0 --all$' "${DKMS_LOG}" \
+      || fail "expected 'dkms remove efa/3.0.0 --all', log: $(cat "${DKMS_LOG}")"
+    [ "$(removals)" = "1" ] || fail "expected exactly 1 dkms removal, got $(removals)"
+    [ "$(repairs)" = "2" ] || fail "expected configure before and after removal, got $(repairs)"
+    [ "$(attempts)" = "2" ] || fail "expected 2 apt attempts, got $(attempts)"
+    ;;
+
+  # Module names contain hyphens, so "<module>-<version>" cannot be split on the
+  # last hyphen; it has to be resolved against `dkms status`.
+  repair_handles_hyphenated_module_name)
+    FAKE_PKG_STATES="half-configured"
+    DKMS_CONFLICT="nvidia-peermem-1.2.3"
+    FAKE_DKMS_STATUS="nvidia-peermem/1.2.3, 6.17.0-1019-aws, x86_64: installed"
+    apt_with_dpkg_heal apt-get upgrade -y || fail "expected recovery to succeed"
+    grep -q '^remove nvidia-peermem/1.2.3 --all$' "${DKMS_LOG}" \
+      || fail "module/version split wrong, log: $(cat "${DKMS_LOG}")"
+    ;;
+
+  # A DKMS conflict with no matching status entry is not repairable; it must
+  # surface rather than loop or be reported as success.
+  repair_propagates_unresolvable_dkms)
+    FAKE_PKG_STATES="half-configured"
+    DKMS_CONFLICT="efa-3.0.0"
+    FAKE_DKMS_STATUS=""
+    status=0
+    apt_with_dpkg_heal apt-get upgrade -y || status=$?
+    [ "${status}" = "100" ] || fail "expected the apt exit code to survive, got ${status}"
+    [ "$(removals)" = "0" ] || fail "must not remove anything without a match"
+    [ "$(attempts)" = "1" ] || fail "must not retry when the repair cannot work"
+    ;;
+
+  # A configure failure that is not a DKMS conflict must propagate untouched.
+  repair_propagates_non_dkms_configure_failure)
+    touch "${DPKG_ADMINDIR}/updates/0001"
+    CONFIGURE_FAILS_UNRELATED=true
+    status=0
+    apt_with_dpkg_heal apt-get update || status=$?
+    [ "${status}" = "100" ] || fail "expected the apt exit code to survive, got ${status}"
+    [ "$(repairs)" = "1" ] || fail "expected a single repair attempt, got $(repairs)"
+    [ "$(attempts)" = "1" ] || fail "must not retry after a failed repair"
     ;;
 
   *)

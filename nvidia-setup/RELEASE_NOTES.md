@@ -49,3 +49,20 @@ Two behavior differences from the old helper worth knowing:
 
 `configure-chrony.sh` also moves from `apt` to `apt-get`, which is the interface intended
 for scripts and the one the rest of the package already used.
+
+A plain `dpkg --configure -a` is not always enough, so the repair handles one case beyond
+it. A DKMS package whose postinstall aborts with
+
+```text
+Error! DKMS tree already contains: efa-3.0.0
+You cannot add the same module/version combo more than once.
+```
+
+fails the same way on every retry, so the package stays half-configured and every later apt
+command dies on it: repair and retry hit the same wall and the node stays wedged until the
+stale tree entry is removed by hand. `dpkg_repair` now detects that specific abort, removes
+the reported entry with `dkms remove <module>/<version> --all`, and configures once more.
+The reported string is resolved against `dkms status` rather than split on its last hyphen,
+because module names contain hyphens too (`nvidia-peermem-1.2.3` splits three ways). A
+conflict with no matching `dkms status` entry, or a configure failure that is not a DKMS
+conflict, is propagated rather than retried.

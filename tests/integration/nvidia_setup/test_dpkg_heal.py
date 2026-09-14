@@ -17,7 +17,8 @@
 # limitations under the License.
 
 """
-Tests for dpkg_needs_configure and apt_with_dpkg_heal in utilities.sh.
+Tests for dpkg_needs_configure, dpkg_repair, dkms_remove_stale and
+apt_with_dpkg_heal in utilities.sh.
 
 apt refuses to run when dpkg was interrupted ("E: dpkg was interrupted, you must
 manually run 'dpkg --configure -a'"), on any command that takes the dpkg lock,
@@ -95,3 +96,31 @@ def test_heal_recovers_apt_install_preserving_arguments():
 def test_heal_propagates_unrelated_failure():
     """A failure with a healthy dpkg must keep its exit code and not be retried."""
     assert _run_scenario("heal_propagates_unrelated_failure") == 0
+
+
+# --- dpkg_repair: stale DKMS tree entries ---
+#
+# A DKMS package whose postinst aborts with "Error! DKMS tree already contains:
+# <module>-<version>" fails identically on every retry, so `dpkg --configure -a`
+# alone leaves the package half-configured forever and every later apt command
+# dies on it. Observed on efa 3.0.0.
+
+
+def test_repair_removes_stale_dkms_module():
+    """The efa failure: the stale tree entry is dropped, then configure succeeds."""
+    assert _run_scenario("repair_removes_stale_dkms_module") == 0
+
+
+def test_repair_handles_hyphenated_module_name():
+    """<module>-<version> cannot be split on the last hyphen; nvidia-peermem-1.2.3 proves it."""
+    assert _run_scenario("repair_handles_hyphenated_module_name") == 0
+
+
+def test_repair_propagates_unresolvable_dkms_conflict():
+    """A conflict with no matching dkms status entry must surface, not loop."""
+    assert _run_scenario("repair_propagates_unresolvable_dkms") == 0
+
+
+def test_repair_propagates_non_dkms_configure_failure():
+    """A configure failure that is not a DKMS conflict must propagate untouched."""
+    assert _run_scenario("repair_propagates_non_dkms_configure_failure") == 0
