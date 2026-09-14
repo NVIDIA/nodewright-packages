@@ -47,3 +47,66 @@ resolve_full_kernel() {
       ;;
   esac
 }
+
+# Detect a dpkg database that needs `dpkg --configure -a` before apt will do
+# anything. apt refuses up front with "E: dpkg was interrupted, you must
+# manually run 'dpkg --configure -a' to correct the problem.", and that refusal
+# happens on any apt command that takes the dpkg lock, `apt-get update`
+# included, so guarding only the install paths is not enough.
+#
+# Two independent signals, either of which means a repair is warranted:
+#   1. Numerically-named journal files left in <admindir>/updates/. This is
+#      apt's own trigger (debSystem::CheckUpdates).
+#   2. Packages parked in half-installed, unpacked or half-configured, which
+#      can outlive the journal.
+# Honours DPKG_ADMINDIR the same way dpkg does, which is also what makes this
+# testable without touching the real database.
+# Returns: 0 when dpkg needs repairing, 1 when it is healthy.
+dpkg_needs_configure() {
+  local admindir="${DPKG_ADMINDIR:-/var/lib/dpkg}"
+  local entry
+
+  for entry in "${admindir}/updates"/*; do
+    [ -f "${entry}" ] || continue
+    case "${entry##*/}" in
+      *[!0-9]*) continue ;;
+      *) return 0 ;;
+    esac
+  done
+
+  if command -v dpkg-query >/dev/null 2>&1; then
+    if dpkg-query -f '${db:Status-Status}\n' -W 2>/dev/null \
+      | grep -qx -e half-installed -e unpacked -e half-configured; then
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
+# Run an apt (or dpkg) command, repairing an interrupted dpkg state and retrying
+# once when that is why it failed. Wrap every apt invocation with this: a node
+# that was interrupted mid-install fails the next step that touches apt, which
+# is rarely the step that caused it.
+#
+# The retry decision comes from the dpkg database rather than from grepping
+# apt's output, so an unrelated failure that merely mentions dpkg is propagated
+# untouched, and output is left to stream instead of being captured, so a long
+# `apt-get upgrade` still reports progress as it runs.
+# Usage: apt_with_dpkg_heal apt-get update
+apt_with_dpkg_heal() {
+  local status=0
+  "$@" || status=$?
+
+  if [ "${status}" -eq 0 ]; then
+    return 0
+  fi
+
+  if ! dpkg_needs_configure; then
+    return "${status}"
+  fi
+
+  echo "nvidia-setup: '$*' failed and dpkg is in an interrupted state; running 'dpkg --configure -a' and retrying once..." >&2
+  dpkg --configure -a
+  "$@"
+}

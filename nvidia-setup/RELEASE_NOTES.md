@@ -19,3 +19,33 @@ example is not itself picked up as release notes):
 
     - Notable behavior change worth calling out.
 -->
+
+## 0.6.1
+
+Every apt invocation in the package now self-heals an interrupted dpkg state instead of
+only the kernel install.
+
+apt refuses to run at all when dpkg was interrupted, with
+`E: dpkg was interrupted, you must manually run 'dpkg --configure -a' to correct the
+problem.` That refusal happens on any command that takes the dpkg lock, `apt-get update`
+included, so a node interrupted mid-install (a reboot or OOM during a package operation)
+failed the next step that touched apt. That step is rarely the one that caused the damage:
+in practice `install_kernel.sh` left the bad state and `upgrade.sh` was the step that died.
+
+`apt_install_with_dpkg_heal` already existed, but it was a private function inside
+`steps/install_kernel.sh` with a single call site, so nothing else was covered. It is
+replaced by `apt_with_dpkg_heal` in `utilities.sh`, and every apt call in `upgrade.sh`,
+`configure-chrony.sh`, `setup_local_disks.sh`, `install-lustre.sh`, `install_kernel.sh` and
+`steps_check/upgrade_check.sh` now goes through it.
+
+Two behavior differences from the old helper worth knowing:
+
+- The retry decision is made by inspecting the dpkg database (`dpkg_needs_configure`)
+  rather than grepping apt's output for the string `dpkg`. An unrelated failure that
+  happens to mention dpkg is now propagated with its original exit code instead of
+  triggering a repair and a second attempt.
+- Output is no longer captured and replayed, so a long `apt-get upgrade` reports progress
+  as it runs rather than going silent until it finishes.
+
+`configure-chrony.sh` also moves from `apt` to `apt-get`, which is the interface intended
+for scripts and the one the rest of the package already used.

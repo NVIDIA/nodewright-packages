@@ -21,11 +21,23 @@
 set -e
 DISK_MODE="${1:-raid0}"
 
+# Load helpers (nvidia-setup skyhook_dir layout)
+if [ -f "${SKYHOOK_DIR:-}/skyhook_dir/utilities.sh" ]; then
+  # shellcheck source=../utilities.sh
+  . "${SKYHOOK_DIR}/skyhook_dir/utilities.sh"
+elif [ -f "$(dirname "$0")/../utilities.sh" ]; then
+  # shellcheck source=../utilities.sh
+  . "$(dirname "$0")/../utilities.sh"
+else
+  echo "ERROR: utilities.sh not found" >&2
+  exit 1
+fi
+
 # setup-local-disks uses mdadm (RAID) and mkfs.xfs; ensure they are installed
 if ! command -v mdadm >/dev/null 2>&1 || ! command -v mkfs.xfs >/dev/null 2>&1; then
   export DEBIAN_FRONTEND=noninteractive
-  apt-get update -qq
-  apt-get install -y -qq mdadm xfsprogs
+  apt_with_dpkg_heal apt-get update -qq
+  apt_with_dpkg_heal apt-get install -y -qq mdadm xfsprogs
 fi
 
 cp "${SKYHOOK_DIR}/skyhook_dir/setup-local-disks.sh" /usr/local/bin/setup-local-disks
