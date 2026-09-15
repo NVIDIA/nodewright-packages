@@ -40,8 +40,14 @@ level, which is 2M on a 4k granule but 512M on a 64k one, so without pinning it 
 that maps hugetlb without requesting a size would draw from the 4-page 512M pool instead
 of the 5128-page 2M one.
 
-The `inference` profiles are unaffected: each overrides `cmdline_hugepages` with a 2M-only
-allocation, so they never requested a 1G pool.
+The `inference` profiles never requested a 1G pool: each overrides `cmdline_hugepages` with
+a 2M-only allocation. They did, however, have the same `default_hugepagesz` problem, and in
+a worse form. With no pin, the default lands on the 512M PMD level on these 64k platforms,
+and an `inference` profile allocates no 512M pages at all, so an unsized hugetlb mapping
+drew from an empty pool rather than from the 8192-page 2M one. `default_hugepagesz=2M` is
+now pinned on `nvidia-gb200-inference` (in `os/common`, the `ubuntu/22.04` and `debian/11`
+overrides, and the `service/eks` override) and on `nvidia-vr200-inference`. The `h100`
+inference profiles are left alone: x86_64 is a 4k granule where the PMD level is already 2M.
 
 GB300 also gains `inference` and `multiNodeTraining` profiles. `prepare_nvidia_profiles.sh`
 builds the profile name as `nvidia-<accelerator>-<intent>` and exits non-zero when that
