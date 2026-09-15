@@ -58,3 +58,19 @@ Adds the `vr200` accelerator on the `bcm` service only: `bcm-vr200` behaves like
 | bcm     | h100        | n/a                 | n/a         |  N     |  N    |  N  |  Y                |  N              |
 | bcm     | gb200       | n/a                 | n/a         |  N     |  N    |  N  |  Y                |  N              |
 | bcm     | vr200       | n/a                 | n/a         |  N     |  N    |  N  |  Y                |  N              |
+
+# 0.8.x
+
+Adds the `gb300` accelerator on the `eks` service. `eks-gb300` carries the same defaults as
+`eks-gb200`; GB300 is Grace arm64, so `resolve_full_kernel` appends the `-64k` page-size
+suffix and the node installs `6.17.0-1019-aws-64k`.
+
+| service | accelerator | kernel              | efa         | chrony | raid0 | OFI | bcm headers alias | ib rdma memlock |
+|---------|-------------|---------------------|-------------|--------|-------|-----|-------------------|-----------------|
+| eks     | h100        | 6.17.0-1019-aws     | 1.48.0      |  Y     |  Y    |  Y  |  N                |  N              |
+| eks     | gb200       | 6.17.0-1019-aws-64k | 1.48.0      |  Y     |  Y    |  Y  |  N                |  N              |
+| eks     | gb300       | 6.17.0-1019-aws-64k | 1.48.0      |  Y     |  Y    |  Y  |  N                |  N              |
+| aks     | h100        | (AKS-managed)       | n/a         |  N     |  N    |  N  |  N                |  Y              |
+| bcm     | h100        | n/a                 | n/a         |  N     |  N    |  N  |  Y                |  N              |
+| bcm     | gb200       | n/a                 | n/a         |  N     |  N    |  N  |  Y                |  N              |
+| bcm     | vr200       | n/a                 | n/a         |  N     |  N    |  N  |  Y                |  N              |

@@ -20,6 +20,24 @@ example is not itself picked up as release notes):
     - Notable behavior change worth calling out.
 -->
 
+## 0.8.0
+
+Adds the `eks-gb300` combination. `load_defaults.sh` rejects any `(service, accelerator)`
+pair with no file in `skyhook_dir/defaults/`, so before this release a GB300 node on EKS
+failed the package outright rather than falling back to a nearby profile.
+
+`eks-gb300.conf` carries the same values as `eks-gb200.conf` (`KERNEL=6.17.0-1019-aws`,
+`LUSTRE=aws`, `EFA=1.48.0`). No GB300-specific kernel or EFA delta has been measured yet;
+the combination is registered so the package runs, not because GB300 needs different
+values. GB300 is Grace arm64, so `resolve_full_kernel` appends the page-size suffix and the
+node installs `6.17.0-1019-aws-64k`, matching GB200.
+
+That suffix matters beyond this package: `nvidia-tuned`'s `nvidia-gb300-performance` sizes
+its hugepage pools for a 64k granule (`hugepagesz=512M`, no 1G, since a 64k granule has no
+PUD level). Running that profile on a node whose kernel is a 4k granule gets the 512M clause
+rejected at boot and the paired `hugepages=` dropped. Installing the `-64k` kernel here is
+what makes the tuned profile's sizing correct on EKS.
+
 ## 0.7.0
 
 The EFA step now skips only when EFA is actually installed, and its check passes on the
