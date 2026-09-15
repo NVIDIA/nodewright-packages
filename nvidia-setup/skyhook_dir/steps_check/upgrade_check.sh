@@ -17,6 +17,19 @@
 # limitations under the License.
 
 set -e
-apt-get update -qq
+
+# Load helpers (nvidia-setup skyhook_dir layout)
+if [ -f "${SKYHOOK_DIR:-}/skyhook_dir/utilities.sh" ]; then
+  # shellcheck source=../utilities.sh
+  . "${SKYHOOK_DIR}/skyhook_dir/utilities.sh"
+elif [ -f "$(dirname "$0")/../utilities.sh" ]; then
+  # shellcheck source=../utilities.sh
+  . "$(dirname "$0")/../utilities.sh"
+else
+  echo "ERROR: utilities.sh not found" >&2
+  exit 1
+fi
+
+apt_with_dpkg_heal apt-get update -qq
 # Optional: could check apt list --upgradable is empty; we only verify update succeeds
 exit 0

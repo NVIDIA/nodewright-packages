@@ -17,8 +17,22 @@
 # limitations under the License.
 
 set -euo pipefail
-apt update
-DEBIAN_FRONTEND=noninteractive apt install -y chrony
+
+# Load helpers (nvidia-setup skyhook_dir layout)
+if [ -f "${SKYHOOK_DIR:-}/skyhook_dir/utilities.sh" ]; then
+  # shellcheck source=../utilities.sh
+  . "${SKYHOOK_DIR}/skyhook_dir/utilities.sh"
+elif [ -f "$(dirname "$0")/../utilities.sh" ]; then
+  # shellcheck source=../utilities.sh
+  . "$(dirname "$0")/../utilities.sh"
+else
+  echo "ERROR: utilities.sh not found" >&2
+  exit 1
+fi
+
+export DEBIAN_FRONTEND=noninteractive
+apt_with_dpkg_heal apt-get update
+apt_with_dpkg_heal apt-get install -y chrony
 sed -i '/^pool/d' /etc/chrony/chrony.conf
 echo "server 169.254.169.123 prefer iburst minpoll 4 maxpoll 4" >> /etc/chrony/chrony.conf
 echo "Configured Chrony"

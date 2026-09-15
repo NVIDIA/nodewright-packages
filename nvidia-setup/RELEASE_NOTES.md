@@ -19,3 +19,100 @@ example is not itself picked up as release notes):
 
     - Notable behavior change worth calling out.
 -->
+
+## 0.7.0
+
+The EFA step now skips only when EFA is actually installed, and its check passes on the
+same condition. Both previously accepted traces that a failed install leaves behind.
+
+`install-efa-driver.sh` skipped, and `install_efa_driver_check.sh` passed, when any of
+three things were true: `/opt/amazon/efa` existed, `ldconfig` listed any `libfabric`, or
+dkms reported efa installed. Only the third is evidence. `/opt/amazon/efa` survives an
+install that failed partway, and `libfabric` ships in unrelated distro packages. A node
+whose efa postinstall aborted therefore had the step skipped and the check pass while EFA
+was not installed.
+
+The dkms branch of the check could not fire in any case:
+`dkms status | grep -q efa | grep -q "installed"` pipes from a `grep -q`, which writes
+nothing to stdout, so the second grep always read an empty stream and failed.
+
+Both callers now use `efa_driver_installed` in `utilities.sh`, which requires dpkg to have
+the efa package fully configured (a half-configured package is what an aborted DKMS
+postinstall leaves) and dkms to report the module installed. It does not require the module
+to be built for the running kernel, because apply installs EFA before rebooting onto a
+newly installed kernel, so a kernel skew at apply-check time is expected.
+
+Upgrade note: this is a behavior change, and it is meant to surface work that silently did
+not happen. A node carrying a broken or partial EFA install has been passing
+`install_efa_driver_check.sh`; on this version it fails that check instead, with the
+specific reason on stderr (the dpkg state, or that dkms has no installed module). That is
+a node that needed attention already. Expect previously-green nodes to go red, and treat
+each as a real EFA install to repair rather than a regression in the check.
+
+### The blanket `apt-get upgrade` is now opt-in
+
+`upgrade.sh` has run an unbounded `apt-get upgrade -y` since the package was created in
+`d002897`. That installs whatever the distro has queued, which on a long-lived node
+includes the container runtime. Upgrading containerd restarts it, and that kills the pod
+running this very step: the node goes NotReady mid-apply and dpkg is left interrupted
+partway through a transaction, which is the state the rest of this release exists to
+repair. Observed on a GB300 node that went NotReady for roughly nine minutes with
+`container runtime is down, PLEG is not healthy` before recovering on its own.
+
+It is now gated behind `NVIDIA_SETUP_APT_UPGRADE`, default `false`. Only the exact string
+`true` opts in. The targeted `apt-get install -y curl git wget gpg` in the same step is
+unaffected and always runs, as does `apt-get update`.
+
+Upgrade note: nodes that were relying on this step to keep the distro patched will stop
+receiving those upgrades. Set `NVIDIA_SETUP_APT_UPGRADE=true` on them if that is the
+intent, preferably on a package whose interrupt is a reboot so a runtime restart is
+expected rather than a surprise. Note also that a node whose dpkg was previously wedged
+has a backlog that never ran, so the first opted-in upgrade there may be large.
+
+### Interrupted dpkg state is now repaired on every apt call
+
+
+Every apt invocation in the package now self-heals an interrupted dpkg state instead of
+only the kernel install.
+
+apt refuses to run at all when dpkg was interrupted, with
+`E: dpkg was interrupted, you must manually run 'dpkg --configure -a' to correct the
+problem.` That refusal happens on any command that takes the dpkg lock, `apt-get update`
+included, so a node interrupted mid-install (a reboot or OOM during a package operation)
+failed the next step that touched apt. That step is rarely the one that caused the damage:
+in practice `install_kernel.sh` left the bad state and `upgrade.sh` was the step that died.
+
+`apt_install_with_dpkg_heal` already existed, but it was a private function inside
+`steps/install_kernel.sh` with a single call site, so nothing else was covered. It is
+replaced by `apt_with_dpkg_heal` in `utilities.sh`, and every apt call in `upgrade.sh`,
+`configure-chrony.sh`, `setup_local_disks.sh`, `install-lustre.sh`, `install_kernel.sh` and
+`steps_check/upgrade_check.sh` now goes through it.
+
+Two behavior differences from the old helper worth knowing:
+
+- The retry decision is made by inspecting the dpkg database (`dpkg_needs_configure`)
+  rather than grepping apt's output for the string `dpkg`. An unrelated failure that
+  happens to mention dpkg is now propagated with its original exit code instead of
+  triggering a repair and a second attempt.
+- Output is no longer captured and replayed, so a long `apt-get upgrade` reports progress
+  as it runs rather than going silent until it finishes.
+
+`configure-chrony.sh` also moves from `apt` to `apt-get`, which is the interface intended
+for scripts and the one the rest of the package already used.
+
+A plain `dpkg --configure -a` is not always enough, so the repair handles one case beyond
+it. A DKMS package whose postinstall aborts with
+
+```text
+Error! DKMS tree already contains: efa-3.0.0
+You cannot add the same module/version combo more than once.
+```
+
+fails the same way on every retry, so the package stays half-configured and every later apt
+command dies on it: repair and retry hit the same wall and the node stays wedged until the
+stale tree entry is removed by hand. `dpkg_repair` now detects that specific abort, removes
+the reported entry with `dkms remove <module>/<version> --all`, and configures once more.
+The reported string is resolved against `dkms status` rather than split on its last hyphen,
+because module names contain hyphens too (`nvidia-peermem-1.2.3` splits three ways). A
+conflict with no matching `dkms status` entry, or a configure failure that is not a DKMS
+conflict, is propagated rather than retried.
