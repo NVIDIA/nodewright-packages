@@ -65,7 +65,7 @@ jobs:
         with:
           package_name: ${{ steps.extract.outputs.package_name }}
           tags: |
-            type=match,pattern=\d.\d.\d
+            type=match,pattern=\d+\.\d+\.\d+
           registry: ${{ env.REGISTRY }}
           image_name: ${{ env.IMAGE_NAME }}
           generate_attestation: 'true'
