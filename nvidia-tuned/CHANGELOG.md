@@ -5,12 +5,22 @@
 
 All notable changes to this package will be documented in this file.
 
+## [0.10.0] - 2026-09-15
+
+### New Features
+
+- *(nvidia-tuned)* 64k-kernel hugepage sizing and gb300 intent shims 
+
+
 ## [0.9.0] - 2026-09-03
 
 ### New Features
 
 - *(nvidia-tuned)* Add rke2 service keeping the accelerator's bootloader tuning 
 
+### Other Tasks
+
+- *(nvidia-tuned)* Changelog for 0.9.0
 
 ## [0.8.0] - 2026-08-18
 
