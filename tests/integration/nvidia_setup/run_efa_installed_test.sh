@@ -104,7 +104,11 @@ case "${SCENARIO}" in
   # Regression guards for the two signals the old guard trusted. Both were
   # present on the node that reported success with a broken EFA.
   efa_leftover_directory_is_not_proof)
-    mkdir -p /opt/amazon/efa 2>/dev/null || true
+    # The fixture is the point of this scenario, so a failure to create it must
+    # not pass silently. Needs root, which the Docker test runner has.
+    mkdir -p /opt/amazon/efa \
+      || fail "could not create the /opt/amazon/efa fixture; this scenario needs to run as root"
+    [ -d /opt/amazon/efa ] || fail "the /opt/amazon/efa fixture is missing"
     FAKE_EFA_PKG_STATE="half-configured"
     FAKE_DKMS_STATUS=""
     efa_driver_installed && fail "/opt/amazon/efa existing must not count as installed"
