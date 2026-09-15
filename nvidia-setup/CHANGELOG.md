@@ -5,8 +5,22 @@
 
 All notable changes to this package will be documented in this file.
 
-## [Unreleased]
+## [0.7.0] - 2026-09-15
 
+### Bug Fixes
+
+- *(nvidia-setup)* Self-heal interrupted dpkg and assert EFA actually installed 
+
+
+## [0.6.0] - 2026-07-16
+
+### New Features
+
+- Add vr200 support to nvidia-setup and nvidia-tuned 
+
+### Other Tasks
+
+- *(general)* Regenerate package changelogs to current tags 
 
 ## [0.5.0] - 2026-07-09
 
