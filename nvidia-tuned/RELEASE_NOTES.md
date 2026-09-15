@@ -20,6 +20,51 @@ example is not itself picked up as release notes):
     - Notable behavior change worth calling out.
 -->
 
+## 0.10.0
+
+Rebases the GB200, GB300 and VR200 `performance` hugepage allocation on the 64k page-size
+kernel these arm64 platforms run: the `linux-image-*-aws-64k` that `nvidia-setup` installs
+on the AWS accelerators, and the `*-nvidia-bos-64k` BOS kernel on VR200.
+
+A 64k granule registers 2M, 512M and 16G huge pages, and with three page-table levels
+there is no PUD, so 1G does not exist. The previous
+`hugepagesz=2M hugepages=5128 hugepagesz=1G hugepages=2` had its 1G clause rejected at
+boot and the `hugepages=2` paired with it dropped too, silently leaving those nodes with
+10G of 2M pages rather than the intended 12G. The kernel records the rejection
+(`HugeTLB: unsupported hugepagesz=1G`) but nothing surfaced it, so the package reported
+complete. The replacement allocates `4 x 512M` for the same 2G of large pages, so the
+total stays at roughly 12G.
+
+`default_hugepagesz=2M` is now set explicitly. The default huge page size follows the PMD
+level, which is 2M on a 4k granule but 512M on a 64k one, so without pinning it a caller
+that maps hugetlb without requesting a size would draw from the 4-page 512M pool instead
+of the 5128-page 2M one.
+
+The `inference` profiles never requested a 1G pool: each overrides `cmdline_hugepages` with
+a 2M-only allocation. They did, however, have the same `default_hugepagesz` problem, and in
+a worse form. With no pin, the default lands on the 512M PMD level on these 64k platforms,
+and an `inference` profile allocates no 512M pages at all, so an unsized hugetlb mapping
+drew from an empty pool rather than from the 8192-page 2M one. `default_hugepagesz=2M` is
+now pinned on `nvidia-gb200-inference` (in `os/common`, the `ubuntu/22.04` and `debian/11`
+overrides, and the `service/eks` override) and on `nvidia-vr200-inference`. The `h100`
+inference profiles are left alone: x86_64 is a 4k granule where the PMD level is already 2M.
+
+GB300 also gains `inference` and `multiNodeTraining` profiles. `prepare_nvidia_profiles.sh`
+builds the profile name as `nvidia-<accelerator>-<intent>` and exits non-zero when that
+directory is missing, so those two intents previously failed the package on gb300 rather
+than falling back to anything. Both new profiles are shims that include
+`nvidia-gb300-performance` and add nothing, because no gb300-specific inference or
+training tuning has been measured yet; the intent is accepted and the node gets the
+performance tuning. `service=oci` carries matching shims onto `nvidia-gb300-noreboot-base`
+so all three intents stay on the bootloader-free chain there. Nothing existing changes:
+gb200, h100 and vr200 keep the intent profiles they already shipped.
+
+Upgrade note: on a node still running a 4k page-size kernel this inverts, because 512M is
+not a valid size there. Such a node keeps the 5128 x 2M pool and loses the 2G of large
+pages. Kubernetes resource names track the kernel as well: a 64k node advertises
+`hugepages-2Mi`, `hugepages-512Mi` and `hugepages-16Gi`, so a pod spec or admission policy
+that requests `hugepages-1Gi` will not schedule there.
+
 ## 0.9.0
 
 Adds an `rke2` service that keeps the accelerator's reboot-requiring `[bootloader]`
