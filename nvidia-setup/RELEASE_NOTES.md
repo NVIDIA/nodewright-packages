@@ -49,6 +49,26 @@ specific reason on stderr (the dpkg state, or that dkms has no installed module)
 a node that needed attention already. Expect previously-green nodes to go red, and treat
 each as a real EFA install to repair rather than a regression in the check.
 
+### The blanket `apt-get upgrade` is now opt-in
+
+`upgrade.sh` has run an unbounded `apt-get upgrade -y` since the package was created in
+`d002897`. That installs whatever the distro has queued, which on a long-lived node
+includes the container runtime. Upgrading containerd restarts it, and that kills the pod
+running this very step: the node goes NotReady mid-apply and dpkg is left interrupted
+partway through a transaction, which is the state the rest of this release exists to
+repair. Observed on a GB300 node that went NotReady for roughly nine minutes with
+`container runtime is down, PLEG is not healthy` before recovering on its own.
+
+It is now gated behind `NVIDIA_SETUP_APT_UPGRADE`, default `false`. Only the exact string
+`true` opts in. The targeted `apt-get install -y curl git wget gpg` in the same step is
+unaffected and always runs, as does `apt-get update`.
+
+Upgrade note: nodes that were relying on this step to keep the distro patched will stop
+receiving those upgrades. Set `NVIDIA_SETUP_APT_UPGRADE=true` on them if that is the
+intent, preferably on a package whose interrupt is a reboot so a runtime restart is
+expected rather than a surprise. Note also that a node whose dpkg was previously wedged
+has a backlog that never ran, so the first opted-in upgrade there may be large.
+
 ### Interrupted dpkg state is now repaired on every apt call
 
 
