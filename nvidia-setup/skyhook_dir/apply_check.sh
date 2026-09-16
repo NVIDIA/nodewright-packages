@@ -51,6 +51,15 @@ check_eks_gb200() {
   "${STEPS_CHECK_DIR}/setup_local_disks_check.sh"
 }
 
+check_eks_gb300() {
+  "${STEPS_CHECK_DIR}/upgrade_check.sh"
+  "${STEPS_CHECK_DIR}/install_efa_driver_check.sh"
+  "${STEPS_CHECK_DIR}/install_ofi_check.sh"
+  # "${STEPS_CHECK_DIR}/install_lustre_check.sh" "${KERNEL}"
+  "${STEPS_CHECK_DIR}/configure_chrony_check.sh"
+  "${STEPS_CHECK_DIR}/setup_local_disks_check.sh"
+}
+
 check_aks_h100() {
   "${STEPS_CHECK_DIR}/check_ib_rdma.sh"
 }
@@ -58,6 +67,7 @@ check_aks_h100() {
 case "${COMBINATION}" in
   eks-h100)  check_eks_h100 ;;
   eks-gb200) check_eks_gb200 ;;
+  eks-gb300) check_eks_gb300 ;;
   aks-h100)  check_aks_h100 ;;
   *)
     echo "Unsupported combination: ${COMBINATION}" >&2

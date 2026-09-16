@@ -22,9 +22,11 @@ example is not itself picked up as release notes):
 
 ## 0.8.0
 
-Adds the `eks-gb300` combination. `load_defaults.sh` rejects any `(service, accelerator)`
-pair with no file in `skyhook_dir/defaults/`, so before this release a GB300 node on EKS
-failed the package outright rather than falling back to a nearby profile.
+Adds the `eks-gb300` combination, so a GB300 node on EKS runs the package instead of
+failing outright. Two things gate a combination, and both are handled here: `load_defaults.sh`
+rejects any `(service, accelerator)` pair with no file in `skyhook_dir/defaults/`, and
+`apply.sh`, `apply_check.sh` and `post_interrupt_check.sh` each dispatch on `COMBINATION`
+and exit non-zero on an arm they do not recognize. There is no fallback at either gate.
 
 `eks-gb300.conf` carries the same values as `eks-gb200.conf` (`KERNEL=6.17.0-1019-aws`,
 `LUSTRE=aws`, `EFA=1.48.0`). No GB300-specific kernel or EFA delta has been measured yet;

@@ -59,6 +59,15 @@ run_eks_gb200() {
   "${STEPS_DIR}/setup_local_disks.sh" raid0
 }
 
+run_eks_gb300() {
+  "${STEPS_DIR}/upgrade.sh"
+  "${STEPS_DIR}/install-efa-driver.sh" "${EFA}"
+  "${STEPS_DIR}/install_ofi.sh"
+  # "${STEPS_DIR}/install-lustre.sh" "${KERNEL}" "${LUSTRE}"
+  "${STEPS_DIR}/configure-chrony.sh"
+  "${STEPS_DIR}/setup_local_disks.sh" raid0
+}
+
 run_aks_h100() {
   "${STEPS_DIR}/configure_ib_rdma.sh"
 }
@@ -66,6 +75,7 @@ run_aks_h100() {
 case "${COMBINATION}" in
   eks-h100)  run_eks_h100 ;;
   eks-gb200) run_eks_gb200 ;;
+  eks-gb300) run_eks_gb300 ;;
   aks-h100)  run_aks_h100 ;;
   *)
     echo "Unsupported combination: ${COMBINATION}" >&2
