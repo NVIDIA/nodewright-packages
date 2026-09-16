@@ -28,7 +28,7 @@ STEPS_CHECK_DIR="${SKYHOOK_DIR}/skyhook_dir/steps_check"
 . "${SKYHOOK_DIR}/skyhook_dir/load_defaults.sh"
 
 case "${COMBINATION}" in
-  eks-h100|eks-gb200)
+  eks-h100|eks-gb200|eks-gb300)
     "${STEPS_CHECK_DIR}/kernel_install_check.sh"
     ;;
   aks-h100)

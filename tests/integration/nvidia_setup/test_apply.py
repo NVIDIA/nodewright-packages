@@ -77,6 +77,23 @@ def test_apply_eks_gb200(base_image):
         runner.cleanup()
 
 
+def test_apply_eks_gb300_is_supported():
+    """eks-gb300 must be a recognized combination (defaults file exists), not rejected."""
+    runner = DockerTestRunner(package="nvidia-setup")
+    try:
+        result = runner.run_script(
+            script="apply.sh",
+            configmaps={"service": "eks", "accelerator": "gb300"},
+            skip_system_operations=True
+        )
+
+        # load_defaults must NOT reject the combination as unsupported, whatever the
+        # later steps do in-container.
+        assert_output_not_contains(result.stdout, "Unsupported combination")
+    finally:
+        runner.cleanup()
+
+
 def test_apply_bcm_vr200_is_supported():
     """bcm-vr200 must be a recognized combination (defaults file exists), not rejected."""
     runner = DockerTestRunner(package="nvidia-setup")
@@ -144,6 +161,7 @@ def test_apply_dynamic_supported_listing(base_image):
         assert_exit_code(result, 1)
         assert_output_contains(result.stdout, "eks-h100")
         assert_output_contains(result.stdout, "eks-gb200")
+        assert_output_contains(result.stdout, "eks-gb300")
         assert_output_contains(result.stdout, "aks-h100")
     finally:
         runner.cleanup()
