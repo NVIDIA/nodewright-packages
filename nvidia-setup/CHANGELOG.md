@@ -5,12 +5,22 @@
 
 All notable changes to this package will be documented in this file.
 
+## [0.8.0] - 2026-09-16
+
+### New Features
+
+- *(nvidia-setup)* Add the eks-gb300 combination 
+
+
 ## [0.7.0] - 2026-09-15
 
 ### Bug Fixes
 
 - *(nvidia-setup)* Self-heal interrupted dpkg and assert EFA actually installed 
 
+### Other Tasks
+
+- *(nvidia-setup)* 0.7.0 changelog
 
 ## [0.6.0] - 2026-07-16
 
