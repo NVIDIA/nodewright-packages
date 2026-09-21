@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
@@ -19,15 +19,39 @@
 # TuneD script plugin lifecycle: start | stop [full_rollback] | verify [ignore_missing]
 # https://github.com/redhat-performance/tuned/blob/v2.21.0/tuned/plugins/plugin_script.py
 
-set -e
+set -euo pipefail
 
-DROPIN_DIR=/etc/systemd/system/containerd.service.d
+SYSTEMD_SYSTEM_UNIT_DIR="${SYSTEMD_SYSTEM_UNIT_DIR:-/etc/systemd/system}"
 DROPIN_FILE=containerd.conf
 EXPECTED_LINE='LimitSTACK=67108864'
 
+runtime_unit() {
+	local unit
+	for unit in rke2-server.service rke2-agent.service; do
+		if systemctl is-active --quiet "${unit}" >/dev/null; then
+			printf '%s\n' "${unit}"
+			return 0
+		fi
+	done
+	printf '%s\n' 'containerd.service'
+}
+
+dropin_dir() {
+	printf '%s/%s.d\n' "${SYSTEMD_SYSTEM_UNIT_DIR}" "$(runtime_unit)"
+}
+
+all_dropin_dirs() {
+	printf '%s\n' \
+		"${SYSTEMD_SYSTEM_UNIT_DIR}/rke2-server.service.d" \
+		"${SYSTEMD_SYSTEM_UNIT_DIR}/rke2-agent.service.d" \
+		"${SYSTEMD_SYSTEM_UNIT_DIR}/containerd.service.d"
+}
+
 apply_dropin() {
-	mkdir -p "$DROPIN_DIR"
-	cat <<EOF > "$DROPIN_DIR/$DROPIN_FILE"
+	local target_dir
+	target_dir="$(dropin_dir)"
+	mkdir -p "${target_dir}"
+	cat <<EOF > "${target_dir}/${DROPIN_FILE}"
 [Service]
 LimitSTACK=67108864
 EOF
@@ -35,21 +59,26 @@ EOF
 }
 
 remove_dropin() {
-	rm -f "$DROPIN_DIR/$DROPIN_FILE"
-	if [ -d "$DROPIN_DIR" ] && [ -z "$(ls -A "$DROPIN_DIR" 2>/dev/null)" ]; then
-		rmdir "$DROPIN_DIR"
-	fi
+	local target_dir
+	while IFS= read -r target_dir; do
+		rm -f "${target_dir}/${DROPIN_FILE}"
+		if [[ -d "${target_dir}" && -z "$(ls -A "${target_dir}" 2>/dev/null)" ]]; then
+			rmdir "${target_dir}"
+		fi
+	done < <(all_dropin_dirs)
 	systemctl daemon-reload
 }
 
 verify_dropin() {
 	local ignore_missing=false
-	[ "${2:-}" = "ignore_missing" ] && ignore_missing=true
+	local target_dir
+	[[ "${2:-}" == "ignore_missing" ]] && ignore_missing=true
+	target_dir="$(dropin_dir)"
 
-	if [ ! -f "$DROPIN_DIR/$DROPIN_FILE" ]; then
-		$ignore_missing && exit 0 || exit 1
+	if [[ ! -f "${target_dir}/${DROPIN_FILE}" ]]; then
+		${ignore_missing} && exit 0 || exit 1
 	fi
-	if [ "$(grep -c -F -x "$EXPECTED_LINE" "$DROPIN_DIR/$DROPIN_FILE")" -lt 1 ]; then
+	if [[ "$(grep -c -F -x "${EXPECTED_LINE}" "${target_dir}/${DROPIN_FILE}")" -lt 1 ]]; then
 		exit 1
 	fi
 	exit 0
