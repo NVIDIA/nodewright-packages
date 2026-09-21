@@ -72,7 +72,7 @@ native_tuned_bootloader_path() {
         {
             line = $0
             sub(/[[:space:]]+#.*/, "", line)
-            if (index(line, "\\$tuned_params") > 0) found = 1
+            if (line ~ /^[[:space:]]*GRUB_CMDLINE_LINUX(_[[:alnum:]_]+)?[[:space:]]*=/ && index(line, "\\$tuned_params") > 0) found = 1
         }
         END { exit !found }
     ' "${GRUB_DEFAULT}" || return 1

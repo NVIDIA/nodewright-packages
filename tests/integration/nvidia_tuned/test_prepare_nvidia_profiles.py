@@ -1215,6 +1215,7 @@ def test_configure_bootloader_stands_down_when_native_tuned_path_is_functional(b
     [
         (r'# GRUB_CMDLINE_LINUX_DEFAULT="\$tuned_params"', r"# set tuned_params=fake"),
         (r'GRUB_CMDLINE_LINUX_DEFAULT="\$tuned_params"', r'''echo "set tuned_params=fake $tuned_params"'''),
+        (r'OTHER="\$tuned_params"', "set tuned_params=fake\nlinux /vmlinuz $tuned_params"),
     ],
 )
 def test_configure_bootloader_ignores_non_executable_native_matches(
@@ -1242,6 +1243,9 @@ def test_configure_bootloader_ignores_non_executable_native_matches(
         assert_exit_code(result, 0)
         assert runner.file_exists("/tmp/update-grub.ran"), "grub was not regenerated for the fallback path"
         assert runner.file_exists(STUB_DROPIN), "the fallback drop-in was incorrectly skipped"
+
+        check = _run_with_env(runner, "configure_bootloader_check.sh", env)
+        assert check.exit_code != 0, "non-executable native matches must fail the check"
     finally:
         runner.cleanup()
 
