@@ -23,6 +23,8 @@
 # GRUB_CMDLINE_LINUX_DEFAULT from /etc/default/grub.d/ instead, so on Ubuntu that rewrite
 # is ignored and the profile's cmdline silently never applies. This step writes a
 # /etc/default/grub.d/ drop-in that sources tuned's file, then regenerates grub.
+# If the generated config already has a working native tuned_params path, this step removes
+# its own older drop-in instead of contributing the same arguments a second time.
 #
 # DEBIAN-FAMILY ONLY. Sourcing /etc/default/grub.d/*.cfg is a Debian/Ubuntu patch to
 # grub-mkconfig. RHEL-family grub2-mkconfig reads /etc/default/grub and /etc/grub.d/ and
@@ -51,6 +53,8 @@ PROFILES_DIR="${SKYHOOK_DIR}/profiles"
 TUNED_GRUB_DROPIN="${TUNED_GRUB_DROPIN:-/etc/default/grub.d/99-nvidia-tuned-cmdline.cfg}"
 TUNED_BOOTCMDLINE="${TUNED_BOOTCMDLINE:-/etc/tuned/bootcmdline}"
 OS_RELEASE="${OS_RELEASE:-/etc/os-release}"
+GRUB_DEFAULT="${GRUB_DEFAULT:-/etc/default/grub}"
+GRUB_GENERATED_CONFIG="${GRUB_GENERATED_CONFIG:-/boot/grub/grub.cfg}"
 
 # Identifies a drop-in this package owns. The eks and aks services write their own
 # grub.d file from inside the tuned profile; scoping removal to our marker keeps this
@@ -129,6 +133,33 @@ bootloader_os_supported() {
         *" debian "* | *" ubuntu "*) return 0 ;;
         *) return 1 ;;
     esac
+}
+
+# Returns 0 when the image's native tuned_params path is complete. The placeholder in
+# /etc/default/grub alone is not enough: an image can carry it while its generated config
+# neither defines nor consumes the variable.
+native_tuned_bootloader_path() {
+    [[ -r "${GRUB_DEFAULT}" && -r "${GRUB_GENERATED_CONFIG}" ]] || return 1
+    awk '
+        /^[[:space:]]*#/ { next }
+        {
+            line = $0
+            sub(/[[:space:]]+#.*/, "", line)
+            if (index(line, "\\$tuned_params") > 0) found = 1
+        }
+        END { exit !found }
+    ' "${GRUB_DEFAULT}" || return 1
+
+    awk '
+        /^[[:space:]]*#/ { next }
+        {
+            line = $0
+            sub(/[[:space:]]+#.*/, "", line)
+            if (line ~ /^[[:space:]]*(set[[:space:]]+)?tuned_params[[:space:]]*=/) defined = 1
+            if (line ~ /^[[:space:]]*(linux|linuxefi|linux16)([[:space:]]|$)/ && index(line, "$tuned_params") > 0) consumed = 1
+        }
+        END { exit !(defined && consumed) }
+    ' "${GRUB_GENERATED_CONFIG}"
 }
 
 # Reports the distribution for error messages.
@@ -223,6 +254,12 @@ main() {
     # wanted a drop-in is not failed for it.
     if ! bootloader_os_supported; then
         fail_unsupported_os
+    fi
+
+    if native_tuned_bootloader_path; then
+        echo "Native tuned_params bootloader path is functional; removing the package drop-in"
+        remove_dropin
+        return 0
     fi
 
     # Not fatal. The drop-in guards on the file, so it starts contributing as soon as

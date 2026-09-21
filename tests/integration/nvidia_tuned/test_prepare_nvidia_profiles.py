@@ -961,6 +961,8 @@ def _write_bootcmdline(runner: DockerTestRunner, path: str, cmdline: str):
 STUB_DROPIN = "/tmp/grub.d/99-nvidia-tuned-cmdline.cfg"
 STUB_BOOTCMDLINE = "/tmp/tuned-bootcmdline"
 STUB_PROC_CMDLINE = "/tmp/proc-cmdline"
+STUB_GRUB_DEFAULT = "/tmp/default-grub"
+STUB_GRUB_CONFIG = "/tmp/grub.cfg"
 STUB_ENV = {"TUNED_GRUB_DROPIN": STUB_DROPIN, "TUNED_BOOTCMDLINE": STUB_BOOTCMDLINE}
 
 SAMPLE_CMDLINE = "iommu.passthrough=1 numa_balancing=disable hugepagesz=2M hugepages=8192"
@@ -1167,6 +1169,79 @@ def test_configure_bootloader_refreshes_on_cmdline_change(base_image):
         ).output.decode("utf-8", errors="replace")
         assert "hugepages=2" in resolved, f"resolved cmdline not refreshed: {resolved!r}"
         assert "hugepages=8192" not in resolved, f"stale cmdline still resolving: {resolved!r}"
+    finally:
+        runner.cleanup()
+
+
+def test_configure_bootloader_stands_down_when_native_tuned_path_is_functional(base_image):
+    """A working native tuned_params path replaces the package drop-in without duplicates."""
+    _skip_non_debian(base_image)
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        _rke2_container(runner)
+        _install_grub_stub(runner)
+        _write_bootcmdline(runner, STUB_BOOTCMDLINE, SAMPLE_CMDLINE)
+
+        assert_exit_code(_run_with_env(runner, "configure_bootloader.sh", RUN_ENV), 0)
+        assert runner.file_exists(STUB_DROPIN)
+
+        runner.container.exec_run(
+            [
+                "bash",
+                "-c",
+                f"printf '%s\\n' 'GRUB_CMDLINE_LINUX_DEFAULT=\"\\$tuned_params\"' > {STUB_GRUB_DEFAULT} "
+                f"&& printf '%s\\n' 'set tuned_params={SAMPLE_CMDLINE}' 'linux /vmlinuz $tuned_params' > {STUB_GRUB_CONFIG}",
+            ],
+            workdir="/",
+        )
+        runner.container.exec_run(["bash", "-c", "rm -f /tmp/update-grub.ran"], workdir="/")
+
+        env = {**RUN_ENV, "GRUB_DEFAULT": STUB_GRUB_DEFAULT, "GRUB_GENERATED_CONFIG": STUB_GRUB_CONFIG}
+        result = _run_with_env(runner, "configure_bootloader.sh", env)
+        assert_exit_code(result, 0)
+        assert_output_contains(result.stdout, "Native tuned_params bootloader path is functional")
+        assert not runner.file_exists(STUB_DROPIN), "the redundant package drop-in was not removed"
+        assert runner.file_exists("/tmp/update-grub.ran"), "grub was not regenerated after removal"
+
+        check = _run_with_env(runner, "configure_bootloader_check.sh", env)
+        assert_exit_code(check, 0)
+        assert_output_contains(check.stdout, "native tuned_params bootloader path")
+    finally:
+        runner.cleanup()
+
+
+@pytest.mark.parametrize(
+    ("grub_default", "grub_config"),
+    [
+        (r'# GRUB_CMDLINE_LINUX_DEFAULT="\$tuned_params"', r"# set tuned_params=fake"),
+        (r'GRUB_CMDLINE_LINUX_DEFAULT="\$tuned_params"', r'''echo "set tuned_params=fake $tuned_params"'''),
+    ],
+)
+def test_configure_bootloader_ignores_non_executable_native_matches(
+    base_image, grub_default, grub_config
+):
+    """Comments and unrelated GRUB text must not disable the compatibility drop-in."""
+    _skip_non_debian(base_image)
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        _rke2_container(runner)
+        _install_grub_stub(runner)
+        _write_bootcmdline(runner, STUB_BOOTCMDLINE, SAMPLE_CMDLINE)
+        runner.container.exec_run(
+            [
+                "bash",
+                "-c",
+                f"printf '%s\\n' '{grub_default}' > {STUB_GRUB_DEFAULT} "
+                f"&& printf '%s\\n' '{grub_config}' > {STUB_GRUB_CONFIG}",
+            ],
+            workdir="/",
+        )
+
+        env = {**RUN_ENV, "GRUB_DEFAULT": STUB_GRUB_DEFAULT, "GRUB_GENERATED_CONFIG": STUB_GRUB_CONFIG}
+        result = _run_with_env(runner, "configure_bootloader.sh", env)
+        assert_exit_code(result, 0)
+        assert runner.file_exists("/tmp/update-grub.ran"), "grub was not regenerated for the fallback path"
+        assert runner.file_exists(STUB_DROPIN), "the fallback drop-in was incorrectly skipped"
     finally:
         runner.cleanup()
 

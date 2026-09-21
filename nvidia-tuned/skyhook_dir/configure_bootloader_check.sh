@@ -33,6 +33,8 @@ PROFILES_DIR="${SKYHOOK_DIR}/profiles"
 TUNED_GRUB_DROPIN="${TUNED_GRUB_DROPIN:-/etc/default/grub.d/99-nvidia-tuned-cmdline.cfg}"
 TUNED_BOOTCMDLINE="${TUNED_BOOTCMDLINE:-/etc/tuned/bootcmdline}"
 OS_RELEASE="${OS_RELEASE:-/etc/os-release}"
+GRUB_DEFAULT="${GRUB_DEFAULT:-/etc/default/grub}"
+GRUB_GENERATED_CONFIG="${GRUB_GENERATED_CONFIG:-/boot/grub/grub.cfg}"
 
 # Mirrors bootloader_requested() in configure_bootloader.sh.
 bootloader_requested() {
@@ -60,6 +62,31 @@ bootloader_os_supported() {
         *" debian "* | *" ubuntu "*) return 0 ;;
         *) return 1 ;;
     esac
+}
+
+# Mirrors native_tuned_bootloader_path() in configure_bootloader.sh.
+native_tuned_bootloader_path() {
+    [[ -r "${GRUB_DEFAULT}" && -r "${GRUB_GENERATED_CONFIG}" ]] || return 1
+    awk '
+        /^[[:space:]]*#/ { next }
+        {
+            line = $0
+            sub(/[[:space:]]+#.*/, "", line)
+            if (index(line, "\\$tuned_params") > 0) found = 1
+        }
+        END { exit !found }
+    ' "${GRUB_DEFAULT}" || return 1
+
+    awk '
+        /^[[:space:]]*#/ { next }
+        {
+            line = $0
+            sub(/[[:space:]]+#.*/, "", line)
+            if (line ~ /^[[:space:]]*(set[[:space:]]+)?tuned_params[[:space:]]*=/) defined = 1
+            if (line ~ /^[[:space:]]*(linux|linuxefi|linux16)([[:space:]]|$)/ && index(line, "$tuned_params") > 0) consumed = 1
+        }
+        END { exit !(defined && consumed) }
+    ' "${GRUB_GENERATED_CONFIG}"
 }
 
 # Mirrors bootloader_enabled() in configure_bootloader.sh.
@@ -114,6 +141,11 @@ main() {
         echo "ERROR: this distribution's grub-mkconfig does not source /etc/default/grub.d/*.cfg,"
         echo "  so the drop-in cannot take effect. Set CONFIGURE_BOOTLOADER=false to skip this step."
         exit 1
+    fi
+
+    if native_tuned_bootloader_path; then
+        echo "Verified the native tuned_params bootloader path; package drop-in is not required"
+        return 0
     fi
 
     if [[ ! -f "${TUNED_GRUB_DROPIN}" ]]; then
