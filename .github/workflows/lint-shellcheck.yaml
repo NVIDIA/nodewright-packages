@@ -64,6 +64,14 @@ jobs:
                     "column": 3,
                     "severity": 4,
                     "message": 5
+                  },
+                  {
+                    "regexp": "^(.+):(\\d+):(\\d+):\\s+(info|style):\\s+(.+)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": "notice",
+                    "message": 5
                   }
                 ]
               }
@@ -76,6 +84,7 @@ jobs:
       # file (excluding the Python venv) and keep the complete output for annotations.
       - name: Run shellcheck
         id: shellcheck
+        shell: bash --noprofile --norc -eo pipefail {0}
         run: |
           mapfile -t FILES < <(git ls-files '*.sh' | grep -v '^venv/')
           echo "Linting ${#FILES[@]} shell scripts"
@@ -91,7 +100,7 @@ jobs:
           echo "Full ShellCheck exit status (including advisory findings): ${lint_status}"
 
           # Keep all findings as annotations, but make only errors blocking until
-          # the existing warning and note debt has been reduced.
+          # the existing warning, info, and style debt has been reduced.
           shellcheck --severity=error -f gcc "${FILES[@]}" | tee "${RUNNER_TEMP}/shellcheck.errors"
 
       - name: Summarize findings
@@ -108,13 +117,15 @@ jobs:
             total=$(wc -l < "$OUT")
             errors=$(grep -c ': error:' "$OUT" || true)
             warnings=$(grep -c ': warning:' "$OUT" || true)
-            notes=$(grep -c ': note:' "$OUT" || true)
+            infos=$(grep -c ': info:' "$OUT" || true)
+            styles=$(grep -c ': style:' "$OUT" || true)
+            notices=$((infos + styles))
             echo "| severity | count |"
             echo "|----------|-------|"
             echo "| error | ${errors} |"
             echo "| warning | ${warnings} |"
-            echo "| note/style | ${notes} |"
+            echo "| notice (info/style) | ${notices} |"
             echo "| total | ${total} |"
             echo ""
-            echo "Errors block this PR. Warnings and notes remain advisory while the existing debt is reduced. See the annotations and step log for details."
+            echo "Errors block this PR. Warnings and notices remain advisory while the existing debt is reduced. See the annotations and step log for details."
           } >> "$GITHUB_STEP_SUMMARY"
