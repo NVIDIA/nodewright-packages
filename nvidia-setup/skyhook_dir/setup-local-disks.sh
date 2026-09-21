@@ -266,10 +266,10 @@ EPHEMERAL_DISKS=($(realpath "${disks[@]}" | sort -u))
 case "${DISK_SETUP}" in
   "raid0")
     maybe_raid0
-    echo "Successfully setup RAID-0 consisting of ${EPHEMERAL_DISKS[@]}"
+    printf 'Successfully setup RAID-0 consisting of %s\n' "${EPHEMERAL_DISKS[*]}"
     ;;
   "mount")
     maybe_mount
-    echo "Successfully setup disk mounts consisting of ${EPHEMERAL_DISKS[@]}"
+    printf 'Successfully setup disk mounts consisting of %s\n' "${EPHEMERAL_DISKS[*]}"
     ;;
 esac

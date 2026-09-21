@@ -16,10 +16,9 @@
 
 # ShellCheck linting for the repo's bash scripts.
 #
-# ADVISORY today: this workflow reports findings as PR annotations and a job
-# summary but does NOT fail the build (the shellcheck step uses
-# `continue-on-error`). The goal is to drive the existing findings to zero,
-# then flip this to a required check. Rule configuration lives in .shellcheckrc.
+# Errors are required today. Warnings and notes remain visible in annotations and
+# the job summary while the existing debt is burned down. Rule configuration lives
+# in .shellcheckrc.
 
 name: ShellCheck
 
@@ -37,7 +36,7 @@ permissions:
 
 jobs:
   shellcheck:
-    name: shellcheck (advisory)
+    name: shellcheck (errors required)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -74,10 +73,9 @@ jobs:
           echo "::add-matcher::${RUNNER_TEMP}/shellcheck-matcher.json"
 
       # ubuntu-latest ships shellcheck preinstalled. Lint every tracked *.sh
-      # file (excluding the Python venv). continue-on-error keeps this advisory.
+      # file (excluding the Python venv) and keep the complete output for annotations.
       - name: Run shellcheck
         id: shellcheck
-        continue-on-error: true
         run: |
           mapfile -t FILES < <(git ls-files '*.sh' | grep -v '^venv/')
           echo "Linting ${#FILES[@]} shell scripts"
@@ -86,17 +84,25 @@ jobs:
             : > "${RUNNER_TEMP}/shellcheck.out"
             exit 0
           fi
+          set +e
           shellcheck -f gcc "${FILES[@]}" | tee "${RUNNER_TEMP}/shellcheck.out"
+          lint_status=${PIPESTATUS[0]}
+          set -e
+          echo "Full ShellCheck exit status (including advisory findings): ${lint_status}"
+
+          # Keep all findings as annotations, but make only errors blocking until
+          # the existing warning and note debt has been reduced.
+          shellcheck --severity=error -f gcc "${FILES[@]}" | tee "${RUNNER_TEMP}/shellcheck.errors"
 
       - name: Summarize findings
         if: always()
         run: |
           OUT="${RUNNER_TEMP}/shellcheck.out"
           {
-            echo "## ShellCheck (advisory)"
+            echo "## ShellCheck (errors required)"
             echo ""
             if [ ! -s "$OUT" ]; then
-              echo "No findings. :tada: This workflow can be promoted to a required check."
+              echo "No findings. :tada:"
               exit 0
             fi
             total=$(wc -l < "$OUT")
@@ -110,5 +116,5 @@ jobs:
             echo "| note/style | ${notes} |"
             echo "| total | ${total} |"
             echo ""
-            echo "Findings are advisory and do not block this PR. See the annotations and the step log for details."
+            echo "Errors block this PR. Warnings and notes remain advisory while the existing debt is reduced. See the annotations and step log for details."
           } >> "$GITHUB_STEP_SUMMARY"
