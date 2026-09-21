@@ -30,11 +30,14 @@ This package requires **tuned >= 2.19**. The following operating systems are sup
 | **Debian** | 11 (Bullseye) | ❌ | Default tuned version is too old (2.15) |
 | **Debian** | 12 (Bookworm) | ⚠️ verified tuned package version but not fully tested| Uses common profiles |
 | **RHEL** | 9 | ⚠️ verified tuned package version but not fully tested| Uses common profiles |
+| **RHEL** | 10 | ⚠️ Common profiles, not container-tested | Uses the same fallback path as Rocky Linux 10 |
+| **Rocky Linux** | 9 | ✅ Tested | Uses common profiles |
+| **Rocky Linux** | 10 | ✅ Tested | Uses common profiles |
 | **Other** | Any | ⚠️ Fallback | Falls back to `os/common/` profiles (untested, requires tuned >= 2.19) |
 
 ### Notes
 
-- **Tested OS versions**: These have been validated with the package and use OS-specific profile configurations
+- **Tested OS versions**: These have been validated with the package. Rocky Linux 9 and 10 use the common profiles because no Rocky-specific overrides are required.
 - **Fallback behavior**: For untested OS versions, the package will automatically fall back to the `os/common/` profiles. This fallback is **untested** and requires the system to have **tuned >= 2.19** installed
 - **Tuned version requirement**: All systems must have tuned version 2.19 or later. Check your system's tuned version with `tuned --version`
 - **OS detection**: The package automatically detects the OS from `/etc/os-release` and selects the appropriate profiles

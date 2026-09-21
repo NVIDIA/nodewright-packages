@@ -77,7 +77,16 @@ def verify_tuned_version(runner: DockerTestRunner, base_image: str):
         case img if _matches_any(img, "ubuntu:22.04", "debian:11"):
             # OS versions requiring tuned >= 2.15
             required_major, required_minor = (2, 15)
-        case img if _matches_any(img, "ubuntu:24.04", "ubuntu:26.04", "debian:12", "rocky:9", "rockylinux:9"):
+        case img if _matches_any(
+            img,
+            "ubuntu:24.04",
+            "ubuntu:26.04",
+            "debian:12",
+            "rocky:9",
+            "rockylinux:9",
+            "rockylinux/rockylinux:9",
+            "rockylinux/rockylinux:10",
+        ):
             # OS versions requiring tuned >= 2.19
             required_major, required_minor = (2, 19)
         case _:

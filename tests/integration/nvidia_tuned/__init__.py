@@ -35,5 +35,6 @@ TEST_MATRIX = [
     "ubuntu:24.04",  # Noble
     "ubuntu:22.04",  # Jammy
     "debian:12",     # Bookworm
-    "rockylinux:9",  # Rocky Linux 9
+    "rockylinux/rockylinux:9",  # Rocky Linux 9
+    "rockylinux/rockylinux:10",  # Rocky Linux 10
 ]
