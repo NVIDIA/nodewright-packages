@@ -1,0 +1,135 @@
+# THROWAWAY SPIKE for #153. Deleted before the design PR merges.
+name: spike-vm
+
+on:
+  push:
+    branches:
+      - worktree-vm-e2e-design
+    paths:
+      - 'spike/**'
+      - '.github/workflows/spike-vm.yaml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spike-vm-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  vm:
+    name: vm ${{ matrix.arch }}/${{ matrix.firmware }}/${{ matrix.variant }} ${{ matrix.scenario }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {runner: ubuntu-24.04, arch: amd64, firmware: bios, variant: server, scenario: all}
+          - {runner: ubuntu-24.04, arch: amd64, firmware: uefi, variant: server, scenario: all}
+          - {runner: ubuntu-24.04-arm, arch: arm64, firmware: uefi, variant: server, scenario: all}
+          - {runner: ubuntu-24.04, arch: amd64, firmware: bios, variant: server, scenario: parallel}
+          - {runner: ubuntu-24.04-arm, arch: arm64, firmware: uefi, variant: server, scenario: parallel}
+          - {runner: ubuntu-24.04, arch: amd64, firmware: bios, variant: minimal, scenario: boot}
+    env:
+      ARCH: ${{ matrix.arch }}
+      FIRMWARE: ${{ matrix.firmware }}
+      VARIANT: ${{ matrix.variant }}
+      SERIAL: '20260911'
+      CACHE_DIR: /home/runner/.cache/vmtest-spike
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - name: Probe host
+        run: |
+          set -x
+          nproc; free -g; df -h /; lscpu | head -25
+          grep -c -E 'vmx|svm' /proc/cpuinfo || true
+          ls -l /dev/kvm || echo "NO /dev/kvm"
+          lsmod | grep -i kvm || echo "no kvm modules"
+          id
+
+      - name: Enable KVM
+        run: |
+          if [ -e /dev/kvm ]; then
+            echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+            sudo udevadm control --reload-rules
+            sudo udevadm trigger --name-match=kvm
+          fi
+          ls -l /dev/kvm || true
+          if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then echo "::notice::KVM usable on ${{ matrix.runner }}"; else echo "::warning::KVM NOT usable on ${{ matrix.runner }}, falling back to tcg"; fi
+
+      - name: Install QEMU
+        run: |
+          start=$SECONDS
+          sudo apt-get update -qq
+          if [ "${ARCH}" = arm64 ]; then
+            pkgs="qemu-system-arm qemu-efi-aarch64"
+          else
+            pkgs="qemu-system-x86 ovmf"
+          fi
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends ${pkgs} qemu-utils cloud-image-utils ipxe-qemu >/dev/null
+          echo "::notice::apt install qemu took $((SECONDS - start))s"
+          qemu-img --version | head -1
+
+      - name: Cache cloud image
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: /home/runner/.cache/vmtest-spike
+          key: vmtest-spike-${{ matrix.arch }}-${{ matrix.variant }}-20260911
+
+      - name: Run spike
+        env:
+          WORK_DIR: ${{ runner.temp }}/vm
+          RESULTS: ${{ runner.temp }}/results.md
+          PARALLEL: '3'
+        run: |
+          start=$SECONDS
+          bash spike/vm/vm.sh "${{ matrix.scenario }}"
+          echo "::notice::spike ${{ matrix.scenario }} total $((SECONDS - start))s"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### ${{ matrix.runner }} ${{ matrix.arch }}/${{ matrix.firmware }}/${{ matrix.variant }} ${{ matrix.scenario }}"
+            cat "${{ runner.temp }}/results.md" 2>/dev/null || echo "no results"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: spike-${{ matrix.arch }}-${{ matrix.firmware }}-${{ matrix.variant }}-${{ matrix.scenario }}
+          path: |
+            ${{ runner.temp }}/results.md
+            ${{ runner.temp }}/vm/*.log
+          if-no-files-found: ignore
+
+  # Open question 4: do the production -aws kernel package names resolve per release and arch?
+  simulate:
+    name: simulate ${{ matrix.release }}/${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+        release: [jammy, noble]
+    container: ubuntu:${{ matrix.release }}
+    steps:
+      - name: Simulate kernel install
+        run: |
+          apt-get update -qq
+          k=6.17.0-1019-aws
+          [ "$(uname -m)" = aarch64 ] && k="${k}-64k"
+          echo "--- available aws 6.17 images"
+          apt-cache search --names-only '^linux-image-6\.17.*aws' | head -20 || true
+          echo "--- simulate ${k}"
+          if apt-get install --simulate linux-image-${k} linux-headers-${k} linux-modules-${k} linux-modules-extra-${k} >/tmp/sim 2>&1; then
+            echo "::notice::${{ matrix.release }}/$(uname -m) ${k}: resolves"
+          else
+            echo "::warning::${{ matrix.release }}/$(uname -m) ${k}: does not resolve"
+          fi
+          tail -15 /tmp/sim
