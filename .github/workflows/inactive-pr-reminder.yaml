@@ -16,7 +16,7 @@
 
 name: Inactive PR Reminder
 
-# Nudges PRs idle 14-29 days, the window before stale.yaml marks PRs stale at 30,
+# Nudges PRs idle 7-13 days, the window before stale.yaml marks PRs stale at 14,
 # so authors get a reminder before the stale bot fires. The fork guard keeps the
 # scheduled job from running on forks.
 
@@ -65,8 +65,8 @@ jobs:
               const updated = new Date(pr.updated_at);
               const daysInactive = Math.floor((now - updated) / msPerDay);
 
-              // Target the 14-29 day window, before the stale bot fires at 30.
-              if (daysInactive < 14 || daysInactive >= 30) continue;
+              // Target the 7-13 day window, before the stale bot fires at 14.
+              if (daysInactive < 7 || daysInactive >= 14) continue;
 
               // Don't double-remind: skip if a bot already left a reminder.
               // Paginate so an earlier reminder past page 1 still counts.
