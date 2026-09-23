@@ -13,10 +13,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: spike-vm-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   vm:
     name: vm ${{ matrix.arch }}/${{ matrix.firmware }}/${{ matrix.variant }} ${{ matrix.scenario }}
@@ -32,6 +28,7 @@ jobs:
           - {runner: ubuntu-24.04, arch: amd64, firmware: bios, variant: server, scenario: parallel}
           - {runner: ubuntu-24.04-arm, arch: arm64, firmware: uefi, variant: server, scenario: parallel}
           - {runner: ubuntu-24.04, arch: amd64, firmware: bios, variant: minimal, scenario: boot}
+          - {runner: ubuntu-24.04, arch: amd64, firmware: bios, variant: server, scenario: issue2870}
     env:
       ARCH: ${{ matrix.arch }}
       FIRMWARE: ${{ matrix.firmware }}
@@ -79,11 +76,19 @@ jobs:
           path: /home/runner/.cache/vmtest-spike
           key: vmtest-spike-${{ matrix.arch }}-${{ matrix.variant }}-20260911
 
+      - name: Fetch PR 151 nvidia-setup
+        if: matrix.scenario == 'issue2870'
+        run: |
+          git fetch --depth=1 origin fix/nvidia-setup-kernel-exact-match
+          mkdir -p "${RUNNER_TEMP}/pr151"
+          git archive FETCH_HEAD nvidia-setup/skyhook_dir | tar -x -C "${RUNNER_TEMP}/pr151"
+
       - name: Run spike
         env:
           WORK_DIR: ${{ runner.temp }}/vm
           RESULTS: ${{ runner.temp }}/results.md
           PARALLEL: '3'
+          PKG_DIRS: pr151:${{ runner.temp }}/pr151/nvidia-setup/skyhook_dir main:nvidia-setup/skyhook_dir
         run: |
           start=$SECONDS
           bash spike/vm/vm.sh "${{ matrix.scenario }}"

@@ -240,7 +240,7 @@ vm_ssh() {
   ssh -F /dev/null -q \
     -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
     -o ConnectTimeout=5 -o ServerAliveInterval=5 -o ServerAliveCountMax=3 \
-    -o BatchMode=yes -o LogLevel=ERROR \
+    -o BatchMode=yes -o LogLevel=ERROR -o IdentitiesOnly=yes -o IdentityAgent=none \
     -i "${WORK_DIR}/id_ed25519" -p "${port}" ubuntu@127.0.0.1 "$@"
 }
 
@@ -323,14 +323,18 @@ prepare() {
   vm_stop prepared "${port}"
   record "shutdown" "$((SECONDS - start))"
   # the per-VM vars file travels with the prepared overlay
-  [[ -f "${WORK_DIR}/prepared.vars.fd" ]] && cp "${WORK_DIR}/prepared.vars.fd" "${WORK_DIR}/prepared.vars.fd.orig"
+  if [[ -f "${WORK_DIR}/prepared.vars.fd" ]]; then
+    cp "${WORK_DIR}/prepared.vars.fd" "${WORK_DIR}/prepared.vars.fd.orig"
+  fi
 }
 
 # clone <name>: per-test overlay on the prepared image
 clone() {
   local name="$1"
   qemu-img create -q -f qcow2 -F qcow2 -b "${PREPARED}" "${WORK_DIR}/${name}.qcow2"
-  [[ -f "${WORK_DIR}/prepared.vars.fd.orig" ]] && cp "${WORK_DIR}/prepared.vars.fd.orig" "${WORK_DIR}/${name}.vars.fd"
+  if [[ -f "${WORK_DIR}/prepared.vars.fd.orig" ]]; then
+    cp "${WORK_DIR}/prepared.vars.fd.orig" "${WORK_DIR}/${name}.vars.fd"
+  fi
   echo "${WORK_DIR}/${name}.qcow2"
 }
 
@@ -371,6 +375,12 @@ echo "${older} ${newer}"
 EOF
 }
 
+# kernel_pkgs <port> <abi>: the image/headers/modules/modules-extra packages that exist
+# for <abi>. 7.0+ kernels ship no linux-modules-extra package.
+kernel_pkgs() {
+  vm_ssh "$1" "for p in linux-image-$2 linux-headers-$2 linux-modules-$2 linux-modules-extra-$2; do apt-cache show \"\$p\" >/dev/null 2>&1 && printf '%s ' \"\$p\" || echo \"MISSING \$p\" >&2; done; echo"
+}
+
 scenario_boot() {
   local port
   port="$(start_clone boot)"
@@ -382,13 +392,14 @@ scenario_kernel_switch() {
   local port start kernels target
   port="$(start_clone kswitch)"
   start="${SECONDS}"
-  vm_ssh "${port}" sudo apt-get update -qq
+  vm_ssh "${port}" sudo apt-get update -qq --error-on=any
   record "apt-get update" "$((SECONDS - start))"
   kernels="$(pick_kernels "${port}")"
   target="${kernels%% *}"
   [[ -n "${target}" ]] || target="${kernels##* }"
   log "kernel-switch target: ${target}"
-  local pkgs="linux-image-${target} linux-headers-${target} linux-modules-${target} linux-modules-extra-${target}"
+  local pkgs
+  pkgs="$(kernel_pkgs "${port}" "${target}")"
   start="${SECONDS}"
   vm_ssh "${port}" "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --download-only ${pkgs}" >/dev/null
   record "kernel download-only (4 pkgs)" "$((SECONDS - start))"
@@ -420,7 +431,7 @@ EOF
 scenario_dkms() {
   local port start kernels newer status
   port="$(start_clone dkms)"
-  vm_ssh "${port}" sudo apt-get update -qq
+  vm_ssh "${port}" sudo apt-get update -qq --error-on=any
   start="${SECONDS}"
   vm_ssh "${port}" "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq dkms" >/dev/null
   record "install dkms" "$((SECONDS - start))"
@@ -452,7 +463,7 @@ EOF
   log "dkms scenario: installing second kernel ${newer}"
   start="${SECONDS}"
   status=0
-  vm_ssh "${port}" "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y linux-image-${newer} linux-headers-${newer} linux-modules-${newer} linux-modules-extra-${newer}" >"${WORK_DIR}/dkms-install.log" 2>&1 || status=$?
+  vm_ssh "${port}" "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y $(kernel_pkgs "${port}" "${newer}")" >"${WORK_DIR}/dkms-install.log" 2>&1 || status=$?
   record "install second kernel with failing dkms" "$((SECONDS - start))" "apt exit ${status}"
   tail -40 "${WORK_DIR}/dkms-install.log" >&2
   vm_ssh "${port}" 'bash -s' <<'EOF' >&2 || true
@@ -469,18 +480,63 @@ EOF
   vm_stop dkms "${port}"
 }
 
+# Reproduce NVIDIA/aicr#2870: node on the target kernel, a newer kernel left
+# half-configured by a failing DKMS build, then run nvidia-setup's real
+# install_kernel.sh with the running kernel as the target.
+# PKG_DIRS: space-separated "<name>:<path to nvidia-setup/skyhook_dir>" entries.
+scenario_issue2870() {
+  if [[ "${ARCH}" == "arm64" ]]; then
+    log "issue2870: amd64 only (resolve_full_kernel appends -64k on arm64)"
+    return
+  fi
+  local port kernels newer status running spec name dir start
+  port="$(start_clone i2870)"
+  vm_ssh "${port}" sudo apt-get update -qq --error-on=any
+  vm_ssh "${port}" "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq dkms" >/dev/null
+  vm_ssh "${port}" "sudo bash -s" <<'EOF'
+set -euo pipefail
+src=/usr/src/failmod-1.0
+mkdir -p "${src}"
+printf '#include <linux/module.h>\n#error "failmod always fails"\n' >"${src}/failmod.c"
+echo 'obj-m := failmod.o' >"${src}/Makefile"
+printf 'PACKAGE_NAME="failmod"\nPACKAGE_VERSION="1.0"\nBUILT_MODULE_NAME[0]="failmod"\nDEST_MODULE_LOCATION[0]="/updates/dkms"\nAUTOINSTALL="yes"\n' >"${src}/dkms.conf"
+dkms add -m failmod -v 1.0 >/dev/null
+EOF
+  kernels="$(pick_kernels "${port}")"
+  newer="${kernels##* }"
+  status=0
+  vm_ssh "${port}" "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $(kernel_pkgs "${port}" "${newer}")" >/dev/null 2>&1 || status=$?
+  record "damage: install ${newer} with failing dkms" 0 "apt exit ${status}"
+  vm_ssh "${port}" "dpkg -l | awk 'NR>5 && \$1 != \"ii\"' | cut -c1-100" >&2 || true
+  running="$(vm_ssh "${port}" uname -r)"
+  for spec in ${PKG_DIRS:-main:nvidia-setup/skyhook_dir}; do
+    name="${spec%%:*}"
+    dir="${spec#*:}"
+    tar -C "${dir}" -cf - . | vm_ssh "${port}" "sudo rm -rf /opt/pkg-${name} && sudo mkdir -p /opt/pkg-${name}/skyhook_dir && sudo tar -C /opt/pkg-${name}/skyhook_dir -xf -"
+    status=0
+    start="${SECONDS}"
+    vm_ssh "${port}" "sudo env SKYHOOK_DIR=/opt/pkg-${name} STEP_ROOT=/opt/pkg-${name}/skyhook_dir bash /opt/pkg-${name}/skyhook_dir/steps/install_kernel.sh ${running}" >"${WORK_DIR}/i2870-${name}.log" 2>&1 || status=$?
+    record "install_kernel.sh (${name}) on target ${running} with dpkg damage" "$((SECONDS - start))" "exit ${status}"
+    log "--- tail of install_kernel.sh (${name})"
+    tail -12 "${WORK_DIR}/i2870-${name}.log" >&2
+  done
+  reboot_vm "${port}"
+  record "issue2870 booted after" 0 "$(vm_ssh "${port}" uname -r) (target ${running}, damaged ${newer})"
+  vm_stop i2870 "${port}"
+}
+
 scenario_parallel() {
   local i pids=() start
   start="${SECONDS}"
   for i in $(seq 1 "${PARALLEL}"); do
     (
       port="$(start_clone "par${i}")"
-      vm_ssh "${port}" sudo apt-get update -qq
+      vm_ssh "${port}" sudo apt-get update -qq --error-on=any
       k="$(pick_kernels "${port}" 2>/dev/null)"
       t="${k%% *}"
       [[ -n "${t}" ]] || t="${k##* }"
       s="${SECONDS}"
-      vm_ssh "${port}" "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq linux-image-${t} linux-headers-${t} linux-modules-${t} linux-modules-extra-${t}" >/dev/null
+      vm_ssh "${port}" "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $(kernel_pkgs "${port}" "${t}")" >/dev/null
       record "parallel[${i}/${PARALLEL}] kernel install" "$((SECONDS - s))"
       reboot_vm "${port}"
       vm_stop "par${i}" "${port}"
@@ -493,6 +549,16 @@ scenario_parallel() {
 
 # ---------------------------------------------------------------- main
 
+cleanup() {
+  local f
+  for f in "${WORK_DIR}"/*.pid; do
+    [[ -f "${f}" ]] || continue
+    kill "$(cat "${f}")" 2>/dev/null || true
+    rm -f "${f}"
+  done
+}
+trap cleanup EXIT
+
 log "label=${LABEL} work=${WORK_DIR}"
 [[ -f "${RESULTS}" ]] || printf '| config | scenario | step | time | note |\n| --- | --- | --- | --- | --- |\n' >"${RESULTS}"
 prepare
@@ -501,6 +567,7 @@ case "${SCENARIO}" in
   kernel-switch) scenario_kernel_switch ;;
   dkms) scenario_dkms ;;
   parallel) scenario_parallel ;;
+  issue2870) scenario_issue2870 ;;
   all)
     SCENARIO=boot scenario_boot
     SCENARIO=kernel-switch scenario_kernel_switch
