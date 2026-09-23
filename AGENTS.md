@@ -84,6 +84,17 @@ Run from the repo root unless noted. See `DEVELOPER.md` for the full pre-commit 
 - **Sign-off is required** (DCO). Use `git commit -s`.
 - **Semantic versioning per package.** Bump `package_version` in the package's `config.json`, then tag as `<package>/<version>` (e.g. `tuned/1.3.0`). Each package versions independently.
 
+## Before you open a pull request
+
+Run the checks CI runs, on your machine, before you push. This applies to a coding agent exactly as it does to a person.
+
+- **Run the targets that match what you changed.** A package: `make validate-standalone PACKAGE=<name>` (or `make validate-inherited PACKAGE=<name>`) plus `make test-package PACKAGE=<name>`. The shared harness under `tests/helpers/`: `make test-harness`. Any `*.py`, `*.sh`, `*.yaml`, `*.yml` or `Dockerfile`: `make license-check`. A changed shell script: `shellcheck` on it. A changed workflow: `actionlint`. CI invokes those same make targets, so this is the gate rather than an approximation of it. A docs-only change needs none of it.
+- **Supply the two prerequisites the Makefile does not.** Everything except `make license-check` needs a running container runtime, and the test harness talks to Docker specifically (`docker-py` plus a `docker build` call), so Podman needs a Docker-compatible socket and a `docker` command. `make license-fmt` and `make license-check` need a local Go toolchain. The Python test dependencies are installed for you into `venv/`, so a missing pytest means a target was bypassed. A tool you do not have is a fact to report in the pull request, never a reason to claim a suite passed.
+- **A package change is not verified until it has run on a real node.** CI runs lifecycle scripts inside a container; it cannot touch bootloaders, tuned profiles, drivers or disks, which is most of what these packages do. The pull request must say which OS and version, which hardware (GPU model and driver version where the change depends on them), how the package was applied, and what was observed on the host before and after. You have no hardware, so say exactly that rather than writing anything that implies the change was exercised.
+- **On a fork this is the fast path, not the slow one.** Workflow runs from a fork wait for a maintainer to approve them by hand, so pushing to see what CI says costs hours where the same checks locally cost minutes.
+- **Stay with the pull request after you open it.** A review costs a maintainer time whether or not anyone answers it, so respond to comments and rebase when asked. Inactive pull requests are nudged at 7 days, marked stale at 14, and closed 7 days later. The same applies to how many you open at once: a few you are actively shepherding land sooner than a queue nobody can keep up with.
+- **Write what you ran, what you could not, and what it ran on into the pull request body**, along with AI assistance if a tool wrote a meaningful part of the change. The rest of the process is in `CONTRIBUTING.md`.
+
 ## Writing style
 
 For prose you author in this repo (docs, READMEs, PR descriptions, commit messages, review comments): **do not use em-dashes** (`—`). Use a colon, semicolon, comma, or full stop instead, and recast the sentence when no punctuation swap reads cleanly. Leave intact things that are not authored prose: en-dashes in numeric ranges (`24–27`), markdown horizontal rules (`---`), and any em-dash already inside quoted text or code.
