@@ -22,18 +22,20 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {runner: ubuntu-24.04, arch: amd64, firmware: bios, variant: server, scenario: all}
-          - {runner: ubuntu-24.04, arch: amd64, firmware: uefi, variant: server, scenario: all}
-          - {runner: ubuntu-24.04-arm, arch: arm64, firmware: uefi, variant: server, scenario: all}
-          - {runner: ubuntu-24.04, arch: amd64, firmware: bios, variant: server, scenario: parallel}
-          - {runner: ubuntu-24.04-arm, arch: arm64, firmware: uefi, variant: server, scenario: parallel}
-          - {runner: ubuntu-24.04, arch: amd64, firmware: bios, variant: minimal, scenario: boot}
+          # Measured in earlier runs; re-enable to re-measure.
+          # - {runner: ubuntu-24.04, arch: amd64, firmware: bios, variant: server, scenario: all}
+          # - {runner: ubuntu-24.04, arch: amd64, firmware: uefi, variant: server, scenario: all}
+          # - {runner: ubuntu-24.04-arm, arch: arm64, firmware: uefi, variant: server, scenario: all}
+          # - {runner: ubuntu-24.04, arch: amd64, firmware: bios, variant: server, scenario: parallel}
+          # - {runner: ubuntu-24.04-arm, arch: arm64, firmware: uefi, variant: server, scenario: parallel}
+          - {runner: ubuntu-24.04, arch: amd64, firmware: bios, variant: server, scenario: boot}
+          - {runner: ubuntu-24.04, arch: amd64, firmware: bios, variant: minimal, scenario: boot, serial: '20260905'}
           - {runner: ubuntu-24.04, arch: amd64, firmware: bios, variant: server, scenario: issue2870}
     env:
       ARCH: ${{ matrix.arch }}
       FIRMWARE: ${{ matrix.firmware }}
       VARIANT: ${{ matrix.variant }}
-      SERIAL: '20260911'
+      SERIAL: ${{ matrix.serial || '20260911' }}
       CACHE_DIR: /home/runner/.cache/vmtest-spike
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
@@ -74,7 +76,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: /home/runner/.cache/vmtest-spike
-          key: vmtest-spike-${{ matrix.arch }}-${{ matrix.variant }}-20260911
+          key: vmtest-spike-${{ matrix.arch }}-${{ matrix.variant }}-${{ matrix.serial || '20260911' }}
 
       - name: Fetch PR 151 nvidia-setup
         if: matrix.scenario == 'issue2870'

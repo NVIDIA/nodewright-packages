@@ -492,7 +492,10 @@ scenario_issue2870() {
   local port kernels newer status running spec name dir start
   port="$(start_clone i2870)"
   vm_ssh "${port}" sudo apt-get update -qq --error-on=any
-  vm_ssh "${port}" "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq dkms" >/dev/null
+  running="$(vm_ssh "${port}" uname -r)"
+  # Precondition from the #2870 nodes: all four target packages are installed.
+  # The cloud image ships without linux-modules-extra for its own kernel.
+  vm_ssh "${port}" "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq dkms $(kernel_pkgs "${port}" "${running}")" >/dev/null
   vm_ssh "${port}" "sudo bash -s" <<'EOF'
 set -euo pipefail
 src=/usr/src/failmod-1.0
@@ -508,7 +511,6 @@ EOF
   vm_ssh "${port}" "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $(kernel_pkgs "${port}" "${newer}")" >/dev/null 2>&1 || status=$?
   record "damage: install ${newer} with failing dkms" 0 "apt exit ${status}"
   vm_ssh "${port}" "dpkg -l | awk 'NR>5 && \$1 != \"ii\"' | cut -c1-100" >&2 || true
-  running="$(vm_ssh "${port}" uname -r)"
   for spec in ${PKG_DIRS:-main:nvidia-setup/skyhook_dir}; do
     name="${spec%%:*}"
     dir="${spec#*:}"
