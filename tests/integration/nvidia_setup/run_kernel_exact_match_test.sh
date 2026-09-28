@@ -28,7 +28,7 @@
 #
 # Exit code 0 = the scenario behaved as specified, 1 = it did not.
 
-set -uo pipefail
+set -euo pipefail
 
 SCENARIO="${SCENARIO:?SCENARIO must be set}"
 [ -n "${SKYHOOK_DIR:-}" ] || { echo "SKYHOOK_DIR must be set" >&2; exit 1; }
@@ -264,6 +264,27 @@ case "${SCENARIO}" in
     package_state installed $(kernel_packages "6.17.0-1019-aws-64k")
     run_install_kernel || fail "install_kernel.sh exited non-zero"
     installed_packages_for "6.17.0-1019-aws-64k"
+    ;;
+
+  # Same upstream version, different ABI. check_kernel_exact would call these
+  # equal. The target packages are installed, so only the kernel comparison can
+  # tell the two apart.
+  installs_when_abi_differs)
+    node x86_64 "6.17.0-1018-aws"
+    # shellcheck disable=SC2046
+    package_state installed $(kernel_packages "6.17.0-1019-aws")
+    run_install_kernel || fail "install_kernel.sh exited non-zero"
+    installed_packages_for "6.17.0-1019-aws"
+    ;;
+
+  # A newer kernel is not the target either: the pin is exact, not a floor. The
+  # target packages are installed, so only the kernel comparison can tell.
+  installs_when_running_newer_kernel)
+    node x86_64 "7.0.0-1012-aws"
+    # shellcheck disable=SC2046
+    package_state installed $(kernel_packages "6.17.0-1019-aws")
+    run_install_kernel || fail "install_kernel.sh exited non-zero"
+    installed_packages_for "6.17.0-1019-aws"
     ;;
 
   *)

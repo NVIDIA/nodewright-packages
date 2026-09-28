@@ -86,6 +86,10 @@ def test_grub_default_is_still_set_when_apt_is_skipped():
         "installs_when_target_package_missing",
         # Same upstream version, 4k flavor: an upstream-only comparison would match.
         "installs_when_arm64_runs_4k_flavor",
+        # Same upstream version, older ABI: an upstream-only comparison would match.
+        "installs_when_abi_differs",
+        # The pin is exact, so a newer kernel still gets the target installed.
+        "installs_when_running_newer_kernel",
     ],
 )
 def test_kernel_is_installed_when_not_an_exact_match(scenario):
