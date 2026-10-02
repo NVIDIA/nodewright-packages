@@ -21,7 +21,7 @@
 #
 # Timelines (per DGXC OSS Policy):
 #   Issues: 90 days → stale, 30 more days → closed
-#   PRs:    30 days → stale, 30 more days → closed
+#   PRs:    14 days → stale, 7 more days → closed
 #
 # Exemptions:
 #   - lifecycle/frozen: Never goes stale (use for long-running or intentionally open issues)
@@ -69,15 +69,15 @@ jobs:
 
           # PR settings (shorter timeline)
           stale-pr-message: |
-            This PR has been marked as stale due to 30 days of inactivity.
-            It will be closed in 30 days unless there is new activity.
+            This PR has been marked as stale due to 14 days of inactivity.
+            It will be closed in 7 days unless there is new activity.
 
             To keep this PR open:
             - Push new commits or add a comment
             - Add the `lifecycle/frozen` label
 
             If this work is no longer needed, it's okay to let it close.
-          days-before-pr-stale: 30
+          days-before-pr-stale: 14
           stale-pr-label: 'lifecycle/stale'
           exempt-pr-labels: 'lifecycle/frozen,do-not-merge'
 
@@ -94,7 +94,9 @@ jobs:
             If you would like to continue this work:
             - Reopen and push new commits or add a comment with an update
             - Add the `lifecycle/frozen` label to prevent it from being closed again
+          # Shared default, which issues use. PRs get their own shorter window below.
           days-before-close: 30
+          days-before-pr-close: 7
 
           # Performance
           operations-per-run: 500

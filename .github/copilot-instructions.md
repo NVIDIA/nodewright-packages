@@ -16,7 +16,10 @@ Do not duplicate that content here. Read the canonical sources directly:
   authoritative for repository layout, package structure, and coding
   conventions.
 - **[CONTRIBUTING.md](../CONTRIBUTING.md)** covers DCO sign-off, commit signing,
-  the AI-assisted contributions policy, and how to open a PR.
+  the AI-assisted contributions policy, and how to open a PR, including what
+  "ready to open" means: run the make targets CI runs, exercise a package change
+  on a real node, say in the pull request which checks you ran, which you could
+  not, and what hardware it ran on, and disclose AI assistance.
 - **[README.md](../README.md)** explains what a package is and how the pieces
   fit together.
 
