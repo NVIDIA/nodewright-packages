@@ -264,3 +264,21 @@ efa_driver_installed() {
 
   return 0
 }
+
+# Report whether every named package is fully installed. A package dpkg does not
+# know, or one parked half-configured or unpacked, does not count.
+# Usage: dpkg_packages_installed <package>...
+# Returns: 0 when all are installed, 1 otherwise.
+dpkg_packages_installed() {
+  local pkg
+  local state
+
+  for pkg in "$@"; do
+    state="$(dpkg-query -W -f '${db:Status-Status}' "${pkg}" 2>/dev/null || true)"
+    if [ "${state}" != "installed" ]; then
+      return 1
+    fi
+  done
+
+  return 0
+}
