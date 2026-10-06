@@ -147,6 +147,19 @@ case "${verb}" in
                 ;;
         esac
         ;;
+    list-unit-files)
+        # `unit` holds the glob the caller passed, e.g. 'k3s-*.service'. Lists every
+        # installed unit file that matches, one per line with its state; callers take
+        # field 1.
+        for marker in "${STATE_DIR}"/installed.*; do
+            [[ -e "${marker}" ]] || continue
+            name="${marker##*/installed.}"
+            # shellcheck disable=SC2053
+            if [[ -z "${unit}" || "${name}" == ${unit} ]]; then
+                echo "${name} enabled enabled"
+            fi
+        done
+        ;;
     list-units)
         # `unit` holds the glob the caller passed, e.g. 'doca-spcx-cc@*.service'.
         # Emit one unit name per line; callers take field 1.

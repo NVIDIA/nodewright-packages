@@ -24,6 +24,7 @@ Covers:
 - which runtime units get the drop-in: containerd.service on kubeadm-style hosts, and the
   rke2/k3s service units whose embedded containerd serves workloads (regression for
   NVIDIA/nodewright-packages#134, where only an inactive containerd.service was tuned)
+  and K3s units named by the installer (k3s-<name>.service from INSTALL_K3S_NAME)
 - verify: the drop-in text and the limit systemd resolves for each installed unit
 - stop: the drop-in survives the soft stop tuned issues at shutdown, so the runtime has
   it on the next boot, and is removed on full_rollback
@@ -224,6 +225,13 @@ def test_start_targets_every_installed_runtime_unit(node, units):
         assert has_dropin(node, unit) == (unit in units), unit
 
 
+def test_start_targets_an_installer_named_k3s_unit(node):
+    """K3s installed with INSTALL_K3S_NAME=edge runs as k3s-edge.service."""
+    install(node, "containerd.service", "k3s-edge.service")
+    assert run(node, "start") == 0, output(node)
+    assert has_dropin(node, "k3s-edge.service")
+
+
 def test_start_does_not_depend_on_the_runtime_being_active(node):
     """tuned applies the profile at boot, before rke2-server is active."""
     install(node, "containerd.service", "rke2-server.service")
@@ -263,6 +271,14 @@ def test_verify_rejects_an_inert_containerd_dropin_on_rke2(node):
     daemon_reload(node)
     assert run(node, "verify") != 0
     assert said(node, "rke2-server.service"), output(node)
+
+
+def test_verify_checks_an_installer_named_k3s_unit(node):
+    install(node, "k3s-edge.service")
+    assert run(node, "start") == 0, output(node)
+    assert sh(node, f"rm {dropin('k3s-edge.service')}") == 0
+    assert run(node, "verify") != 0
+    assert said(node, "k3s-edge.service"), output(node)
 
 
 def test_verify_ignore_missing_accepts_absent_dropins(node):
@@ -320,6 +336,12 @@ def test_full_rollback_removes_a_dropin_left_on_a_unit_no_longer_installed(node)
     write_dropin(node, "k3s.service", "containerd.conf", LIMIT_LINE)
     assert run(node, "stop", "full_rollback") == 0, output(node)
     assert sh(node, "test ! -e /etc/systemd/system/k3s.service.d") == 0
+
+
+def test_full_rollback_removes_the_dropin_of_an_installer_named_k3s_unit(node):
+    write_dropin(node, "k3s-edge.service", "containerd.conf", LIMIT_LINE)
+    assert run(node, "stop", "full_rollback") == 0, output(node)
+    assert sh(node, "test ! -e /etc/systemd/system/k3s-edge.service.d") == 0
 
 
 def test_full_rollback_keeps_other_dropins_and_their_directory(node):

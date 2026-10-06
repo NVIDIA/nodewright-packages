@@ -40,6 +40,18 @@ dropin_dir() {
 	printf '/etc/systemd/system/%s.d\n' "$1"
 }
 
+# K3s names its unit k3s-<name>.service when it is installed with INSTALL_K3S_NAME, so
+# that unit is not in RUNTIME_UNITS. List the installed ones from systemd.
+named_k3s_units() {
+	systemctl list-unit-files --type=service --no-legend 'k3s-*.service' 2>/dev/null \
+		| awk '{print $1}' | grep -v -x -F k3s-agent.service || true
+}
+
+runtime_units() {
+	printf '%s\n' "${RUNTIME_UNITS[@]}"
+	named_k3s_units
+}
+
 unit_installed() {
 	[[ "$(systemctl show -p LoadState --value "$1" 2>/dev/null)" == "loaded" ]]
 }
@@ -48,12 +60,12 @@ unit_installed() {
 # installed keeps the previous behavior.
 target_units() {
 	local unit found=false
-	for unit in "${RUNTIME_UNITS[@]}"; do
+	while IFS= read -r unit; do
 		if unit_installed "${unit}"; then
 			printf '%s\n' "${unit}"
 			found=true
 		fi
-	done
+	done < <(runtime_units)
 	"${found}" || printf '%s\n' containerd.service
 }
 
@@ -68,11 +80,20 @@ apply_dropin() {
 }
 
 # Removes the drop-in from every runtime unit, installed or not, so nothing is left
-# behind if a unit was removed or the runtime changed after start.
+# behind if a unit was removed or the runtime changed after start. That includes any
+# installer-named K3s unit that has a drop-in directory.
 remove_dropin() {
 	local unit dir
+	local dirs=()
 	for unit in "${RUNTIME_UNITS[@]}"; do
-		dir="$(dropin_dir "${unit}")"
+		dirs+=("$(dropin_dir "${unit}")")
+	done
+	for dir in /etc/systemd/system/k3s-*.service.d; do
+		if [[ -d "${dir}" ]]; then
+			dirs+=("${dir}")
+		fi
+	done
+	for dir in "${dirs[@]}"; do
 		rm -f "${dir:?}/${DROPIN_FILE:?}"
 		if [[ -d "${dir}" && -z "$(ls -A "${dir}" 2>/dev/null)" ]]; then
 			rmdir "${dir}"
