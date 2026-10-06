@@ -126,5 +126,5 @@ jobs:
             echo "| note/style | ${notes} |"
             echo "| total | ${total} |"
             echo ""
-            echo "Error-severity findings block this PR. Warnings and notes are advisory. See the annotations and step log for details."
+            echo "Error-severity findings fail the job. Warnings and notes are advisory. See the annotations and step log for details."
           } >> "$GITHUB_STEP_SUMMARY"
