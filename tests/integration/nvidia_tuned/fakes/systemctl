@@ -150,15 +150,18 @@ case "${verb}" in
     list-unit-files)
         # `unit` holds the glob the caller passed, e.g. 'k3s-*.service'. Lists every
         # installed unit file that matches, one per line with its state; callers take
-        # field 1.
+        # field 1. Like systemd, exits 1 when nothing matches.
+        matched=false
         for marker in "${STATE_DIR}"/installed.*; do
             [[ -e "${marker}" ]] || continue
             name="${marker##*/installed.}"
             # shellcheck disable=SC2053
             if [[ -z "${unit}" || "${name}" == ${unit} ]]; then
                 echo "${name} enabled enabled"
+                matched=true
             fi
         done
+        "${matched}" || exit 1
         ;;
     list-units)
         # `unit` holds the glob the caller passed, e.g. 'doca-spcx-cc@*.service'.
