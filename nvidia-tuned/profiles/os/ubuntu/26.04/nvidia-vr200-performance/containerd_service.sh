@@ -33,7 +33,6 @@ set -euo pipefail
 DROPIN_FILE=containerd.conf
 EXPECTED_LIMIT=67108864
 EXPECTED_LINE="LimitSTACK=${EXPECTED_LIMIT}"
-# containerd.service first: it stays the target when no runtime unit is installed.
 RUNTIME_UNITS=(containerd.service rke2-server.service rke2-agent.service k3s.service k3s-agent.service)
 
 dropin_dir() {
@@ -104,8 +103,10 @@ remove_dropin() {
 
 # Checks each target unit's drop-in and, for an installed unit, the limit systemd resolves
 # for it. The resolved value catches a drop-in that is shadowed by another one or not yet
-# loaded. It does not prove the running runtime has the limit: that only changes when the
-# runtime restarts, which for these profiles is the reboot that follows tuning.
+# loaded. It does not prove the running runtime has the limit: the runtime gets it only
+# when it restarts. On the reboot profiles that is the reboot after tuning; on the
+# no-reboot chain (nvidia-vr200-noreboot-base) a restart is not guaranteed, so the limit
+# may not be live even when verify passes.
 verify_dropin() {
 	local ignore_missing=false
 	[[ "${2:-}" == "ignore_missing" ]] && ignore_missing=true
