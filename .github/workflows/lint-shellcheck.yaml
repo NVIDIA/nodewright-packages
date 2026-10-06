@@ -16,10 +16,10 @@
 
 # ShellCheck linting for the repo's bash scripts.
 #
-# ADVISORY today: this workflow reports findings as PR annotations and a job
-# summary but does NOT fail the build (the shellcheck step uses
-# `continue-on-error`). The goal is to drive the existing findings to zero,
-# then flip this to a required check. Rule configuration lives in .shellcheckrc.
+# ADVISORY today: this workflow is not a required merge check. Error-severity
+# findings and ShellCheck invocation failures fail the job; warnings and notes
+# do not. The goal is to drive the existing findings to zero, then make this a
+# required check. Rule configuration lives in .shellcheckrc.
 
 name: ShellCheck
 
