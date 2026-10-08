@@ -28,8 +28,16 @@ mkdir -p "${STATE_DIR}"
 
 verb=""
 unit=""
+prop=""
+expect_prop=false
 for arg in "$@"; do
+    if "${expect_prop}"; then
+        prop="${arg}"
+        expect_prop=false
+        continue
+    fi
     case "${arg}" in
+        -p) expect_prop=true; continue ;;
         --*) continue ;;
     esac
     if [[ -z "${verb}" ]]; then
@@ -44,6 +52,17 @@ echo "${verb} ${unit}" >> "${STATE_DIR}/calls"
 case "${verb}" in
     daemon-reload)
         touch "${STATE_DIR}/daemon-reloaded"
+        # Snapshot each installed unit's drop-ins so `show` reflects what was on disk at
+        # reload time, not edits made since.
+        for marker in "${STATE_DIR}"/installed.*; do
+            [[ -e "${marker}" ]] || continue
+            name="${marker##*/installed.}"
+            snapshot="${STATE_DIR}/dropins.${name}"
+            : > "${snapshot}"
+            for conf in "/etc/systemd/system/${name}.d"/*.conf; do
+                [[ -f "${conf}" ]] && cat "${conf}" >> "${snapshot}"
+            done
+        done
         ;;
     enable)
         [[ "${FAKE_SYSTEMCTL_ENABLE_FAIL:-0}" == "1" ]] && exit 1
@@ -95,6 +114,54 @@ case "${verb}" in
         ;;
     status)
         echo "fake status for ${unit}"
+        ;;
+    show)
+        # Supports `show -p <prop> --value <unit>` for the properties the scripts read.
+        # A unit is installed when an installed.<unit> marker exists. The stack limits
+        # resolve the way systemd does: the last LimitSTACK= across the unit's drop-ins
+        # in lexical order wins, read from disk as of the most recent daemon-reload.
+        case "${prop}" in
+            LoadState)
+                if [[ -f "${STATE_DIR}/installed.${unit}" ]]; then
+                    echo "loaded"
+                else
+                    echo "not-found"
+                fi
+                ;;
+            LimitSTACK | LimitSTACKSoft)
+                hard="infinity"
+                soft="8388608"
+                snapshot="${STATE_DIR}/dropins.${unit}"
+                if [[ -f "${snapshot}" ]]; then
+                    value="$(sed -n 's/^LimitSTACK=//p' "${snapshot}" | tail -n 1)"
+                    if [[ -n "${value}" ]]; then
+                        hard="${value}"
+                        soft="${value}"
+                    fi
+                fi
+                if [[ "${prop}" == "LimitSTACK" ]]; then echo "${hard}"; else echo "${soft}"; fi
+                ;;
+            *)
+                echo "fake systemctl: unsupported property '${prop}' for show" >&2
+                exit 64
+                ;;
+        esac
+        ;;
+    list-unit-files)
+        # `unit` holds the glob the caller passed, e.g. 'k3s-*.service'. Lists every
+        # installed unit file that matches, one per line with its state; callers take
+        # field 1. Like systemd, exits 1 when nothing matches.
+        matched=false
+        for marker in "${STATE_DIR}"/installed.*; do
+            [[ -e "${marker}" ]] || continue
+            name="${marker##*/installed.}"
+            # shellcheck disable=SC2053
+            if [[ -z "${unit}" || "${name}" == ${unit} ]]; then
+                echo "${name} enabled enabled"
+                matched=true
+            fi
+        done
+        "${matched}" || exit 1
         ;;
     list-units)
         # `unit` holds the glob the caller passed, e.g. 'doca-spcx-cc@*.service'.
