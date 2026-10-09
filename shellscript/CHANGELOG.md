@@ -5,7 +5,7 @@
 
 All notable changes to this package will be documented in this file.
 
-## [Unreleased]
+## [1.1.2] - 2026-10-09
 
 ### New Features
 
@@ -19,6 +19,7 @@ All notable changes to this package will be documented in this file.
 
 feat: add package validation for local and ci and developer docs
 - Update project to follow the template
+- *(general)* Regenerate package changelogs to current tags 
 
 
 ## [1.1.1] - 2025-06-03
