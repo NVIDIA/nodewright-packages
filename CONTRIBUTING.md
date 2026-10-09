@@ -119,7 +119,7 @@ The Python test dependencies are not yours to supply. `make test-deps` runs as a
 
 On a fork, running the checks locally is the fast path rather than the slow one. Workflow runs from a fork wait for a maintainer to approve them by hand, so a round trip through CI costs hours where the same checks locally cost minutes.
 
-Not every check blocks. ShellCheck is advisory today: it annotates findings without failing the build, and the workflow's stated goal is to make it a required check once the existing findings reach zero. Treat a new finding in a file you touched as yours to fix rather than as something CI let through. Commitlint does block, on both the commit messages and the pull request title; see [Code Style](#code-style).
+Not every check is a required merge check. The `shellcheck (advisory)` job is not required for merging, but error-severity findings and ShellCheck invocation failures fail the job. Warnings and notes are advisory. Treat a new finding in a file you touched as yours to fix rather than as something CI lets through. Commitlint does block, on both the commit messages and the pull request title; see [Code Style](#code-style).
 
 ### Testing a package change on real hardware
 
