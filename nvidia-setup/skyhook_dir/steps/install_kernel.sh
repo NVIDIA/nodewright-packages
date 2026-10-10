@@ -39,18 +39,29 @@ CURRENT_KERNEL_VERSION=$(uname -r)
 
 downgrade_kernel() {
   # Deterministic selection: construct the exact kernel flavor to install
-  apt_with_dpkg_heal apt-get update
   full_kernel_ver="$(resolve_full_kernel "${KERNEL_VERSION}")"
-
-  # Install older kernel headers
-  echo "Installing kernel ${full_kernel_ver}..."
-  apt_with_dpkg_heal apt-get install -y \
-    "linux-image-${full_kernel_ver}" \
-    "linux-headers-${full_kernel_ver}" \
-    "linux-modules-${full_kernel_ver}" \
+  local kernel_packages=(
+    "linux-image-${full_kernel_ver}"
+    "linux-headers-${full_kernel_ver}"
+    "linux-modules-${full_kernel_ver}"
     "linux-modules-extra-${full_kernel_ver}"
-    
-  # Update grub to make sure the new kernel is available 
+  )
+
+  # Booted on the exact target (flavor included) with every package in place
+  # leaves apt nothing to do, and running it anyway makes this step depend on the
+  # network, the archive and an undamaged dpkg database. The GRUB steps below
+  # still run: pinning the boot default is what keeps a later kernel install
+  # from taking over the next boot.
+  if [ "${CURRENT_KERNEL_VERSION}" = "${full_kernel_ver}" ] \
+    && dpkg_packages_installed "${kernel_packages[@]}"; then
+    echo "Kernel ${full_kernel_ver} is running and installed; skipping apt"
+  else
+    apt_with_dpkg_heal apt-get update
+    echo "Installing kernel ${full_kernel_ver}..."
+    apt_with_dpkg_heal apt-get install -y "${kernel_packages[@]}"
+  fi
+
+  # Update grub to make sure the new kernel is available
   update-grub
 
   # List all installed kernels
@@ -88,11 +99,7 @@ EOF
 
     if [[ $CURRENT_KERNEL_VERSION != "${full_kernel_ver}" ]]; then
       # Hold the Kernel packages
-      apt-mark hold \
-        linux-image-$full_kernel_ver \
-        linux-headers-$full_kernel_ver \
-        linux-modules-$full_kernel_ver \
-        linux-modules-extra-$full_kernel_ver
+      apt-mark hold "${kernel_packages[@]}"
     fi
 
   fi
