@@ -30,4 +30,5 @@ TEST_MATRIX = [
     "debian:12",                             # Bookworm
     "registry.suse.com/bci/bci-base:16.0",   # SUSE Linux Enterprise 16.0
     "registry.suse.com/bci/bci-base:15.7",   # SUSE Linux Enterprise 15 SP7
+    "registry.opensuse.org/opensuse/leap:16.0",  # openSUSE Leap 16.0
 ]
