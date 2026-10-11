@@ -33,6 +33,9 @@ case $ID in
     fedora*)
         dnf remove -y tuned
     ;;
+    sles* | opensuse*)
+        zypper --non-interactive remove tuned
+    ;;
     *)
         echo "Unsupported Distro: $ID"
         exit 1
@@ -42,5 +45,6 @@ esac
 # disable and stop tuned service
 if systemctl is-active --quiet tuned; then
     systemctl disable --now tuned
-    systemctl status tuned
+    # Informational only: `systemctl status` exits 3 for a stopped unit.
+    systemctl status tuned || true
 fi

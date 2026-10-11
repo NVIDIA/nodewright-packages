@@ -37,6 +37,9 @@ RUN set -eux; \
     elif command -v yum >/dev/null 2>&1; then \
         yum install -y tuned; \
         yum clean all; \
+    elif command -v zypper >/dev/null 2>&1; then \
+        zypper --non-interactive install tuned; \
+        zypper clean --all; \
     else \
         echo "no supported package manager in this base image" >&2; \
         exit 1; \

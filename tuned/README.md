@@ -8,7 +8,7 @@ A NodeWright package for managing the `tuned` system tuning daemon on Linux syst
 
 ## Features
 
-- **Multi-distribution support**: Works on Ubuntu/Debian, CentOS/RHEL/Amazon Linux, and Fedora
+- **Multi-distribution support**: Works on Ubuntu/Debian, CentOS/RHEL/Amazon Linux, Fedora, and SUSE Linux Enterprise/openSUSE
 - **Custom profile management**: Deploy and apply custom tuned profiles via configmaps
 - **Idempotent operations**: Safe to run multiple times without side effects
 - **Comprehensive validation**: Built-in checks for installation and configuration status
@@ -37,6 +37,7 @@ tuned/
 - **Ubuntu/Debian**: Uses `apt` package manager
 - **CentOS/RHEL/Amazon Linux**: Uses `yum` package manager
 - **Fedora**: Uses `dnf` package manager
+- **SUSE Linux Enterprise Server / openSUSE Leap**: Uses `zypper` package manager
 
 ## Package Modes
 

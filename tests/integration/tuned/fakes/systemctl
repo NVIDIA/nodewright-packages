@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Test double for systemctl: containers have no systemd. Tracks the enabled and
+# active state of units in plain files so the tuned lifecycle scripts and their
+# checks can run unchanged.
+#
+# Supported: enable/disable [--now], start/stop/restart, is-active/is-enabled
+# [--quiet], status. `status` exits 3 for an inactive unit, like systemd.
+
+set -euo pipefail
+
+STATE_DIR="${FAKE_SYSTEMCTL_STATE:-/tmp/fake-systemctl}"
+mkdir -p "${STATE_DIR}"
+
+verb=""
+now=false
+units=()
+for arg in "$@"; do
+    case "${arg}" in
+        --now) now=true ;;
+        --quiet | -q | --no-pager) ;;
+        -*) ;;
+        *)
+            if [[ -z "${verb}" ]]; then
+                verb="${arg}"
+            else
+                units+=("${arg%.service}")
+            fi
+            ;;
+    esac
+done
+
+rc=0
+for unit in "${units[@]}"; do
+    case "${verb}" in
+        enable)
+            touch "${STATE_DIR}/${unit}.enabled"
+            if "${now}"; then touch "${STATE_DIR}/${unit}.active"; fi
+            ;;
+        disable)
+            rm -f "${STATE_DIR}/${unit}.enabled"
+            if "${now}"; then rm -f "${STATE_DIR}/${unit}.active"; fi
+            ;;
+        start | restart) touch "${STATE_DIR}/${unit}.active" ;;
+        stop) rm -f "${STATE_DIR}/${unit}.active" ;;
+        is-active) [[ -f "${STATE_DIR}/${unit}.active" ]] || rc=3 ;;
+        is-enabled) [[ -f "${STATE_DIR}/${unit}.enabled" ]] || rc=1 ;;
+        status)
+            if [[ -f "${STATE_DIR}/${unit}.active" ]]; then
+                echo "${unit}.service - fake unit; Active: active (running)"
+            else
+                echo "${unit}.service - fake unit; Active: inactive (dead)"
+                rc=3
+            fi
+            ;;
+        *) ;;
+    esac
+done
+exit "${rc}"

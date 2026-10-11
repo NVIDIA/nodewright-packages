@@ -47,6 +47,9 @@ case $ID in
         dnf upgrade -y
         dnf install -y tuned
     ;;
+    sles* | opensuse*)
+        zypper --non-interactive install tuned
+    ;;
     *)
         echo "Unsupported Distro: $ID"
         exit 1
