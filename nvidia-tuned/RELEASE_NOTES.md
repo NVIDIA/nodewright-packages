@@ -20,6 +20,34 @@ example is not itself picked up as release notes):
     - Notable behavior change worth calling out.
 -->
 
+## 0.10.2
+
+Compatibility with OCI GB300 nodes on Oracle Cloud Agent 1.64 and
+`oci-hpc-network-device-names` 3.x.
+
+### Spectrum-X congestion control run by OCA
+
+OCA 1.64 runs DOCA Spectrum-X congestion control itself on GB300, from persistent
+`doca_spcx_cc@rdma_railN` units. `configure-spcx-cc` treated those processes as a second
+owner and failed, leaving the node tainted. It now defers when every `doca_spcx_cc`
+process belongs to a persistent systemd unit that is not its own: it removes this
+package's units and udev rule, and the check verifies the other units report
+`PCC host status Active`. Transient units and processes without a unit are still
+refused, as before. Nodes where nothing else runs congestion control are unchanged.
+
+### NCCL topology file
+
+The OCI GB300 NCCL topology file now names each NIC under both device naming schemes.
+NCCL matches the file's interfaces by name (`<VF ibdev>_dma`), and
+`oci-hpc-network-device-names` 3.x renames the VFs from `mlx5_0..3` to `rdma_vf_rail0..3`.
+On those nodes the `mlx5_N_dma` entries matched nothing, so their 800 Gb/s speed was not
+applied; the VFs themselves report 200 Gb/s.
+
+Each NIC now carries a second `<net>` entry, identical apart from the
+`rdma_vf_railN_dma` name. NCCL 2.27 and later drop the entry that matches no device, and
+GB300 requires 2.27 or later. The file still lands at `${TOPO_PATH}` (default
+`/etc/nccl/topo.xml`), so workloads are unchanged on either image.
+
 ## 0.10.1
 
 Bump to pull in tuned 1.4.0 which has support for SUSE.

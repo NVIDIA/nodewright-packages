@@ -186,6 +186,30 @@ def start_foreign_daemon(node: DockerTestRunner, rail: str):
     )
 
 
+FAKE_PROC = "/tmp/proc"
+
+
+def own_foreign_daemons(node: DockerTestRunner, unit: str, transient: bool = False):
+    """Attribute every running doca_spcx_cc to a systemd unit, the way OCA 1.64 runs it.
+
+    The container has no systemd, so the cgroup the scripts read is faked under
+    FAKE_PROC (passed as PROC_DIR) and the unit is marked active in the systemctl fake.
+    `unit` takes the process index, so each process gets its own instance.
+    """
+    cmds = [f"rm -rf {FAKE_PROC}", f"mkdir -p {FAKE_PROC}", "i=0"]
+    cmds.append(
+        "for pid in $(pgrep -x doca_spcx_cc); do "
+        f"u=$(printf {quote(unit)} $i); "
+        f"mkdir -p {FAKE_PROC}/$pid; "
+        f"cp /proc/$pid/cmdline {FAKE_PROC}/$pid/cmdline; "
+        f"echo \"0::/system.slice/system-doca_spcx_cc.slice/$u\" > {FAKE_PROC}/$pid/cgroup; "
+        "mkdir -p /tmp/fake-systemctl; touch /tmp/fake-systemctl/active.$u; "
+        + ("touch /tmp/fake-systemctl/transient.$u; " if transient else "")
+        + "i=$((i + 1)); done"
+    )
+    assert sh(node, " && ".join(cmds)) == 0
+
+
 def stage_rails(node: DockerTestRunner, count: int = 4):
     """Fake /sys/class/infiniband matching what a real GB300 node presents.
 
@@ -416,6 +440,79 @@ def test_spcx_cc_foreign_guard_reports_discovered_state_not_assumed_names(node):
     # No systemd in the test container, so the owner is reported as absent rather than guessed.
     assert said(node, "<no systemd unit>"), output(node)
     assert not said(node, "doca-spcx-cc-rail0"), output(node)
+
+
+def oca_rails(node: DockerTestRunner):
+    """The device names OCA 1.64 leaves on GB300: bonds renamed to rdma_railN, so the
+    default mlx5_bond_* glob finds nothing."""
+    cmds = [f"rm -rf {IB_DIR}", f"mkdir -p {IB_DIR}"]
+    cmds += [f"mkdir -p {IB_DIR}/rdma_rail{i}" for i in range(4)]
+    assert sh(node, " && ".join(cmds)) == 0
+
+
+def test_spcx_cc_defers_to_persistent_units_run_elsewhere(node):
+    """OCA 1.64 runs PCC itself from persistent units; the package steps aside."""
+    configure(node, spcx_cc="on", **OCI_GB300)
+    oca_rails(node)
+    for i in range(4):
+        start_foreign_daemon(node, f"rdma_rail{i}")
+    own_foreign_daemons(node, "doca_spcx_cc@rdma_rail%d.service")
+    env = {"PROC_DIR": FAKE_PROC}
+
+    assert step(node, "configure_spcx_cc.sh", env) == 0, output(node)
+    assert said(node, "Deferring to them"), output(node)
+    assert said(node, "doca_spcx_cc@rdma_rail3.service"), output(node)
+    assert not exists(node, UNIT_DEST)
+    assert not exists(node, RULES_DEST)
+
+    assert step(node, "configure_spcx_cc_check.sh", env) == 0, output(node)
+    assert said(node, "run outside this package"), output(node)
+
+
+def test_spcx_cc_deferring_removes_units_this_package_installed(node):
+    """A node that ran this package's units hands over without leaving a second owner."""
+    configure(node, spcx_cc="on", **OCI_GB300)
+    stage_rails(node)
+    assert step(node, "configure_spcx_cc.sh") == 0, output(node)
+    assert exists(node, UNIT_DEST)
+
+    oca_rails(node)
+    for i in range(4):
+        start_foreign_daemon(node, f"rdma_rail{i}")
+    own_foreign_daemons(node, "doca_spcx_cc@rdma_rail%d.service")
+    env = {"PROC_DIR": FAKE_PROC}
+
+    assert step(node, "configure_spcx_cc.sh", env) == 0, output(node)
+    assert not exists(node, UNIT_DEST)
+    assert not exists(node, RULES_DEST)
+    assert step(node, "configure_spcx_cc_check.sh", env) == 0, output(node)
+
+
+def test_spcx_cc_still_refuses_transient_units(node):
+    """`systemd-run` units vanish on reboot, so they are not an owner to defer to."""
+    configure(node, spcx_cc="on", **OCI_GB300)
+    stage_rails(node)
+    start_foreign_daemon(node, "mlx5_bond_0")
+    own_foreign_daemons(node, "run-u%d.service", transient=True)
+
+    assert step(node, "configure_spcx_cc.sh", {"PROC_DIR": FAKE_PROC}) != 0
+    assert said(node, "already running outside this package"), output(node)
+    assert said(node, "owner run-u0.service"), output(node)
+    assert not exists(node, UNIT_DEST)
+
+
+def test_spcx_cc_deferred_check_fails_when_an_owner_never_reports_ready(node):
+    """Deferring is only right while the other owner actually has PCC engaged."""
+    configure(node, spcx_cc="on", **OCI_GB300)
+    oca_rails(node)
+    start_foreign_daemon(node, "rdma_rail0")
+    own_foreign_daemons(node, "doca_spcx_cc@rdma_rail%d.service")
+    env = {"PROC_DIR": FAKE_PROC}
+    assert step(node, "configure_spcx_cc.sh", env) == 0, output(node)
+
+    env["FAKE_JOURNAL_NEVER_READY"] = "1"
+    assert step(node, "configure_spcx_cc_check.sh", env) != 0
+    assert said(node, "did not report"), output(node)
 
 
 # ---------------------------------------------------------------------------

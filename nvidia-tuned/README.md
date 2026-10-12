@@ -326,6 +326,11 @@ host-level steps do need a reboot:
   programmable congestion control algorithm cannot take effect without it, and fails
   with the `mlxconfig` command to fix it otherwise. Setting firmware stays manual.
   A node with `spcx_cc: "off"` is never checked.
+  When every `doca_spcx_cc` process on the node already belongs to a persistent systemd
+  unit from elsewhere, the step defers to it: it removes this package's own units and
+  the check verifies those units report ready instead. Oracle Cloud Agent 1.64 does
+  this on GB300 with its own `doca_spcx_cc@rdma_railN` units. Transient units and bare
+  processes are still refused.
 
 Both steps are no-ops for every other `service`/`accelerator` pair, so existing `eks`,
 `aks`, and `bcm` deployments are unaffected and still need no `interrupt`.
