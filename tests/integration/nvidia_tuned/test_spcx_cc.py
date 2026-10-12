@@ -173,7 +173,8 @@ def start_foreign_daemon(node: DockerTestRunner, rail: str):
     Copying an ELF binary gives the right comm, and `exec -a` supplies a cmdline in the
     real daemon's shape so the rail can be parsed out of it.
     """
-    assert sh(node, "cp /usr/bin/sleep /usr/local/bin/doca_spcx_cc") == 0
+    # Copied once: a second cp over the binary while a daemon runs it fails (ETXTBSY).
+    assert sh(node, "test -x /usr/local/bin/doca_spcx_cc || cp /usr/bin/sleep /usr/local/bin/doca_spcx_cc") == 0
     # argv0 travels via the environment so it does not have to survive nested quoting.
     assert (
         sh(
@@ -499,6 +500,24 @@ def test_spcx_cc_still_refuses_transient_units(node):
     assert said(node, "already running outside this package"), output(node)
     assert said(node, "owner run-u0.service"), output(node)
     assert not exists(node, UNIT_DEST)
+
+
+def test_spcx_cc_does_not_defer_while_a_sibling_owner_unit_is_down(node):
+    """Three live owners and one failed instance would leave a rail uncovered."""
+    configure(node, spcx_cc="on", **OCI_GB300)
+    oca_rails(node)
+    for i in range(3):
+        start_foreign_daemon(node, f"rdma_rail{i}")
+    own_foreign_daemons(node, "doca_spcx_cc@rdma_rail%d.service")
+    assert sh(node, "touch /tmp/fake-systemctl/failed.doca_spcx_cc@rdma_rail3.service") == 0
+    env = {"PROC_DIR": FAKE_PROC}
+
+    assert step(node, "configure_spcx_cc.sh", env) != 0
+    assert said(node, "doca_spcx_cc@rdma_rail3.service is not active"), output(node)
+    assert not exists(node, UNIT_DEST)
+
+    assert step(node, "configure_spcx_cc_check.sh", env) != 0
+    assert said(node, "doca_spcx_cc@rdma_rail3.service is not active"), output(node)
 
 
 def test_spcx_cc_deferred_check_fails_when_an_owner_never_reports_ready(node):

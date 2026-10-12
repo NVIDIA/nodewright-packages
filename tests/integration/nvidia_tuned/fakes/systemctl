@@ -105,10 +105,13 @@ case "${verb}" in
         fi
         ;;
     is-active)
+        # Like systemctl, --quiet suppresses the state and leaves only the exit code.
+        quiet=false
+        for arg in "$@"; do [[ "${arg}" == "--quiet" ]] && quiet=true; done
         if [[ -f "${STATE_DIR}/active.${unit}" ]]; then
-            echo "active"
+            "${quiet}" || echo "active"
         else
-            echo "inactive"
+            "${quiet}" || echo "inactive"
             exit 3
         fi
         ;;
@@ -171,7 +174,7 @@ case "${verb}" in
         # `unit` holds the glob the caller passed, e.g. 'doca-spcx-cc@*.service'.
         # Emit one unit name per line; callers take field 1.
         seen=""
-        for marker in "${STATE_DIR}"/enabled.* "${STATE_DIR}"/active.* "${STATE_DIR}"/stub.*; do
+        for marker in "${STATE_DIR}"/enabled.* "${STATE_DIR}"/active.* "${STATE_DIR}"/stub.* "${STATE_DIR}"/failed.*; do
             [[ -e "${marker}" ]] || continue
             name="${marker##*/}"
             # A stub.<unit> marker models what systemd lists after the unit file is
@@ -179,11 +182,13 @@ case "${verb}" in
             # not-found. That residue is what a successful uninstall leaves behind.
             case "${name}" in
                 stub.*) load="not-found inactive dead" ;;
+                failed.*) load="loaded failed failed" ;;
                 *) load="loaded active running" ;;
             esac
             name="${name#enabled.}"
             name="${name#active.}"
             name="${name#stub.}"
+            name="${name#failed.}"
             case " ${seen} " in *" ${name} "*) continue ;; esac
             seen="${seen} ${name}"
             # Glob matching on the right-hand side is the point: callers pass a

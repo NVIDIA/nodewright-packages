@@ -110,7 +110,28 @@ external_owners() {
         owners+="${unit}"$'\n'
     done
 
-    printf '%s' "${owners}" | sort -u
+    # A live process per owner is not enough. An owner that runs a template per rail
+    # must have every instance systemd knows about up, or a dead sibling would leave
+    # its rail without congestion control after this package hands over.
+    local instances="" prefix
+    while read -r unit; do
+        [[ -n "${unit}" ]] || continue
+        if [[ "${unit}" == *@* ]]; then
+            prefix="${unit%%@*}@"
+            instances+="$(systemctl list-units --all --plain --no-legend "${prefix}*.service" 2>/dev/null | awk '{print $1}')"$'\n'
+        fi
+        instances+="${unit}"$'\n'
+    done <<< "${owners}"
+    instances="$(awk 'NF' <<< "${instances}" | sort -u)"
+
+    while read -r unit; do
+        if ! systemctl is-active --quiet "${unit}"; then
+            echo "Not deferring: ${unit} is not active, so its rail would have no congestion control" >&2
+            return 1
+        fi
+    done <<< "${instances}"
+
+    echo "${instances}"
 }
 
 # Returns non-zero when a doca_spcx_cc process is owned by anything other than this
