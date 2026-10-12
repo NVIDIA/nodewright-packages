@@ -141,6 +141,10 @@ case "${verb}" in
                 fi
                 if [[ "${prop}" == "LimitSTACK" ]]; then echo "${hard}"; else echo "${soft}"; fi
                 ;;
+            Transient)
+                # A transient.<unit> marker models a unit created by `systemd-run`.
+                if [[ -f "${STATE_DIR}/transient.${unit}" ]]; then echo "yes"; else echo "no"; fi
+                ;;
             *)
                 echo "fake systemctl: unsupported property '${prop}' for show" >&2
                 exit 64

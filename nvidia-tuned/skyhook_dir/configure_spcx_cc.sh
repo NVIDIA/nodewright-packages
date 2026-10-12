@@ -34,6 +34,11 @@
 # Setting it to a falsey value tears the units down and, importantly, never looks for the
 # DOCA binary, so a node that has opted out does not need DOCA installed at all.
 #
+# A node whose congestion control is already run by persistent systemd units from
+# elsewhere is left to them. OCA 1.64 does this on multiplanar shapes, running its own
+# doca_spcx_cc@<rail> template. This package then removes its own units rather than
+# give a rail a second process. Transient units and bare processes are still refused.
+#
 # `spcx_cc` is a configmap key rather than an env var on purpose: the operator diffs
 # configmap keys and records them in status.ConfigUpdates, so flipping it re-runs this
 # step and can drive a targeted `configInterrupts` entry. Env changes do not.
@@ -53,6 +58,7 @@ DOCA_SPCX_CC_BIN="${DOCA_SPCX_CC_BIN:-/opt/mellanox/doca/tools/doca_spcx_cc}"
 IB_CLASS_DIR="${IB_CLASS_DIR:-/sys/class/infiniband}"
 RAIL_GLOB="${RAIL_GLOB:-mlx5_bond_*}"
 MLXCONFIG_BIN="${MLXCONFIG_BIN:-mlxconfig}"
+PROC_DIR="${PROC_DIR:-/proc}"
 
 # The NIC firmware setting that has to be on for a user-programmable congestion control
 # program to do anything. doca_spcx_cc is exactly such a program.
@@ -152,8 +158,28 @@ owning_unit() {
     local pid="$1" cgroup
     # Read first, then parse. A `... | head -1` pipeline can return 141 under pipefail
     # when head exits before the reader finishes, and cgroup v1 emits many lines.
-    cgroup="$(cat "/proc/${pid}/cgroup" 2>/dev/null || true)"
+    cgroup="$(cat "${PROC_DIR}/${pid}/cgroup" 2>/dev/null || true)"
     awk -F/ '$NF ~ /\.service$/ { print $NF; exit }' <<< "${cgroup}"
+}
+
+# Echo the units running doca_spcx_cc when every process belongs to a persistent
+# systemd unit that is not this package's template, one per line. Returns non-zero when
+# there are no processes, or when any one is ours, transient, or has no unit: those keep
+# the handling in assert_no_foreign_processes.
+external_owners() {
+    local pid unit owners=""
+    local -a pids
+    mapfile -t pids < <(pgrep -x doca_spcx_cc 2>/dev/null || true)
+    [[ "${#pids[@]}" -gt 0 ]] || return 1
+
+    for pid in "${pids[@]}"; do
+        unit="$(owning_unit "${pid}")"
+        [[ -n "${unit}" && "${unit}" != doca-spcx-cc@* ]] || return 1
+        [[ "$(systemctl show -p Transient --value "${unit}" 2>/dev/null)" == "no" ]] || return 1
+        owners+="${unit}"$'\n'
+    done
+
+    printf '%s' "${owners}" | sort -u
 }
 
 # A doca_spcx_cc process this package did not start is a second owner of the same rail.
@@ -173,7 +199,7 @@ assert_no_foreign_processes() {
         # Instances of this package's own template are not foreign.
         [[ "${unit}" == doca-spcx-cc@* ]] && continue
 
-        rail="$(tr '\0' ' ' < "/proc/${pid}/cmdline" 2>/dev/null | sed -n 's/.*-d[= ]\([^ ]*\).*/\1/p')"
+        rail="$(tr '\0' ' ' < "${PROC_DIR}/${pid}/cmdline" 2>/dev/null | sed -n 's/.*-d[= ]\([^ ]*\).*/\1/p')"
         report+="    pid ${pid}  rail ${rail:-unknown}  owner ${unit:-<no systemd unit>}"$'\n'
         found=$((found + 1))
     done
@@ -289,6 +315,15 @@ main() {
     if ! spcx_cc_requested; then
         # No DOCA lookup on this path: opting out must never require the dependency.
         echo "Spectrum-X congestion control switched off via the spcx_cc configmap key; tearing down"
+        teardown
+        return 0
+    fi
+
+    local owners
+    if owners="$(external_owners)"; then
+        echo "Spectrum-X congestion control is already run by persistent units outside this package:"
+        sed 's/^/    /' <<< "${owners}"
+        echo "Deferring to them; removing this package's own units so no rail gets a second process"
         teardown
         return 0
     fi
