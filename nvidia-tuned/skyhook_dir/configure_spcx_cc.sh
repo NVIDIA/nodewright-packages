@@ -319,10 +319,12 @@ main() {
         return 0
     fi
 
-    local owners
+    local owners owner
     if owners="$(external_owners)"; then
         echo "Spectrum-X congestion control is already run by persistent units outside this package:"
-        sed 's/^/    /' <<< "${owners}"
+        while read -r owner; do
+            echo "    ${owner}"
+        done <<< "${owners}"
         echo "Deferring to them; removing this package's own units so no rail gets a second process"
         teardown
         return 0
