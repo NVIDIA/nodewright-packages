@@ -37,7 +37,7 @@ tuned/
 - **Ubuntu/Debian**: Uses `apt` package manager
 - **CentOS/RHEL/Amazon Linux**: Uses `yum` package manager
 - **Fedora**: Uses `dnf` package manager
-- **SUSE Linux Enterprise Server / openSUSE Leap**: Uses `zypper` package manager
+- **SUSE Linux Enterprise Server / openSUSE (Leap, Tumbleweed, Slowroll)**: Uses `zypper` package manager. openSUSE MicroOS and Leap Micro are not supported: their root filesystem is read-only, so tuned has to be added with `transactional-update`.
 
 ## Package Modes
 
@@ -396,14 +396,14 @@ tuned-adm verify
 ## Dependencies
 
 - **System Requirements**: Linux with systemd
-- **Package Managers**: apt, yum, or dnf
+- **Package Managers**: apt, yum, dnf, or zypper
 - **Runtime Dependencies**:
   - `systemctl` (systemd)
   - `sudo` (for profile management)
 
 ## Version
 
-- **Package Version**: 1.0.0
+- **Package Version**: 1.4.0
 - **Schema Version**: v1
 
 ## Contributing

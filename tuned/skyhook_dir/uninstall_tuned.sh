@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
@@ -17,11 +17,10 @@
 # limitations under the License.
 
 
-set -xe
-set -u
+set -euxo pipefail
 
 source /etc/os-release
-case $ID in
+case "${ID}" in
     ubuntu* | debian*)
         export DEBIAN_FRONTEND=noninteractive
 
@@ -33,11 +32,19 @@ case $ID in
     fedora*)
         dnf remove -y tuned
     ;;
+    opensuse-microos | opensuse-leap-micro)
+        echo "Unsupported Distro: ${ID} (read-only root, use transactional-update)"
+        exit 1
+    ;;
     sles* | opensuse*)
-        zypper --non-interactive remove tuned
+        # zypper exits 104 when tuned is not installed. Skip it in that case so
+        # uninstall is a no-op on re-run, matching the apt branch.
+        if rpm -q tuned >/dev/null 2>&1; then
+            ZYPP_LOCK_TIMEOUT=60 zypper --non-interactive remove tuned
+        fi
     ;;
     *)
-        echo "Unsupported Distro: $ID"
+        echo "Unsupported Distro: ${ID}"
         exit 1
     ;;
 esac
