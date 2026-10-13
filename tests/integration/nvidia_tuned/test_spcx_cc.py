@@ -190,23 +190,37 @@ def start_foreign_daemon(node: DockerTestRunner, rail: str):
 FAKE_PROC = "/tmp/proc"
 
 
-def own_foreign_daemons(node: DockerTestRunner, unit: str, transient: bool = False):
-    """Attribute every running doca_spcx_cc to a systemd unit, the way OCA 1.64 runs it.
+def own_foreign_daemons(
+    node: DockerTestRunner,
+    unit: str,
+    transient: bool = False,
+    main: bool = True,
+    exec_start: str = "",
+    only: str = "",
+):
+    """Attribute running doca_spcx_cc processes to a systemd unit, the way OCA 1.64 runs it.
 
     The container has no systemd, so the cgroup the scripts read is faked under
     FAKE_PROC (passed as PROC_DIR) and the unit is marked active in the systemctl fake.
-    `unit` takes the process index, so each process gets its own instance.
+    `unit` takes the process's rail via %s, so each rail gets its own instance. `main`
+    records the process as the unit's main process; `exec_start` sets the command the
+    unit reports. `only` limits this to processes whose rail starts with it, so a
+    second call can attribute a different set.
     """
-    cmds = [f"rm -rf {FAKE_PROC}", f"mkdir -p {FAKE_PROC}", "i=0"]
+    cmds = [f"mkdir -p {FAKE_PROC} /tmp/fake-systemctl"]
     cmds.append(
         "for pid in $(pgrep -x doca_spcx_cc); do "
-        f"u=$(printf {quote(unit)} $i); "
-        f"mkdir -p {FAKE_PROC}/$pid; "
+        "rail=$(tr '\\0' ' ' < /proc/$pid/cmdline | sed -n 's/.*-d \\([^ ]*\\).*/\\1/p'); "
+        f"case \"$rail\" in {quote(only)}*) ;; *) continue ;; esac; "
+        + (f"u=$(printf {quote(unit)} \"$rail\"); " if "%s" in unit else f"u={quote(unit)}; ")
+        + f"mkdir -p {FAKE_PROC}/$pid; "
         f"cp /proc/$pid/cmdline {FAKE_PROC}/$pid/cmdline; "
         f"echo \"0::/system.slice/system-doca_spcx_cc.slice/$u\" > {FAKE_PROC}/$pid/cgroup; "
-        "mkdir -p /tmp/fake-systemctl; touch /tmp/fake-systemctl/active.$u; "
+        "touch /tmp/fake-systemctl/active.$u; "
         + ("touch /tmp/fake-systemctl/transient.$u; " if transient else "")
-        + "i=$((i + 1)); done"
+        + ("echo $pid > /tmp/fake-systemctl/mainpid.$u; " if main else "")
+        + (f"echo {quote(exec_start)} > /tmp/fake-systemctl/execstart.$u; " if exec_start else "")
+        + "done"
     )
     assert sh(node, " && ".join(cmds)) == 0
 
@@ -444,20 +458,30 @@ def test_spcx_cc_foreign_guard_reports_discovered_state_not_assumed_names(node):
 
 
 def oca_rails(node: DockerTestRunner):
-    """The device names OCA 1.64 leaves on GB300: bonds renamed to rdma_railN, so the
-    default mlx5_bond_* glob finds nothing."""
+    """The device names OCA 1.64 leaves on GB300: bonds renamed to rdma_railN and host
+    VFs to rdma_vf_railN, so the default mlx5_bond_* glob finds nothing."""
     cmds = [f"rm -rf {IB_DIR}", f"mkdir -p {IB_DIR}"]
     cmds += [f"mkdir -p {IB_DIR}/rdma_rail{i}" for i in range(4)]
+    cmds += [f"mkdir -p {IB_DIR}/rdma_vf_rail{i}/device/physfn" for i in range(4)]
     assert sh(node, " && ".join(cmds)) == 0
+
+
+OCA_UNIT = "doca_spcx_cc@%s.service"
+OWN_UNIT = "doca-spcx-cc@%s.service"
+
+
+def start_oca(node: DockerTestRunner, rails=range(4), **kwargs):
+    """Run OCA 1.64's congestion control on the given rdma_railN rails."""
+    for i in rails:
+        start_foreign_daemon(node, f"rdma_rail{i}")
+    own_foreign_daemons(node, OCA_UNIT, only="rdma_rail", **kwargs)
 
 
 def test_spcx_cc_defers_to_persistent_units_run_elsewhere(node):
     """OCA 1.64 runs PCC itself from persistent units; the package steps aside."""
     configure(node, spcx_cc="on", **OCI_GB300)
     oca_rails(node)
-    for i in range(4):
-        start_foreign_daemon(node, f"rdma_rail{i}")
-    own_foreign_daemons(node, "doca_spcx_cc@rdma_rail%d.service")
+    start_oca(node)
     env = {"PROC_DIR": FAKE_PROC}
 
     assert step(node, "configure_spcx_cc.sh", env) == 0, output(node)
@@ -478,9 +502,7 @@ def test_spcx_cc_deferring_removes_units_this_package_installed(node):
     assert exists(node, UNIT_DEST)
 
     oca_rails(node)
-    for i in range(4):
-        start_foreign_daemon(node, f"rdma_rail{i}")
-    own_foreign_daemons(node, "doca_spcx_cc@rdma_rail%d.service")
+    start_oca(node)
     env = {"PROC_DIR": FAKE_PROC}
 
     assert step(node, "configure_spcx_cc.sh", env) == 0, output(node)
@@ -494,11 +516,11 @@ def test_spcx_cc_still_refuses_transient_units(node):
     configure(node, spcx_cc="on", **OCI_GB300)
     stage_rails(node)
     start_foreign_daemon(node, "mlx5_bond_0")
-    own_foreign_daemons(node, "run-u%d.service", transient=True)
+    own_foreign_daemons(node, "run-%s.service", transient=True)
 
     assert step(node, "configure_spcx_cc.sh", {"PROC_DIR": FAKE_PROC}) != 0
     assert said(node, "already running outside this package"), output(node)
-    assert said(node, "owner run-u0.service"), output(node)
+    assert said(node, "owner run-mlx5_bond_0.service"), output(node)
     assert not exists(node, UNIT_DEST)
 
 
@@ -506,28 +528,168 @@ def test_spcx_cc_does_not_defer_while_a_sibling_owner_unit_is_down(node):
     """Three live owners and one failed instance would leave a rail uncovered."""
     configure(node, spcx_cc="on", **OCI_GB300)
     oca_rails(node)
-    for i in range(3):
-        start_foreign_daemon(node, f"rdma_rail{i}")
-    own_foreign_daemons(node, "doca_spcx_cc@rdma_rail%d.service")
+    start_oca(node, rails=range(3))
     assert sh(node, "touch /tmp/fake-systemctl/failed.doca_spcx_cc@rdma_rail3.service") == 0
     env = {"PROC_DIR": FAKE_PROC}
 
     assert step(node, "configure_spcx_cc.sh", env) != 0
-    assert said(node, "doca_spcx_cc@rdma_rail3.service is not active"), output(node)
+    assert said(node, "rdma_rail3 has no congestion control process outside this package"), output(node)
     assert not exists(node, UNIT_DEST)
 
+    # The check names the outside owner rather than this package's missing template.
     assert step(node, "configure_spcx_cc_check.sh", env) != 0
-    assert said(node, "doca_spcx_cc@rdma_rail3.service is not active"), output(node)
+    assert said(node, "rdma_rail3 has no congestion control process outside this package"), output(node)
+    assert said(node, "cannot defer to them"), output(node)
+    assert not said(node, "unit template missing"), output(node)
+
+
+def test_spcx_cc_does_not_defer_while_an_owner_instance_is_inactive(node):
+    """Every instance of the owner's template must be up, not just one per device."""
+    configure(node, spcx_cc="on", **OCI_GB300)
+    oca_rails(node)
+    start_oca(node)
+    assert sh(node, "touch /tmp/fake-systemctl/failed.doca_spcx_cc@rdma_rail9.service") == 0
+    env = {"PROC_DIR": FAKE_PROC}
+
+    assert step(node, "configure_spcx_cc.sh", env) != 0
+    assert said(node, "doca_spcx_cc@rdma_rail9.service is not active"), output(node)
+    assert not exists(node, UNIT_DEST)
+
+
+def test_spcx_cc_does_not_defer_when_a_rail_has_no_owner_instance(node):
+    """An instance systemd never loaded is invisible to list-units; check the devices."""
+    configure(node, spcx_cc="on", **OCI_GB300)
+    oca_rails(node)
+    start_oca(node, rails=range(3))
+    env = {"PROC_DIR": FAKE_PROC}
+
+    assert step(node, "configure_spcx_cc.sh", env) != 0
+    assert said(node, "rdma_rail3 has no congestion control process outside this package"), output(node)
+    assert not exists(node, UNIT_DEST)
+
+
+def test_spcx_cc_refuses_a_stray_process_in_an_unrelated_unit(node):
+    """A process left behind by a script in a long-lived unit is not a persistent owner.
+
+    cloud-final.service stays active after its script ends, but nothing restarts a
+    process it left behind after a reboot.
+    """
+    configure(node, spcx_cc="on", **OCI_GB300)
+    oca_rails(node)
+    for i in range(4):
+        start_foreign_daemon(node, f"rdma_rail{i}")
+    own_foreign_daemons(node, "cloud-final.service", main=False)
+    env = {"PROC_DIR": FAKE_PROC}
+
+    assert step(node, "configure_spcx_cc.sh", env) != 0
+    assert said(node, "already running outside this package"), output(node)
+    assert said(node, "owner cloud-final.service"), output(node)
+
+
+def test_spcx_cc_defers_to_a_unit_whose_command_runs_the_tool(node):
+    """A unit that runs doca_spcx_cc through a wrapper still owns it."""
+    configure(node, spcx_cc="on", **OCI_GB300)
+    oca_rails(node)
+    start_oca(
+        node,
+        main=False,
+        exec_start="/usr/bin/env /opt/mellanox/doca/tools/doca_spcx_cc -d rdma_rail0 -w -1",
+    )
+    env = {"PROC_DIR": FAKE_PROC}
+
+    assert step(node, "configure_spcx_cc.sh", env) == 0, output(node)
+    assert said(node, "Deferring to them"), output(node)
+
+
+def test_spcx_cc_hands_over_while_this_packages_units_still_run(node):
+    """A 0.10.0 node whose units are still running when OCA 1.64 starts its own.
+
+    Both sets of processes are present; the package must stop its own rather than
+    refuse, since OCA already covers every rail.
+    """
+    configure(node, spcx_cc="on", **OCI_GB300)
+    stage_rails(node)
+    assert step(node, "configure_spcx_cc.sh") == 0, output(node)
+    for i in range(4):
+        start_foreign_daemon(node, f"mlx5_bond_{i}")
+    own_foreign_daemons(node, OWN_UNIT, only="mlx5_bond")
+
+    oca_rails(node)
+    start_oca(node)
+    env = {"PROC_DIR": FAKE_PROC}
+
+    assert step(node, "configure_spcx_cc.sh", env) == 0, output(node)
+    assert said(node, "Deferring to them"), output(node)
+    assert not exists(node, UNIT_DEST)
+    for i in range(4):
+        assert not exists(node, f"/tmp/fake-systemctl/active.doca-spcx-cc@mlx5_bond_{i}.service")
+
+    assert step(node, "configure_spcx_cc_check.sh", env) == 0, output(node)
+    assert said(node, "run outside this package"), output(node)
+
+
+def test_spcx_cc_deferred_check_ignores_not_found_stubs(node):
+    """After handing over, the old instances linger as not-found stubs until reboot.
+
+    The device units udev created keep `Wants=` on them, as for uninstall. Counting the
+    stubs left a node that had handed over unable to pass the check.
+    """
+    configure(node, spcx_cc="on", **OCI_GB300)
+    stage_rails(node)
+    assert step(node, "configure_spcx_cc.sh") == 0, output(node)
+
+    oca_rails(node)
+    start_oca(node)
+    env = {"PROC_DIR": FAKE_PROC}
+    assert step(node, "configure_spcx_cc.sh", env) == 0, output(node)
+    for i in range(4):
+        assert sh(node, f"touch /tmp/fake-systemctl/stub.doca-spcx-cc@mlx5_bond_{i}.service") == 0
+
+    assert step(node, "configure_spcx_cc_check.sh", env) == 0, output(node)
+    assert said(node, "run outside this package"), output(node)
+
+    # A unit of this package's that is still loaded remains a failure.
+    assert sh(node, "touch /tmp/fake-systemctl/active.doca-spcx-cc@mlx5_bond_0.service") == 0
+    assert step(node, "configure_spcx_cc_check.sh", env) != 0
+    assert said(node, "still loaded"), output(node)
+
+
+def test_spcx_cc_off_check_ignores_not_found_stubs(node):
+    """Switching off after running leaves the same stubs, and must pass too."""
+    configure(node, spcx_cc="on", **OCI_GB300)
+    stage_rails(node)
+    assert step(node, "configure_spcx_cc.sh") == 0, output(node)
+
+    configure(node, spcx_cc="off", **OCI_GB300)
+    assert step(node, "configure_spcx_cc.sh") == 0, output(node)
+    assert sh(node, "touch /tmp/fake-systemctl/stub.doca-spcx-cc@mlx5_bond_0.service") == 0
+
+    assert step(node, "configure_spcx_cc_check.sh") == 0, output(node)
+    assert said(node, "is off"), output(node)
 
 
 def test_spcx_cc_deferred_check_fails_when_an_owner_never_reports_ready(node):
     """Deferring is only right while the other owner actually has PCC engaged."""
     configure(node, spcx_cc="on", **OCI_GB300)
     oca_rails(node)
-    start_foreign_daemon(node, "rdma_rail0")
-    own_foreign_daemons(node, "doca_spcx_cc@rdma_rail%d.service")
+    start_oca(node)
     env = {"PROC_DIR": FAKE_PROC}
     assert step(node, "configure_spcx_cc.sh", env) == 0, output(node)
+
+    env["FAKE_JOURNAL_NEVER_READY"] = "1"
+    assert step(node, "configure_spcx_cc_check.sh", env) != 0
+    assert said(node, "did not report"), output(node)
+
+
+def test_spcx_cc_deferred_check_ignores_readiness_from_an_earlier_run(node):
+    """A persistent journal keeps old readiness lines; only the current run counts."""
+    configure(node, spcx_cc="on", **OCI_GB300)
+    oca_rails(node)
+    start_oca(node)
+    env = {"PROC_DIR": FAKE_PROC}
+    assert step(node, "configure_spcx_cc.sh", env) == 0, output(node)
+    for i in range(4):
+        assert sh(node, f"touch /tmp/fake-systemctl/stale.doca_spcx_cc@rdma_rail{i}.service") == 0
 
     env["FAKE_JOURNAL_NEVER_READY"] = "1"
     assert step(node, "configure_spcx_cc_check.sh", env) != 0
