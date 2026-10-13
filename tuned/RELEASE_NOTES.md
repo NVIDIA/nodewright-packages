@@ -20,6 +20,22 @@ example is not itself picked up as release notes):
     - Notable behavior change worth calling out.
 -->
 
+## 1.4.0
+
+Adds SUSE Linux Enterprise Server and openSUSE support.
+
+- `install_tuned.sh` and `uninstall_tuned.sh` handle `ID=sles*` and
+  `ID=opensuse*` with `zypper`.
+- zypper exit codes 106 (a repo could not be refreshed) and 107 (an RPM
+  scriptlet failed) are accepted when `rpm -q tuned` confirms the package is
+  installed. zypper waits up to 60 seconds for a held zypp lock.
+- openSUSE MicroOS and Leap Micro are rejected with a clear error: their root
+  filesystem is read-only, so tuned has to be added with
+  `transactional-update`.
+- Uninstall no longer fails when the tuned service is already stopped
+  (`systemctl status` exits 3 for an inactive unit). This applies to every
+  distribution.
+
 ## 1.3.2
 
 `apt update` failures during install no longer fail the package by default.
