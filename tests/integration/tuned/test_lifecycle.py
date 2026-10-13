@@ -165,3 +165,36 @@ def test_install_fails_when_zypper_did_not_install_tuned(base_image):
         assert code == 106, out
     finally:
         runner.cleanup()
+
+
+@pytest.mark.parametrize("zypper_exit", ["106", "107"])
+def test_uninstall_accepts_zypper_informational_exit(base_image, zypper_exit):
+    """zypper exit codes 106 and 107 on remove are accepted when tuned did get removed."""
+    require_zypper(base_image)
+    runner, code, out = start(base_image, "install_tuned.sh")
+    try:
+        assert code == 0, out
+        code, out = step(runner, "uninstall_tuned.sh", {"FAKE_ZYPPER_EXIT": zypper_exit})
+        assert code == 0, out
+        assert "WARN: zypper exited" in out, out
+
+        code, out = step(runner, "uninstall_tuned_check.sh")
+        assert code == 0, out
+    finally:
+        runner.cleanup()
+
+
+def test_uninstall_fails_when_zypper_did_not_remove_tuned(base_image):
+    """An informational exit code does not hide a failed removal: rpm must confirm tuned is gone."""
+    require_zypper(base_image)
+    runner, code, out = start(base_image, "install_tuned.sh")
+    try:
+        assert code == 0, out
+        code, out = step(
+            runner,
+            "uninstall_tuned.sh",
+            {"FAKE_ZYPPER_EXIT": "106", "FAKE_ZYPPER_SKIP_REAL": "1"},
+        )
+        assert code == 106, out
+    finally:
+        runner.cleanup()

@@ -27,8 +27,9 @@ Adds SUSE Linux Enterprise Server and openSUSE support.
 - `install_tuned.sh` and `uninstall_tuned.sh` handle `ID=sles*` and
   `ID=opensuse*` with `zypper`.
 - zypper exit codes 106 (a repo could not be refreshed) and 107 (an RPM
-  scriptlet failed) are accepted when `rpm -q tuned` confirms the package is
-  installed. zypper waits up to 60 seconds for a held zypp lock.
+  scriptlet failed) are accepted when `rpm -q tuned` confirms the package was
+  installed (install) or removed (uninstall). zypper waits up to 60 seconds
+  for a held zypp lock.
 - openSUSE MicroOS and Leap Micro are rejected with a clear error: their root
   filesystem is read-only, so tuned has to be added with
   `transactional-update`.

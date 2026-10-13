@@ -38,9 +38,20 @@ case "${ID}" in
     ;;
     sles* | opensuse*)
         # zypper exits 104 when tuned is not installed. Skip it in that case so
-        # uninstall is a no-op on re-run, matching the apt branch.
+        # uninstall is a no-op on re-run, matching the apt branch. As in
+        # install_tuned.sh, accept the informational exit codes 106 (repo
+        # skipped) and 107 (RPM scriptlet failed) only when rpm confirms tuned
+        # is gone, so the service cleanup below still runs.
         if rpm -q tuned >/dev/null 2>&1; then
-            ZYPP_LOCK_TIMEOUT=60 zypper --non-interactive remove tuned
+            rc=0
+            ZYPP_LOCK_TIMEOUT=60 zypper --non-interactive remove tuned || rc=$?
+            if [[ "${rc}" -ne 0 ]]; then
+                if [[ "${rc}" -eq 106 || "${rc}" -eq 107 ]] && ! rpm -q tuned >/dev/null 2>&1; then
+                    echo "WARN: zypper exited ${rc} but tuned is removed; continuing" >&2
+                else
+                    exit "${rc}"
+                fi
+            fi
         fi
     ;;
     *)
