@@ -3,8 +3,8 @@ This NodeWright Package allows you to run arbitrary bash scripts defined in your
 # Example package configuration
 ```
 example:
-    version: 1.1.1
-    image: ghcr.io/nvidia/skyhook-packages/shellscript
+    version: 1.1.2
+    image: ghcr.io/nvidia/nodewright-packages/shellscript
     configMap:
     apply.sh: |-
         #!/bin/bash
