@@ -20,6 +20,32 @@ example is not itself picked up as release notes):
     - Notable behavior change worth calling out.
 -->
 
+## 0.8.1
+
+With `NVIDIA_SETUP_INSTALL_KERNEL=true`, the kernel step no longer runs apt on a node that
+is already booted on the exact target kernel with its packages installed. `install_kernel.sh`
+previously ran `apt-get update` and `apt-get install` unconditionally, so a re-run that had
+nothing to do still depended on the network, the archive and a healthy dpkg database. On
+NVIDIA/aicr#2870 a node already on `6.17.0-1019-aws-64k` carried unrelated dpkg damage (a
+7.0.0 kernel from `unattended-upgrades` whose EFA DKMS build could not compile), and the
+redundant apt call tripped over it and failed node tuning.
+
+apt is skipped only when both of these hold:
+
+- `uname -r` equals the resolved target exactly, flavor included, so an arm64 node on the 4k
+  `6.17.0-1019-aws` kernel does not match `6.17.0-1019-aws-64k`. This is a full-string
+  comparison, unlike `check_kernel_exact`, which compares only the upstream version.
+- dpkg reports the target's `linux-image`, `linux-headers`, `linux-modules` and
+  `linux-modules-extra` packages as installed. Running the target is not enough on its own,
+  because the EFA DKMS build in the full-setup package needs the headers.
+
+The GRUB steps still run when apt is skipped. Setting the saved default to the target is what
+keeps a later kernel install, like the `unattended-upgrades` one above, from becoming the next
+boot.
+
+`NVIDIA_SETUP_INSTALL_KERNEL=false` is unchanged, and this is not the skip-if-newer mode
+requested in #85.
+
 ## 0.8.0
 
 Adds the `eks-gb300` combination, so a GB300 node on EKS runs the package instead of
