@@ -1,6 +1,6 @@
 ## Description
 <!-- Provide a standalone description of changes in this PR. -->
-<!-- Reference any issues closed by this PR with "closes #1234". -->
+<!-- Link the issue this PR closes, which must be assigned to you, with "closes #1234". Trivial changes and Dependabot updates need none. -->
 
 ## How this was verified
 <!-- Which checks did you run, and which could you not run? Scope this to what you changed. -->
@@ -21,6 +21,8 @@
 
 ## Checklist
 - [ ] I am familiar with the [Contributing Guidelines](https://github.com/NVIDIA/nodewright-packages/blob/HEAD/CONTRIBUTING.md).
+- [ ] This PR closes an issue that is assigned to me, or it is a [trivial change](https://github.com/NVIDIA/nodewright-packages/blob/HEAD/CONTRIBUTING.md#open-an-issue-first) that needs none.
+- [ ] My commits are signed off per the [DCO](https://developercertificate.org/) **and** cryptographically signed: `git commit -s -S`.
 - [ ] I ran the checks that apply to this change locally and recorded the result above.
 - [ ] If this changes a package, the "Tested on" section above says what it ran on, or says plainly that it has not run on hardware.
 - [ ] New or existing tests cover these changes.
