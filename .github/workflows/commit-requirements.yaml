@@ -229,8 +229,20 @@ jobs:
             const shellQuote = (v) => "'" + String(v).replace(/'/g, "'\\''") + "'";
             const headRef = shellQuote(context.payload.pull_request.head.ref);
 
+            // The subject is contributor text going into a table cell. Unescaped,
+            // a `|` adds a column, HTML or a backtick changes the rendering, and an
+            // `@user` in a commit subject would have the bot ping that user.
+            // A zero-width space after `@` keeps it readable but not a mention.
+            const mdCell = (v) =>
+              String(v)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/[|`\\]/g, '\\$&')
+                .replace(/@/g, '@\u200b');
+
             const rows = violations
-              .map((v) => `| \`${v.sha.slice(0, 8)}\` | ${v.subject} | ${v.problems.join('<br>')} |`)
+              .map((v) => `| \`${v.sha.slice(0, 8)}\` | ${mdCell(v.subject)} | ${v.problems.join('<br>')} |`)
               .join('\n');
 
             await upsert([

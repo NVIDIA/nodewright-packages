@@ -26,7 +26,7 @@ git commit -s -S -m "your message"
 - `-s` (lowercase) adds a `Signed-off-by` trailer, certifying the [Developer Certificate of Origin 1.1](#what-you-are-certifying) reproduced below.
 - `-S` (uppercase) attaches a GPG or SSH signature, proving the commit came from you.
 
-The two are independent, and neither implies the other. Use both, on every commit. A branch ruleset enforces **Require signed commits** on `main`, and the [Commit Requirements](.github/workflows/commit-requirements.yaml) workflow comments on any pull request carrying a commit that is missing either one.
+The two are independent, and neither implies the other. Use both, on every commit. A branch ruleset enforces **Require signed commits** on `main`, but that rule only sees the squash or merge commit GitHub creates and signs itself, not the commits on your branch. The [Commit Requirements](.github/workflows/commit-requirements.yaml) workflow comments on any pull request carrying a commit that is missing either one.
 
 The `Signed-off-by` trailer should name the commit author, and must be a real name:
 
