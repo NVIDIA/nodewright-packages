@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
@@ -17,11 +17,10 @@
 # limitations under the License.
 
 
-set -xe
-set -u
+set -euxo pipefail
 
 source /etc/os-release
-case $ID in
+case "${ID}" in
     ubuntu* | debian*)
         export DEBIAN_FRONTEND=noninteractive
 
@@ -32,7 +31,7 @@ case $ID in
         # unconditional and still fails loudly if tuned is genuinely
         # unavailable. Set APT_ALLOW_INDEX_FAILURE=false on the Skyhook custom
         # resource's package env to restore strict behavior.
-        if [ "${APT_ALLOW_INDEX_FAILURE:-true}" = "true" ]; then
+        if [[ "${APT_ALLOW_INDEX_FAILURE:-true}" == "true" ]]; then
             apt update -y || echo "WARN: apt update reported errors; continuing (APT_ALLOW_INDEX_FAILURE=true)" >&2
         else
             apt update -y
@@ -47,8 +46,31 @@ case $ID in
         dnf upgrade -y
         dnf install -y tuned
     ;;
+    opensuse-microos | opensuse-leap-micro)
+        # Transactional systems: the root filesystem is read-only, so a plain
+        # `zypper install` fails. tuned has to be added with transactional-update.
+        echo "Unsupported Distro: ${ID} (read-only root, use transactional-update)"
+        exit 1
+    ;;
+    sles* | opensuse*)
+        # zypper reports two outcomes that leave tuned installed with non-zero
+        # informational exit codes: 106 when a repo could not be refreshed and
+        # was skipped, and 107 when an RPM scriptlet failed. Accept those only
+        # when rpm confirms tuned is installed; any other failure still fails
+        # the step. ZYPP_LOCK_TIMEOUT waits for a held zypp lock instead of
+        # exiting 7 immediately, like DPKG::Lock::Timeout in the apt branch.
+        rc=0
+        ZYPP_LOCK_TIMEOUT=60 zypper --non-interactive install tuned || rc=$?
+        if [[ "${rc}" -ne 0 ]]; then
+            if [[ "${rc}" -eq 106 || "${rc}" -eq 107 ]] && rpm -q tuned >/dev/null; then
+                echo "WARN: zypper exited ${rc} but tuned is installed; continuing" >&2
+            else
+                exit "${rc}"
+            fi
+        fi
+    ;;
     *)
-        echo "Unsupported Distro: $ID"
+        echo "Unsupported Distro: ${ID}"
         exit 1
     ;;
 esac

@@ -50,7 +50,7 @@ A specialized package for system-level tuning and configuration management.
 A package for managing the tuned system tuning daemon on Linux systems for automated performance optimization.
 
 **Capabilities:**
-- Multi-distribution support (Ubuntu/Debian, CentOS/RHEL/Amazon Linux, Fedora)
+- Multi-distribution support (Ubuntu/Debian, CentOS/RHEL/Amazon Linux, Fedora, SUSE Linux Enterprise/openSUSE)
 - Automated tuned package installation and service management
 - Custom tuned profile deployment via configmaps
 - Built-in profile validation and verification
