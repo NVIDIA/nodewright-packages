@@ -21,6 +21,7 @@
 
 ## Checklist
 - [ ] I am familiar with the [Contributing Guidelines](https://github.com/NVIDIA/nodewright-packages/blob/HEAD/CONTRIBUTING.md).
+- [ ] My commits are signed off per the [DCO](https://developercertificate.org/) **and** cryptographically signed: `git commit -s -S`.
 - [ ] I ran the checks that apply to this change locally and recorded the result above.
 - [ ] If this changes a package, the "Tested on" section above says what it ran on, or says plainly that it has not run on hardware.
 - [ ] New or existing tests cover these changes.
