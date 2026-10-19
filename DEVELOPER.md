@@ -138,13 +138,15 @@ All commits must use [Conventional Commits](https://www.conventionalcommits.org/
 - `fix(tuning): Post-interrupt check for containerd changes did not allow infinity setting`
 - `docs(general/ci): Update the main README.md for CI workflow`
 
-### 4. Sign-off
+### 4. Sign-off and signature
 
-All commits must be signed off. Use `git commit -s` to automatically add your sign-off, or manually add:
+Every commit must be both signed off (`-s`, the DCO) and cryptographically signed (`-S`):
 
+```bash
+git commit -s -S -m "feat(shellscript): your message"
 ```
-Signed-off-by: Your Name <your.email@example.com>
-```
+
+The [Commit Requirements](.github/workflows/commit-requirements.yaml) workflow comments on any pull request with a commit missing either one. One-time signing setup and how to fix existing commits are in [CONTRIBUTING.md](CONTRIBUTING.md#developer-certificate-of-origin-and-commit-signing).
 
 ## Running Tests
 
