@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Test wrapper for zypper: runs the real zypper, then replaces its exit code
+# with FAKE_ZYPPER_EXIT when that is set, to model zypper's informational exit
+# codes (106 repos skipped, 107 RPM scriptlet failed) that are hard to provoke
+# in a container. Set FAKE_ZYPPER_SKIP_REAL=1 to not run the real zypper, so
+# nothing gets installed.
+
+set -euo pipefail
+
+rc=0
+if [[ "${FAKE_ZYPPER_SKIP_REAL:-0}" != "1" ]]; then
+    /usr/bin/zypper "$@" || rc=$?
+fi
+exit "${FAKE_ZYPPER_EXIT:-${rc}}"
