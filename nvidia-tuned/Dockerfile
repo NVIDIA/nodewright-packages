@@ -13,7 +13,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-ARG TUNED_VERSION=1.3.1
+ARG TUNED_VERSION=1.4.0
 
 FROM ghcr.io/nvidia/nodewright-packages/tuned:${TUNED_VERSION}
 

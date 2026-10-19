@@ -20,6 +20,10 @@ example is not itself picked up as release notes):
     - Notable behavior change worth calling out.
 -->
 
+## 0.10.1
+
+Bump to pull in tuned 1.4.0 which has support for SUSE.
+
 ## 0.10.0
 
 Rebases the GB200, GB300 and VR200 `performance` hugepage allocation on the 64k page-size
