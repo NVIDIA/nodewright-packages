@@ -5,12 +5,26 @@
 
 All notable changes to this package will be documented in this file.
 
+## [0.10.1] - 2026-10-19
+
+### Bug Fixes
+
+- *(nvidia-tuned)* Apply the containerd stack limit to RKE2 and K3s and keep it across reboots 
+
+### Other Tasks
+
+- Bump source image to 1.4.0 for SUSE support
+
+
 ## [0.10.0] - 2026-09-15
 
 ### New Features
 
 - *(nvidia-tuned)* 64k-kernel hugepage sizing and gb300 intent shims 
 
+### Other Tasks
+
+- *(nvidia-tuned)* 0.10.0 changelog
 
 ## [0.9.0] - 2026-09-03
 
