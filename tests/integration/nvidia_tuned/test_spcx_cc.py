@@ -165,13 +165,14 @@ def configure(node: DockerTestRunner, **configmaps):
     assert sh(node, " && ".join(cmds)) == 0
 
 
-def start_foreign_daemon(node: DockerTestRunner, rail: str):
+def start_foreign_daemon(node: DockerTestRunner, rail: str, device_arg: str = "-d {}"):
     """Start a process indistinguishable from a real foreign doca_spcx_cc.
 
     The guard matches on `pgrep -x`, which compares /proc/pid/comm. comm follows the
     executable, so a shell-script double is reported as `bash` and would not be found.
     Copying an ELF binary gives the right comm, and `exec -a` supplies a cmdline in the
-    real daemon's shape so the rail can be parsed out of it.
+    real daemon's shape so the rail can be parsed out of it. `device_arg` is how the
+    rail is passed, `-d {}` as OCA 1.64 does.
     """
     # Copied once: a second cp over the binary while a daemon runs it fails (ETXTBSY).
     assert sh(node, "test -x /usr/local/bin/doca_spcx_cc || cp /usr/bin/sleep /usr/local/bin/doca_spcx_cc") == 0
@@ -181,7 +182,7 @@ def start_foreign_daemon(node: DockerTestRunner, rail: str):
             node,
             "setsid nohup bash -c 'exec -a \"$FOREIGN_ARGV0\" "
             "/usr/local/bin/doca_spcx_cc 3600' >/dev/null 2>&1 < /dev/null & sleep 1",
-            env={"FOREIGN_ARGV0": f"doca_spcx_cc -d {rail} -w -1"},
+            env={"FOREIGN_ARGV0": f"doca_spcx_cc {device_arg.format(rail)} -w -1"},
         )
         == 0
     )
@@ -210,7 +211,7 @@ def own_foreign_daemons(
     cmds = [f"mkdir -p {FAKE_PROC} /tmp/fake-systemctl"]
     cmds.append(
         "for pid in $(pgrep -x doca_spcx_cc); do "
-        "rail=$(tr '\\0' ' ' < /proc/$pid/cmdline | sed -n 's/.*-d \\([^ ]*\\).*/\\1/p'); "
+        "rail=$(tr '\\0' ' ' < /proc/$pid/cmdline | sed -En 's/(^|.* )(-d|--device)[= ]([^ ]+).*/\\3/p'); "
         f"case \"$rail\" in {quote(only)}*) ;; *) continue ;; esac; "
         + (f"u=$(printf {quote(unit)} \"$rail\"); " if "%s" in unit else f"u={quote(unit)}; ")
         + f"mkdir -p {FAKE_PROC}/$pid; "
@@ -459,10 +460,15 @@ def test_spcx_cc_foreign_guard_reports_discovered_state_not_assumed_names(node):
 
 def oca_rails(node: DockerTestRunner):
     """The device names OCA 1.64 leaves on GB300: bonds renamed to rdma_railN and host
-    VFs to rdma_vf_railN, so the default mlx5_bond_* glob finds nothing."""
+    VFs to rdma_vf_railN, so the default mlx5_bond_* glob finds nothing.
+
+    The front-end NICs stay mlx5_8 and mlx5_17. They are PFs, but not rails, and nothing
+    runs congestion control on them.
+    """
     cmds = [f"rm -rf {IB_DIR}", f"mkdir -p {IB_DIR}"]
     cmds += [f"mkdir -p {IB_DIR}/rdma_rail{i}" for i in range(4)]
     cmds += [f"mkdir -p {IB_DIR}/rdma_vf_rail{i}/device/physfn" for i in range(4)]
+    cmds += [f"mkdir -p {IB_DIR}/mlx5_8/device {IB_DIR}/mlx5_17/device"]
     assert sh(node, " && ".join(cmds)) == 0
 
 
@@ -470,10 +476,10 @@ OCA_UNIT = "doca_spcx_cc@%s.service"
 OWN_UNIT = "doca-spcx-cc@%s.service"
 
 
-def start_oca(node: DockerTestRunner, rails=range(4), **kwargs):
+def start_oca(node: DockerTestRunner, rails=range(4), device_arg: str = "-d {}", **kwargs):
     """Run OCA 1.64's congestion control on the given rdma_railN rails."""
     for i in rails:
-        start_foreign_daemon(node, f"rdma_rail{i}")
+        start_foreign_daemon(node, f"rdma_rail{i}", device_arg)
     own_foreign_daemons(node, OCA_UNIT, only="rdma_rail", **kwargs)
 
 
@@ -595,6 +601,18 @@ def test_spcx_cc_defers_to_a_unit_whose_command_runs_the_tool(node):
         main=False,
         exec_start="/usr/bin/env /opt/mellanox/doca/tools/doca_spcx_cc -d rdma_rail0 -w -1",
     )
+    env = {"PROC_DIR": FAKE_PROC}
+
+    assert step(node, "configure_spcx_cc.sh", env) == 0, output(node)
+    assert said(node, "Deferring to them"), output(node)
+
+
+@pytest.mark.parametrize("device_arg", ["-d={}", "--device {}", "--device={}"])
+def test_spcx_cc_reads_the_rail_from_any_device_argument_form(node, device_arg):
+    """OCA 1.64 passes `-d rdma_railN`; the other spellings must still map to a rail."""
+    configure(node, spcx_cc="on", **OCI_GB300)
+    oca_rails(node)
+    start_oca(node, device_arg=device_arg)
     env = {"PROC_DIR": FAKE_PROC}
 
     assert step(node, "configure_spcx_cc.sh", env) == 0, output(node)

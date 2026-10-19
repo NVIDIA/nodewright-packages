@@ -29,8 +29,8 @@ Compatibility with OCI GB300 nodes on Oracle Cloud Agent 1.64 and
 
 OCA 1.64 runs DOCA Spectrum-X congestion control itself on GB300, from persistent
 `doca_spcx_cc@rdma_railN` units. `configure-spcx-cc` treated those processes as a second
-owner and failed, leaving the node tainted. It now defers when every RDMA device that
-is not a VF has a `doca_spcx_cc` process from a persistent systemd unit that is not its
+owner and failed, leaving the node tainted. It now defers when every rail (`mlx5_bond_*`
+or `rdma_railN`) has a `doca_spcx_cc` process from a persistent systemd unit that is not its
 own (the unit's main process, or one its command starts), and every instance of that
 unit's template is active. It then removes this package's units and udev rule,
 stopping any of its own processes still running, and the check verifies the other

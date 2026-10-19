@@ -20,7 +20,7 @@
 # These helpers decide whether congestion control is run outside this package, so both
 # scripts must reach the same answer; keeping one copy stops them drifting apart.
 #
-# Callers set IB_CLASS_DIR and PROC_DIR before sourcing.
+# Callers set IB_CLASS_DIR, RAIL_GLOB and PROC_DIR before sourcing.
 
 # Report the systemd unit owning a pid, or an empty string if none does. Reads the
 # cgroup rather than parsing `systemctl status`, so it works for transient units and
@@ -33,12 +33,14 @@ owning_unit() {
     awk -F/ '$NF ~ /\.service$/ { print $NF; exit }' <<< "${cgroup}"
 }
 
-# Echo the RDMA device a doca_spcx_cc process was started for, from its `-d` argument.
+# Echo the RDMA device a doca_spcx_cc process was started for, from its device argument:
+# `-d X` as OCA 1.64 passes it, or `-d=X`, `--device X` and `--device=X`. The process's
+# own arguments are read, so a wrapper that started it does not matter.
 process_rail() {
     local pid="$1"
     local cmdline
     cmdline="$(tr '\0' ' ' < "${PROC_DIR}/${pid}/cmdline" 2>/dev/null || true)"
-    sed -n 's/.*-d[= ]\([^ ]*\).*/\1/p' <<< "${cmdline}"
+    sed -En 's/(^|.* )(-d|--device)[= ]([^ ]+).*/\3/p' <<< "${cmdline}"
 }
 
 # Returns 0 when a unit genuinely runs doca_spcx_cc rather than merely containing a
@@ -54,15 +56,21 @@ runs_doca_spcx_cc() {
     grep -q 'doca_spcx_cc' <<< "${exec_start}"
 }
 
-# Echo each RDMA device on the node that is not a virtual function, one per line. These
-# are what congestion control has to cover, whatever they are named.
-pf_rails() {
-    local path
-    for path in "${IB_CLASS_DIR}"/*; do
-        [[ -e "${path}" ]] || continue
-        [[ -e "${path}/device/physfn" ]] && continue
-        basename "${path}"
-    done
+# Echo each RDMA rail on the node, one per line: the bonded PFs, named mlx5_bond_N by the
+# driver or rdma_railN by oci-hpc-network-device-names 3.x, plus whatever RAIL_GLOB
+# matches if it was overridden. VFs are skipped. So are other PFs, such as the front-end
+# NICs (mlx5_8 and mlx5_17 on a GB300 host, behind eth0 and eth1): they carry no RDMA
+# traffic, and no owner runs congestion control on them.
+owned_rails() {
+    local glob path
+    local -a globs=("${RAIL_GLOB:-mlx5_bond_*}" "mlx5_bond_*" "rdma_rail*")
+    for glob in "${globs[@]}"; do
+        for path in "${IB_CLASS_DIR}/"${glob}; do
+            [[ -e "${path}" ]] || continue
+            [[ -e "${path}/device/physfn" ]] && continue
+            basename "${path}"
+        done
+    done | sort -u
 }
 
 # Echo the units running doca_spcx_cc outside this package, one per line, along with
@@ -71,7 +79,7 @@ pf_rails() {
 #   - at least one doca_spcx_cc process owned by something other than this package;
 #   - each such process is the main process of a persistent (non-transient) unit, or
 #     that unit's command runs doca_spcx_cc;
-#   - every RDMA device that is not a VF has one of those processes;
+#   - every rail (see owned_rails) has one of those processes;
 #   - every instance of those units' templates that systemd knows about is active.
 # Processes in this package's own template are left out: once the handover is safe,
 # teardown stops them. Returns non-zero, with the reason on stderr, otherwise.
@@ -100,7 +108,7 @@ external_owners() {
             echo "Not deferring: ${rail} has no congestion control process outside this package" >&2
             return 1
         fi
-    done < <(pf_rails)
+    done < <(owned_rails)
 
     # A live process per owner is not enough. An owner that runs a template per rail
     # must have every instance systemd knows about up, or a dead sibling would leave
