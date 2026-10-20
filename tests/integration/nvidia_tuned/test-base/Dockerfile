@@ -25,7 +25,7 @@
 ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
 
-# hadolint ignore=DL3008,DL3041
+# hadolint ignore=DL3008,DL3037,DL3041
 RUN set -eux; \
     if command -v apt-get >/dev/null 2>&1; then \
         apt-get update -y; \
@@ -37,6 +37,9 @@ RUN set -eux; \
     elif command -v yum >/dev/null 2>&1; then \
         yum install -y tuned; \
         yum clean all; \
+    elif command -v zypper >/dev/null 2>&1; then \
+        zypper --non-interactive install --no-recommends tuned; \
+        zypper clean --all; \
     else \
         echo "no supported package manager in this base image" >&2; \
         exit 1; \
