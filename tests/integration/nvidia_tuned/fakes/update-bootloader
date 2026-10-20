@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Test double for SUSE's update-bootloader. `--refresh` regenerates GRUB_CFG the way
+# grub2-mkconfig does for the two parts the bootloader step depends on: tuned's
+# /etc/grub.d/00_tuned sets tuned_params from TUNED_BOOT_CMDLINE, and 10_linux puts
+# GRUB_CMDLINE_LINUX_DEFAULT from the defaults file on the linux line.
+
+set -euo pipefail
+
+if [[ "${1:-}" != "--refresh" ]]; then
+    echo "fake update-bootloader: only --refresh is supported" >&2
+    exit 2
+fi
+
+touch /tmp/update-bootloader.ran
+
+if [[ -n "${FAKE_UPDATE_BOOTLOADER_FAIL:-}" ]]; then
+    echo "error: cannot write /boot/grub2/grub.cfg.new" >&2
+    exit 1
+fi
+
+cmdline="$(
+    set +u
+    # shellcheck source=/dev/null
+    . "${GRUB_DEFAULTS:-/etc/default/grub}"
+    printf '%s' "${GRUB_CMDLINE_LINUX_DEFAULT:-}"
+)"
+params="$(
+    set +u
+    # shellcheck source=/dev/null
+    . "${TUNED_BOOTCMDLINE:-/etc/tuned/bootcmdline}" 2>/dev/null
+    printf '%s' "${TUNED_BOOT_CMDLINE:-}"
+)"
+
+cat > "${GRUB_CFG:-/boot/grub2/grub.cfg}" <<CFG
+### BEGIN /etc/grub.d/00_tuned ###
+set tuned_params="${params}"
+set tuned_initrd=""
+### END /etc/grub.d/00_tuned ###
+menuentry 'SLES' {
+	linux	/boot/vmlinuz root=UUID=0000 ${cmdline}
+	initrd	/boot/initrd
+}
+CFG

@@ -18,10 +18,10 @@
 
 # Verifies the profile's [bootloader] cmdline is live after the reboot interrupt.
 #
-# This is the check that makes the reboot meaningful: everything before it only proves a
-# drop-in exists, and the failure it catches -- grub silently not picking the drop-in up
-# -- is invisible from the config stage. The tuning the node was labelled for is simply
-# absent until someone reads /proc/cmdline.
+# This is the check that makes the reboot meaningful: everything before it only proves the
+# bootloader config resolves, and the failure it catches -- grub silently not picking the
+# cmdline up -- is invisible from the config stage. The tuning the node was labelled for
+# is simply absent until someone reads /proc/cmdline.
 #
 # A non-zero exit is the signal, so no `set -e`.
 
@@ -34,6 +34,7 @@ PROC_CMDLINE="${PROC_CMDLINE:-/proc/cmdline}"
 TUNED_GRUB_DROPIN="${TUNED_GRUB_DROPIN:-/etc/default/grub.d/99-nvidia-tuned-cmdline.cfg}"
 TUNED_BOOTCMDLINE="${TUNED_BOOTCMDLINE:-/etc/tuned/bootcmdline}"
 OS_RELEASE="${OS_RELEASE:-/etc/os-release}"
+GRUB_CFG="${GRUB_CFG:-/boot/grub2/grub.cfg}"
 
 # Mirrors bootloader_requested() in configure_bootloader.sh.
 bootloader_requested() {
@@ -45,11 +46,11 @@ bootloader_requested() {
     esac
 }
 
-# Mirrors bootloader_os_supported() in configure_bootloader.sh.
-bootloader_os_supported() {
+# Mirrors bootloader_os_family() in configure_bootloader.sh.
+bootloader_os_family() {
     local ids
 
-    [[ -r "${OS_RELEASE}" ]] || return 1
+    [[ -r "${OS_RELEASE}" ]] || return 0
     ids="$(
         set +u
         # shellcheck source=/dev/null
@@ -58,8 +59,9 @@ bootloader_os_supported() {
     )"
 
     case " ${ids} " in
-        *" debian "* | *" ubuntu "*) return 0 ;;
-        *) return 1 ;;
+        *" debian "* | *" ubuntu "*) echo debian ;;
+        " opensuse-microos "* | " opensuse-leap-micro "*) ;;
+        " sles"* | " opensuse"*) echo suse ;;
     esac
 }
 
@@ -88,6 +90,15 @@ tuned_cmdline() {
 
 # The only place an operator will look, so name the cause and where to look next.
 fail_not_applied() {
+    local config_hints
+    if [[ "$(bootloader_os_family)" == suse ]]; then
+        config_hints="    - grep -n tuned_params ${GRUB_CFG}   (a linux line must pass \$tuned_params)"
+    else
+        config_hints="    - cat ${TUNED_GRUB_DROPIN}
+    - ls /etc/default/grub.d/   (a file sorting later can overwrite
+                                 GRUB_CMDLINE_LINUX_DEFAULT wholesale)"
+    fi
+
     cat <<EOF
 ERROR: The tuned profile's kernel command line did not take effect on this node.
 
@@ -100,9 +111,7 @@ ERROR: The tuned profile's kernel command line did not take effect on this node.
   Where to look:
     - cat ${PROC_CMDLINE}
     - cat ${TUNED_BOOTCMDLINE}
-    - cat ${TUNED_GRUB_DROPIN}
-    - ls /etc/default/grub.d/   (a file sorting later can overwrite
-                                 GRUB_CMDLINE_LINUX_DEFAULT wholesale)
+${config_hints}
     - grep GRUB_DEFAULT /etc/default/grub   (the node may have booted another entry)
 EOF
     exit 1
@@ -121,7 +130,7 @@ main() {
         return 0
     fi
 
-    if ! bootloader_os_supported; then
+    if [[ -z "$(bootloader_os_family)" ]]; then
         echo "ERROR: this distribution cannot apply the drop-in; CONFIGURE_BOOTLOADER=false skips it"
         exit 1
     fi

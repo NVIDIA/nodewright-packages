@@ -20,6 +20,29 @@ example is not itself picked up as release notes):
     - Notable behavior change worth calling out.
 -->
 
+## 0.11.0
+
+The `configure-bootloader` step, used by `service=rke2`, now supports SLES 15 SP7, SLES
+16.0 and openSUSE Leap. Until now it failed on every distribution outside the Debian
+family, so an `rke2` node on SUSE needed `CONFIGURE_BOOTLOADER=false` and got none of its
+profile's kernel arguments. Debian-family nodes are unchanged.
+
+On SUSE the step writes no grub.d drop-in, because SUSE's `grub2-mkconfig` never reads
+`/etc/default/grub.d/`. It relies on tuned's own grub2 integration instead: the
+`$tuned_params` reference tuned adds to `/etc/default/grub`, and `/etc/grub.d/00_tuned`.
+The step requires `LOADER_TYPE` `grub2` or `grub2-efi` and that reference, then runs
+`update-bootloader --refresh`. The regeneration is the part that matters: on SLES 15 SP7
+tuned left a `grub.cfg` that set `tuned_params` but passed it on no `linux` line, so the
+node rebooted without the arguments. `configure-bootloader-check` now reads the generated
+`grub.cfg` on SUSE and fails on exactly that.
+
+Upgrade note: a SUSE node whose `/etc/sysconfig/bootloader` sets `LOADER_TYPE` to
+`grub2-bls` or `systemd-boot` still fails the step; keep `CONFIGURE_BOOTLOADER=false` there.
+
+Uninstall is unchanged. On SUSE it has nothing of its own to remove: when the tuned
+uninstall step stops the daemon, tuned rolls back its bootloader settings and empties
+`tuned_params` in `grub.cfg`, so the next boot comes up without the profile's arguments.
+
 ## 0.10.1
 
 Bump to pull in tuned 1.4.0 which has support for SUSE.

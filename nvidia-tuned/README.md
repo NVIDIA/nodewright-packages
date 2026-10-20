@@ -30,6 +30,8 @@ This package requires **tuned >= 2.19**. The following operating systems are sup
 | **Debian** | 11 (Bullseye) | ❌ | Default tuned version is too old (2.15) |
 | **Debian** | 12 (Bookworm) | ⚠️ verified tuned package version but not fully tested| Uses common profiles |
 | **RHEL** | 9 | ⚠️ verified tuned package version but not fully tested| Uses common profiles |
+| **SLES** | 15 SP7, 16.0 | ⚠️ verified tuned package version and the `rke2` bootloader step on hosts, but not fully tested | Uses common profiles |
+| **openSUSE Leap** | 15.6, 16.0 | ⚠️ not tested | Uses common profiles; same bootloader mechanism as SLES |
 | **Other** | Any | ⚠️ Fallback | Falls back to `os/common/` profiles (untested, requires tuned >= 2.19) |
 
 ### Notes
@@ -367,14 +369,28 @@ Keeping the stanza is not enough on its own. tuned resolves it to
 `/etc/tuned/bootcmdline` and then rewrites `/etc/default/grub`, but Ubuntu assembles
 `GRUB_CMDLINE_LINUX_DEFAULT` from `/etc/default/grub.d/` instead, so that rewrite is
 ignored and the cmdline silently never applies. The `configure-bootloader` step closes
-that gap: it writes a `/etc/default/grub.d/99-nvidia-tuned-cmdline.cfg` drop-in sourcing
-tuned's file, then regenerates grub. It appends to `GRUB_CMDLINE_LINUX_DEFAULT` rather
-than replacing it, so the platform's own arguments (serial console, most importantly)
-survive. The step is gated on `profiles/service/{service}/bootloader.enabled` and is a
-no-op for every service that does not ship the marker, so `eks`, `aks`, `bcm`, and `oci`
-are unaffected. It uses its own filename rather than the `99_tuned.cfg` the `eks` and
-`aks` profiles write, and only ever removes a file carrying its own marker line, so it
-cannot disturb theirs.
+that gap: on Debian-family distributions it writes a `/etc/default/grub.d/99-nvidia-tuned-cmdline.cfg`
+drop-in sourcing tuned's file, then regenerates grub. It appends to
+`GRUB_CMDLINE_LINUX_DEFAULT` rather than replacing it, so the platform's own arguments
+(serial console, most importantly) survive. The step is gated on
+`profiles/service/{service}/bootloader.enabled` and is a no-op for every service that
+does not ship the marker, so `eks`, `aks`, `bcm`, and `oci` are unaffected. It uses its
+own filename rather than the `99_tuned.cfg` the `eks` and `aks` profiles write, and only
+ever removes a file carrying its own marker line, so it cannot disturb theirs.
+
+On SLES and openSUSE Leap tuned's own grub2 integration does the work, so the step writes
+no drop-in. SUSE's `grub2-mkconfig` reads `/etc/default/grub`, where tuned adds a
+`$tuned_params` reference to `GRUB_CMDLINE_LINUX_DEFAULT`, and tuned ships
+`/etc/grub.d/00_tuned`, which sets `tuned_params` from `/etc/tuned/bootcmdline`. What
+tuned does not do reliably is regenerate `grub.cfg`: on SLES 15 SP7 it left a config that
+set `tuned_params` but passed it on no `linux` line, so the node rebooted without the
+arguments. The step requires `LOADER_TYPE` `grub2` or `grub2-efi` in
+`/etc/sysconfig/bootloader` and the `$tuned_params` reference in `/etc/default/grub`,
+then runs `update-bootloader --refresh`. `configure-bootloader-check` reads the generated
+`/boot/grub2/grub.cfg` and fails unless it sets `tuned_params` to the profile's cmdline
+and a `linux` line passes it. `grub2-bls` and `systemd-boot` build the kernel command
+line from boot entries instead, so the step fails on them; set
+`CONFIGURE_BOOTLOADER=false` there.
 
 After the reboot, `post-interrupt-bootloader-check` asserts every argument in
 `/etc/tuned/bootcmdline` is present in `/proc/cmdline`. This is the check worth having:
@@ -382,18 +398,23 @@ grub quietly failing to pick the drop-in up is invisible from the config stage, 
 without it a node comes up labelled as tuned while running none of the tuning.
 
 Uninstalling removes the drop-in and regenerates grub, so the cmdline goes away on the
-next boot rather than outliving the package.
+next boot rather than outliving the package. On SUSE there is no drop-in, and nothing
+for this step to undo: when the tuned uninstall step stops the daemon, tuned rolls back
+its bootloader settings itself, emptying `TUNED_BOOT_CMDLINE` and the `tuned_params`
+value in `grub.cfg`.
 
-The step is **Debian-family only**, and fails on anything else rather than passing
-quietly. Sourcing `/etc/default/grub.d/*.cfg` is a Debian/Ubuntu patch to
-`grub-mkconfig`; RHEL-family `grub2-mkconfig` reads `/etc/default/grub` and
-`/etc/grub.d/` and ignores that directory entirely. On a RHEL-family node the drop-in
-would be written, GRUB would regenerate without error, and none of the arguments would
-reach the kernel, so the node would report success while running none of its tuning.
-Because the package falls back to `os/common` profiles on untested distributions, the
-step cannot assume an OS gate happened upstream and checks `ID`/`ID_LIKE` itself. On such
-a node, either use `service=bcm` (same accelerators, bootloader-free chain, no reboot) or
-set `CONFIGURE_BOOTLOADER=false` and set the kernel arguments by another route.
+The step supports **Debian-family distributions and SLES/openSUSE Leap**, and fails on
+anything else rather than passing quietly. Sourcing `/etc/default/grub.d/*.cfg` is a
+Debian-family patch to `grub-mkconfig`; RHEL-family `grub2-mkconfig` reads
+`/etc/default/grub` and `/etc/grub.d/` and ignores that directory entirely. On a
+RHEL-family node the drop-in would be written, GRUB would regenerate without error, and
+none of the arguments would reach the kernel, so the node would report success while
+running none of its tuning. Because the package falls back to `os/common` profiles on
+untested distributions, the step cannot assume an OS gate happened upstream and checks
+`ID`/`ID_LIKE` itself. The transactional SUSE variants (openSUSE MicroOS, Leap Micro, SLE
+Micro) are not supported. On such a node, either use `service=bcm` (same accelerators,
+bootloader-free chain, no reboot) or set `CONFIGURE_BOOTLOADER=false` and set the kernel
+arguments by another route.
 
 > **Accelerator support:** the service ships no accelerator-specific files, so support is
 > exactly whatever workload profiles exist. `gb200` and `vr200` work across all three
@@ -456,7 +477,7 @@ set `CONFIGURE_BOOTLOADER=false` and set the kernel arguments by another route.
 | `eks` | eks-specific settings (MAC address policy for CNI) |
 | `aks` | aks-specific settings (MAC address policy, grub.d bootloader workaround for Ubuntu) |
 | `bcm` | bcm-specific settings (bootloader-free vr200 chain, applies without a reboot) |
-| `rke2` | rke2-specific settings (keeps the accelerator's `[bootloader]` tuning and lands it on the host through grub.d; requires `interrupt: {type: reboot}`) |
+| `rke2` | rke2-specific settings (keeps the accelerator's `[bootloader]` tuning and lands it on the host through grub.d on Debian-family distributions or tuned's grub2 integration on SUSE; requires `interrupt: {type: reboot}`) |
 | `oci` | oci-specific settings (RDMA IPv6 defaults, NCCL topology file, PCIe ACS correction, RDMA VF boot gate, and Spectrum-X congestion control on gb300; requires `interrupt: {type: reboot}`) |
 
 ### Environment Variables
@@ -466,7 +487,7 @@ set `CONFIGURE_BOOTLOADER=false` and set the kernel arguments by another route.
 | `TOPO_PATH` | No | `/etc/nccl/topo.xml` | Absolute host path the bundled NCCL topology file is written to. Only used when the configured `service`/`accelerator` pair ships one (today `oci` + `gb300`); otherwise the step is a no-op. Point `NCCL_TOPO_FILE` at the same path in your workloads. |
 | `CONFIGURE_PCIE_ACS` | No | `true` | Set to `false` to skip the PCIe ACS correction and its checks. Only relevant to a `service`/`accelerator` pair that opts in (today `oci` + `gb300`). Use this on nodes whose kernel does not honour `pci=config_acs=`, where the correction cannot take effect and the post-interrupt check would otherwise fail the node. |
 | `CONFIGURE_IOMMU_PASSTHROUGH` | No | `auto` | Controls the IOMMU passthrough workaround for kernels whose arm-smmu-v3 cannot attach a PASID to an identity domain. `auto` applies it only when the running kernel is older than 6.11; `true` always applies it; `false` never does and skips the checks. Only relevant to a `service`/`accelerator` pair that opts in (today `oci` + `gb300`). Set `false` on a node whose kernel carries a backported fix that the version check cannot see. |
-| `CONFIGURE_BOOTLOADER` | No | `true` | Set to `false` to skip the bootloader drop-in step and all three of its checks. Only relevant to a service that ships `bootloader.enabled` (today `rke2`). Use it on a node whose kernel arguments are owned by something else, and on any RHEL-family node, where the step fails by design (see the RKE2 tuning section above). |
+| `CONFIGURE_BOOTLOADER` | No | `true` | Set to `false` to skip the bootloader drop-in step and all three of its checks. Only relevant to a service that ships `bootloader.enabled` (today `rke2`). Use it on a node whose kernel arguments are owned by something else, on any RHEL-family node, and on a SUSE node booting `grub2-bls` or `systemd-boot`, where the step fails by design (see the RKE2 tuning section above). |
 | `APT_ALLOW_INDEX_FAILURE` | No | `true` | Inherited from the `tuned` base package. Lets `apt update` fail without failing the install step, so one unreachable third-party repo in `/etc/apt/sources.list.d` cannot block the package. Set to `false` to restore strict behavior. The `apt install` that follows is unaffected and still fails if the package is genuinely unavailable. |
 
 ## Adding OS-Specific Overrides
