@@ -60,8 +60,7 @@ bootloader_os_family() {
 
     case " ${ids} " in
         *" debian "* | *" ubuntu "*) echo debian ;;
-        " opensuse-microos "* | " opensuse-leap-micro "*) ;;
-        " sles"* | " opensuse"*) echo suse ;;
+        " sles"* | " opensuse-leap "*) echo suse ;;
     esac
 }
 

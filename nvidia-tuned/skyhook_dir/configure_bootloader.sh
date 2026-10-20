@@ -125,8 +125,9 @@ bootloader_enabled() {
 #
 # Debian checks ID and ID_LIKE so derivatives that do carry the grub.d patch (Pop, Mint,
 # and the vendor rebuilds these nodes run) are recognised without an explicit
-# allowlist. SUSE matches ID the way install_tuned.sh does, so the transactional variants
-# that package refuses are refused here too.
+# allowlist. SUSE matches ID for SLES and openSUSE Leap only, the two this step was
+# tested on: Tumbleweed, Slowroll and the transactional variants (MicroOS, Leap Micro)
+# fall through to unsupported.
 bootloader_os_family() {
     local ids
 
@@ -141,8 +142,7 @@ bootloader_os_family() {
 
     case " ${ids} " in
         *" debian "* | *" ubuntu "*) echo debian ;;
-        " opensuse-microos "* | " opensuse-leap-micro "*) ;;
-        " sles"* | " opensuse"*) echo suse ;;
+        " sles"* | " opensuse-leap "*) echo suse ;;
     esac
 }
 

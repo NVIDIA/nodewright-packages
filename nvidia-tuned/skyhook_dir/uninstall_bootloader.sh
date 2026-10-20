@@ -31,11 +31,21 @@
 # aks services write their own grub.d file from inside the tuned profile; removing that
 # one is not this step's business.
 #
+# On SUSE there is no drop-in: tuned's own grub2 integration carries the cmdline, and
+# tuned's full rollback clears it (blanks TUNED_BOOT_CMDLINE, then tuned_params in
+# grub.cfg) only if the daemon is running when it is stopped. A tuned that crashed, was
+# stopped, or runs with rollback = not_on_exit leaves grub.cfg passing the old cmdline
+# after the package is gone. So this step does the same rollback itself and regenerates
+# with update-bootloader --refresh, rather than depending on the daemon's state.
+#
 # Takes effect on the next boot, like the change it reverts.
 
 set -euo pipefail
 
 TUNED_GRUB_DROPIN="${TUNED_GRUB_DROPIN:-/etc/default/grub.d/99-nvidia-tuned-cmdline.cfg}"
+TUNED_BOOTCMDLINE="${TUNED_BOOTCMDLINE:-/etc/tuned/bootcmdline}"
+OS_RELEASE="${OS_RELEASE:-/etc/os-release}"
+GRUB_CFG="${GRUB_CFG:-/boot/grub2/grub.cfg}"
 
 # Mirrors DROPIN_MARKER in configure_bootloader.sh.
 DROPIN_MARKER="Managed by the nvidia-tuned Skyhook package (configure_bootloader.sh)"
@@ -63,7 +73,89 @@ regenerate_grub() {
     update-grub
 }
 
+# Mirrors bootloader_os_family() in configure_bootloader.sh.
+bootloader_os_family() {
+    local ids
+
+    [[ -r "${OS_RELEASE}" ]] || return 0
+    ids="$(
+        set +u
+        # shellcheck source=/dev/null
+        . "${OS_RELEASE}" 2>/dev/null
+        printf '%s %s' "${ID:-}" "${ID_LIKE:-}"
+    )"
+
+    case " ${ids} " in
+        *" debian "* | *" ubuntu "*) echo debian ;;
+        " sles"* | " opensuse-leap "*) echo suse ;;
+    esac
+}
+
+# Mirrors refresh_bootloader() in configure_bootloader.sh.
+refresh_bootloader() {
+    if [[ -n "${SKIP_SYSTEM_OPERATIONS:-}" ]]; then
+        echo "SKIP_SYSTEM_OPERATIONS set: not regenerating the bootloader config"
+        return 0
+    fi
+
+    if ! command -v update-bootloader >/dev/null 2>&1; then
+        echo "ERROR: update-bootloader is not available, so grub.cfg cannot be regenerated"
+        return 1
+    fi
+
+    update-bootloader --refresh
+}
+
+# The cmdline tuned last resolved, or empty.
+tuned_cmdline() {
+    (
+        set +u
+        # shellcheck source=/dev/null
+        . "${TUNED_BOOTCMDLINE}" 2>/dev/null
+        printf '%s' "${TUNED_BOOT_CMDLINE:-}"
+    )
+}
+
+# The last tuned_params value grub.cfg sets, or empty.
+grub_cfg_tuned_params() {
+    [[ -r "${GRUB_CFG}" ]] || return 0
+    sed -n 's/^[[:space:]]*set[[:space:]]\{1,\}tuned_params="\(.*\)"[[:space:]]*$/\1/p' "${GRUB_CFG}" | tail -n 1
+}
+
+# SUSE: tuned's full rollback, done here so it does not depend on the daemon running.
+clear_tuned_native() {
+    # A drop-in this package wrote before SUSE support: grub2-mkconfig never read it, so
+    # removing it needs no regeneration, and update-grub does not exist here.
+    if dropin_is_ours; then
+        rm -f "${TUNED_GRUB_DROPIN}"
+        echo "Removed ${TUNED_GRUB_DROPIN}; this distribution never reads it"
+    fi
+
+    if [[ -z "$(tuned_cmdline)" && -z "$(grub_cfg_tuned_params)" ]]; then
+        echo "No tuned bootloader cmdline in ${TUNED_BOOTCMDLINE} or ${GRUB_CFG}; nothing to remove"
+        return 0
+    fi
+
+    # The same two variables tuned blanks. If tuned is already gone, so is 00_tuned, and
+    # the refresh drops tuned_params from grub.cfg altogether.
+    if [[ -f "${TUNED_BOOTCMDLINE}" ]]; then
+        sed -i -E 's/^(TUNED_BOOT_CMDLINE|TUNED_BOOT_INITRD_ADD)=.*/\1=""/' "${TUNED_BOOTCMDLINE}"
+    fi
+
+    if ! refresh_bootloader; then
+        echo "ERROR: could not regenerate the bootloader config; ${GRUB_CFG} still passes the profile cmdline"
+        return 1
+    fi
+
+    echo "Cleared tuned's bootloader cmdline; a reboot is required to drop it"
+}
+
 main() {
+    if [[ "$(bootloader_os_family)" == suse ]]; then
+        clear_tuned_native
+        return
+    fi
+
     if ! dropin_is_ours; then
         echo "No nvidia-tuned bootloader drop-in at ${TUNED_GRUB_DROPIN}; nothing to remove"
         return 0

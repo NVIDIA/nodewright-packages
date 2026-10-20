@@ -61,8 +61,7 @@ bootloader_os_family() {
 
     case " ${ids} " in
         *" debian "* | *" ubuntu "*) echo debian ;;
-        " opensuse-microos "* | " opensuse-leap-micro "*) ;;
-        " sles"* | " opensuse"*) echo suse ;;
+        " sles"* | " opensuse-leap "*) echo suse ;;
     esac
 }
 
@@ -169,7 +168,7 @@ grub_cfg_tuned_params() {
 # must set tuned_params to the profile's cmdline and pass $tuned_params on a linux line.
 # The second half is how SLES 15 SP7 failed: tuned_params defined and never used.
 check_tuned_native() {
-    local loader expected defined token tokens=() missing=()
+    local loader expected defined tokens=() defined_tokens=()
 
     # Reachable only if configure_bootloader.sh was bypassed; it fails on these loaders.
     # Passing here could certify a stale grub.cfg the node does not boot from.
@@ -202,17 +201,13 @@ check_tuned_native() {
         exit 1
     fi
 
+    # Exact, not a subset: 00_tuned writes TUNED_BOOT_CMDLINE verbatim, so any extra
+    # argument (a leftover isolcpus=, say) is stale and would still reach the kernel.
     defined="$(grub_cfg_tuned_params)"
-    for token in "${tokens[@]}"; do
-        case " ${defined} " in
-            *" ${token} "*) ;;
-            *) missing+=("${token}") ;;
-        esac
-    done
-
-    if (( ${#missing[@]} > 0 )); then
+    read -ra defined_tokens <<< "${defined}"
+    if [[ "${defined_tokens[*]}" != "${tokens[*]}" ]]; then
         echo "ERROR: ${GRUB_CFG} does not set tuned_params to the profile's cmdline."
-        echo "  Expected to find: ${missing[*]}"
+        echo "  Expected: ${tokens[*]}"
         echo "  tuned_params is: ${defined}"
         exit 1
     fi

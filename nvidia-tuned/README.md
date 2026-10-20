@@ -387,9 +387,9 @@ set `tuned_params` but passed it on no `linux` line, so the node rebooted withou
 arguments. The step requires `LOADER_TYPE` `grub2` or `grub2-efi` in
 `/etc/sysconfig/bootloader` and the `$tuned_params` reference in `/etc/default/grub`,
 then runs `update-bootloader --refresh`. `configure-bootloader-check` reads the generated
-`/boot/grub2/grub.cfg` and fails unless it sets `tuned_params` to the profile's cmdline
-and a `linux` line passes it. `grub2-bls` and `systemd-boot` build the kernel command
-line from boot entries instead, so the step fails on them; set
+`/boot/grub2/grub.cfg` and fails unless it sets `tuned_params` to exactly the profile's
+cmdline and a `linux` line passes it. `grub2-bls` and `systemd-boot` build the kernel
+command line from boot entries instead, so the step fails on them; set
 `CONFIGURE_BOOTLOADER=false` there.
 
 After the reboot, `post-interrupt-bootloader-check` asserts every argument in
@@ -398,10 +398,12 @@ grub quietly failing to pick the drop-in up is invisible from the config stage, 
 without it a node comes up labelled as tuned while running none of the tuning.
 
 Uninstalling removes the drop-in and regenerates grub, so the cmdline goes away on the
-next boot rather than outliving the package. On SUSE there is no drop-in, and nothing
-for this step to undo: when the tuned uninstall step stops the daemon, tuned rolls back
-its bootloader settings itself, emptying `TUNED_BOOT_CMDLINE` and the `tuned_params`
-value in `grub.cfg`.
+next boot rather than outliving the package. On SUSE there is no drop-in. tuned rolls
+back its bootloader settings when the daemon is stopped, but only if it is running at
+that point and not set to `rollback = not_on_exit`, so the step does that rollback
+itself: it empties `TUNED_BOOT_CMDLINE` in `/etc/tuned/bootcmdline` and runs
+`update-bootloader --refresh`. `uninstall-bootloader-check` fails while `grub.cfg` still
+sets a non-empty `tuned_params`.
 
 The step supports **Debian-family distributions and SLES/openSUSE Leap**, and fails on
 anything else rather than passing quietly. Sourcing `/etc/default/grub.d/*.cfg` is a
@@ -411,8 +413,8 @@ RHEL-family node the drop-in would be written, GRUB would regenerate without err
 none of the arguments would reach the kernel, so the node would report success while
 running none of its tuning. Because the package falls back to `os/common` profiles on
 untested distributions, the step cannot assume an OS gate happened upstream and checks
-`ID`/`ID_LIKE` itself. The transactional SUSE variants (openSUSE MicroOS, Leap Micro, SLE
-Micro) are not supported. On such a node, either use `service=bcm` (same accelerators,
+`ID`/`ID_LIKE` itself. openSUSE Tumbleweed and Slowroll and the transactional SUSE
+variants (openSUSE MicroOS, Leap Micro, SLE Micro) are not supported. On such a node, either use `service=bcm` (same accelerators,
 bootloader-free chain, no reboot) or set `CONFIGURE_BOOTLOADER=false` and set the kernel
 arguments by another route.
 
