@@ -81,7 +81,7 @@ Run from the repo root unless noted. See `DEVELOPER.md` for the full pre-commit 
 
 - **Conventional Commits**, with the **package name as scope**: `feat(shellscript): ...`, `fix(tuning): ...`. This applies to **both commit messages and PR titles**: a squash-merge uses the PR title as the commit subject. Use `general` (or `general/ci`) as the scope for repo-wide or CI changes, and use exactly one type per message; combined types like `docs+ci` are not valid Conventional Commits.
 - **CC is enforced in CI.** `.github/workflows/commit-linting.yaml` runs commitlint (`@commitlint/config-conventional`, configured in `commitlint.config.js`) against the PR title and every commit in the PR, so an invalid type, a non-CC subject, or a combined type like `docs+ci` fails the check. The subject-case rule is relaxed so capitalized subjects pass, and scope is not restricted to an enum. Lint locally with `echo "type(scope): subject" | npx @commitlint/cli@21 --config commitlint.config.js` (npx fetches commitlint if it is not installed); CI is the source of truth.
-- **Sign-off is required** (DCO). Use `git commit -s`.
+- **Sign-off and signing are both required.** Use `git commit -s -S`: `-s` adds the DCO `Signed-off-by` trailer, `-S` the GPG/SSH signature. `.github/workflows/commit-requirements.yaml` comments on PRs with a commit missing either (advisory, not yet a required check); bot commits are exempt and merge commits need only the signature.
 - **Semantic versioning per package.** Bump `package_version` in the package's `config.json`, then tag as `<package>/<version>` (e.g. `tuned/1.3.0`). Each package versions independently.
 
 ## Before you open a pull request
@@ -156,6 +156,6 @@ Balance "latest" against reproducibility and supply-chain safety:
 - `README.md`: repository and per-package overview
 - `PACKAGE_LIFECYCLE.md`: the lifecycle-stage contract
 - `DEVELOPER.md`: validation and pre-commit steps
-- `CONTRIBUTING.md`: DCO sign-off and commit style
+- `CONTRIBUTING.md`: DCO sign-off, commit signing, and commit style
 - [NodeWright operator (`NVIDIA/skyhook`)](https://github.com/NVIDIA/skyhook): the operator that runs these packages
 - [Agent schemas v1](https://github.com/NVIDIA/skyhook/tree/main/agent/skyhook-agent/src/skyhook_agent/schemas/v1): the `config.json` contract

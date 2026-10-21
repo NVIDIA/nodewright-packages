@@ -5,12 +5,22 @@
 
 All notable changes to this package will be documented in this file.
 
+## [1.4.0] - 2026-10-19
+
+### New Features
+
+- *(tuned)* Add SUSE Linux Enterprise and openSUSE support 
+
+
 ## [1.3.2] - 2026-08-14
 
 ### Bug Fixes
 
 - *(tuned)* Tolerate apt index refresh failures during install 
 
+### Other Tasks
+
+- *(general)* Regenerate package changelogs to current tags 
 
 ## [1.3.1] - 2026-07-07
 

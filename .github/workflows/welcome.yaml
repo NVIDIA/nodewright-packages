@@ -87,7 +87,7 @@ jobs:
                   `Welcome to NodeWright, @${creator}! Thanks for your first pull request.`,
                   '',
                   'Before review, please ensure:',
-                  `- All commits are signed off per the [DCO](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/main/CONTRIBUTING.md) (\`git commit -s\`)`,
+                  `- All commits are signed off per the [DCO](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/main/CONTRIBUTING.md#developer-certificate-of-origin-and-commit-signing) and cryptographically signed (\`git commit -s -S\`)`,
                   '- Commits follow [Conventional Commits](https://www.conventionalcommits.org/) with the package name as scope',
                   `- The checks that apply to your change pass **locally** before you push: \`make test-package PACKAGE=<name>\` and \`make validate-standalone PACKAGE=<name>\` for a package, \`make license-check\` for any source file (see [CONTRIBUTING.md](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/main/CONTRIBUTING.md#verifying-your-change-before-you-open-a-pull-request)). On a fork this is the faster path, since CI runs wait for a maintainer to start them`,
                   '- A package change has been run on a real node, and the PR says which OS, which hardware, and what changed on the host. If you could not test on hardware, say so',

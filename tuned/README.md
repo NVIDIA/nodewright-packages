@@ -8,7 +8,7 @@ A NodeWright package for managing the `tuned` system tuning daemon on Linux syst
 
 ## Features
 
-- **Multi-distribution support**: Works on Ubuntu/Debian, CentOS/RHEL/Amazon Linux, and Fedora
+- **Multi-distribution support**: Works on Ubuntu/Debian, CentOS/RHEL/Amazon Linux, Fedora, and SUSE Linux Enterprise/openSUSE
 - **Custom profile management**: Deploy and apply custom tuned profiles via configmaps
 - **Idempotent operations**: Safe to run multiple times without side effects
 - **Comprehensive validation**: Built-in checks for installation and configuration status
@@ -37,6 +37,7 @@ tuned/
 - **Ubuntu/Debian**: Uses `apt` package manager
 - **CentOS/RHEL/Amazon Linux**: Uses `yum` package manager
 - **Fedora**: Uses `dnf` package manager
+- **SUSE Linux Enterprise Server / openSUSE (Leap, Tumbleweed, Slowroll)**: Uses `zypper` package manager. openSUSE MicroOS and Leap Micro are not supported: their root filesystem is read-only, so tuned has to be added with `transactional-update`.
 
 ## Package Modes
 
@@ -395,14 +396,14 @@ tuned-adm verify
 ## Dependencies
 
 - **System Requirements**: Linux with systemd
-- **Package Managers**: apt, yum, or dnf
+- **Package Managers**: apt, yum, dnf, or zypper
 - **Runtime Dependencies**:
   - `systemctl` (systemd)
   - `sudo` (for profile management)
 
 ## Version
 
-- **Package Version**: 1.0.0
+- **Package Version**: 1.4.0
 - **Schema Version**: v1
 
 ## Contributing
