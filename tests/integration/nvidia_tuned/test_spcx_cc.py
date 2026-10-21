@@ -574,6 +574,57 @@ def test_spcx_cc_does_not_defer_when_a_rail_has_no_owner_instance(node):
     assert not exists(node, UNIT_DEST)
 
 
+def test_spcx_cc_does_not_defer_when_the_node_has_no_rails(node):
+    """With no rail to check, one outside unit must not be enough to hand over.
+
+    Here the PFs are mlx5_0..3, which match no rail name, and a persistent unit runs on
+    mlx5_0 alone. Handing over would leave mlx5_1..3 without congestion control.
+    """
+    configure(node, spcx_cc="on", **OCI_GB300)
+    cmds = [f"rm -rf {IB_DIR}"] + [f"mkdir -p {IB_DIR}/mlx5_{i}/device" for i in range(4)]
+    assert sh(node, " && ".join(cmds)) == 0
+    start_foreign_daemon(node, "mlx5_0")
+    own_foreign_daemons(node, OCA_UNIT)
+    env = {"PROC_DIR": FAKE_PROC}
+
+    assert step(node, "configure_spcx_cc.sh", env) != 0
+    assert said(node, "Not deferring: no rails"), output(node)
+    assert not said(node, "Deferring to them"), output(node)
+    assert not exists(node, UNIT_DEST)
+
+    assert step(node, "configure_spcx_cc_check.sh", env) != 0
+    assert said(node, "cannot defer to them"), output(node)
+
+
+def test_spcx_cc_does_not_defer_when_a_rail_has_two_owners(node):
+    """The tool wants one process per rail, so a second persistent owner on a rail is refused."""
+    configure(node, spcx_cc="on", **OCI_GB300)
+    oca_rails(node)
+    start_oca(node)
+    # A second persistent unit on rdma_rail0. own_foreign_daemons would also re-attribute
+    # OCA's rdma_rail0 process, so only the newest process is given to the other unit.
+    start_foreign_daemon(node, "rdma_rail0")
+    assert (
+        sh(
+            node,
+            "pid=$(pgrep -nx doca_spcx_cc) && u=other-pcc.service && "
+            f"mkdir -p {FAKE_PROC}/$pid && cp /proc/$pid/cmdline {FAKE_PROC}/$pid/cmdline && "
+            f"echo \"0::/system.slice/$u\" > {FAKE_PROC}/$pid/cgroup && "
+            "touch /tmp/fake-systemctl/active.$u && echo $pid > /tmp/fake-systemctl/mainpid.$u",
+        )
+        == 0
+    )
+    env = {"PROC_DIR": FAKE_PROC}
+
+    assert step(node, "configure_spcx_cc.sh", env) != 0
+    assert said(node, "rdma_rail0 has more than one congestion control process outside this package"), output(node)
+    assert not said(node, "Deferring to them"), output(node)
+    assert not exists(node, UNIT_DEST)
+
+    assert step(node, "configure_spcx_cc_check.sh", env) != 0
+    assert said(node, "cannot defer to them"), output(node)
+
+
 def test_spcx_cc_refuses_a_stray_process_in_an_unrelated_unit(node):
     """A process left behind by a script in a long-lived unit is not a persistent owner.
 

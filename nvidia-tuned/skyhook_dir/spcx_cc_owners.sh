@@ -79,7 +79,8 @@ owned_rails() {
 #   - at least one doca_spcx_cc process owned by something other than this package;
 #   - each such process is the main process of a persistent (non-transient) unit, or
 #     that unit's command runs doca_spcx_cc;
-#   - every rail (see owned_rails) has one of those processes;
+#   - the node has at least one rail (see owned_rails), and every rail has exactly one
+#     of those processes;
 #   - every instance of those units' templates that systemd knows about is active.
 # Processes in this package's own template are left out: once the handover is safe,
 # teardown stops them. Returns non-zero, with the reason on stderr, otherwise.
@@ -100,6 +101,24 @@ external_owners() {
     done
     [[ -n "${owners}" ]] || return 1
 
+    # The tool wants exactly one process per rail, so a second owner on a rail is not
+    # something to hand over to.
+    rail="$(awk 'NF && seen[$0]++ { print; exit }' <<< "${covered}")"
+    if [[ -n "${rail}" ]]; then
+        echo "Not deferring: ${rail} has more than one congestion control process outside this package" >&2
+        return 1
+    fi
+
+    # With no rails the coverage check below would pass with nothing to check, and a
+    # single outside unit would be enough to hand over. This package's own path fails
+    # on such a node, so refuse here too.
+    local rails
+    rails="$(owned_rails)"
+    if [[ -z "${rails}" ]]; then
+        echo "Not deferring: no rails (${RAIL_GLOB:-mlx5_bond_*}, mlx5_bond_* or rdma_rail*) found under ${IB_CLASS_DIR}" >&2
+        return 1
+    fi
+
     # Checked against the devices rather than the units systemd lists: an instance that
     # was never started, or stopped and was unloaded, is not listed at all.
     while read -r rail; do
@@ -108,7 +127,7 @@ external_owners() {
             echo "Not deferring: ${rail} has no congestion control process outside this package" >&2
             return 1
         fi
-    done < <(owned_rails)
+    done <<< "${rails}"
 
     # A live process per owner is not enough. An owner that runs a template per rail
     # must have every instance systemd knows about up, or a dead sibling would leave

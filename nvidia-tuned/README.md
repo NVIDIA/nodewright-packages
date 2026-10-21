@@ -328,9 +328,10 @@ host-level steps do need a reboot:
   with the `mlxconfig` command to fix it otherwise. Setting firmware stays manual.
   A node with `spcx_cc: "off"` is never checked.
   When congestion control is already run by persistent systemd units from elsewhere,
-  the step defers to them. That needs every rail (`mlx5_bond_*` or `rdma_railN`, not
-  VFs or front-end NICs) to have a `doca_spcx_cc` process from such a unit, as its main process or from its command, and
-  every instance of that unit's template to be active. The step then removes this
+  the step defers to them. That needs at least one rail (`mlx5_bond_*` or `rdma_railN`,
+  not VFs or front-end NICs), each rail to have exactly one `doca_spcx_cc` process from
+  such a unit, as its main process or from its command, and every instance of that
+  unit's template to be active. The step then removes this
   package's own units, stopping any still running, and the check verifies the other
   units report ready in their current run. Oracle Cloud Agent 1.64 does this on GB300
   with its own `doca_spcx_cc@rdma_railN` units. When it defers, the step does not check

@@ -29,10 +29,10 @@ Compatibility with OCI GB300 nodes on Oracle Cloud Agent 1.64 and
 
 OCA 1.64 runs DOCA Spectrum-X congestion control itself on GB300, from persistent
 `doca_spcx_cc@rdma_railN` units. `configure-spcx-cc` treated those processes as a second
-owner and failed, leaving the node tainted. It now defers when every rail (`mlx5_bond_*`
-or `rdma_railN`) has a `doca_spcx_cc` process from a persistent systemd unit that is not its
-own (the unit's main process, or one its command starts), and every instance of that
-unit's template is active. It then removes this package's units and udev rule,
+owner and failed, leaving the node tainted. It now defers when the node has rails
+(`mlx5_bond_*` or `rdma_railN`) and each has exactly one `doca_spcx_cc` process from a
+persistent systemd unit that is not its own (the unit's main process, or one its command
+starts), and every instance of that unit's template is active. It then removes this package's units and udev rule,
 stopping any of its own processes still running, and the check verifies the other
 units report `PCC host status Active` in their current run. When deferring, the step
 does not check for DOCA or `USER_PROGRAMMABLE_CC`. Transient units, processes without a
@@ -55,7 +55,7 @@ applied; the VFs themselves report 200 Gb/s.
 
 Each NIC now carries a second `<net>` entry, identical apart from the
 `rdma_vf_railN_dma` name. NCCL 2.27.3 and later drop the entry that matches no device,
-and GB300 requires 2.27 or later. The file still lands at `${TOPO_PATH}` (default
+so use 2.27.3 or later with this file. The file still lands at `${TOPO_PATH}` (default
 `/etc/nccl/topo.xml`), so workloads are unchanged on either image.
 
 ## 0.10.1
