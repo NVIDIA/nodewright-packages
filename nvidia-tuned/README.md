@@ -322,10 +322,21 @@ host-level steps do need a reboot:
   configMap to disable it. Binding the units to devices through udev is what makes the
   state survive both a reboot and an mlx5 driver reload; started by hand with
   `systemd-run`, the units are transient and vanish on reboot.
-  The step requires `USER_PROGRAMMABLE_CC` to be enabled in the NIC firmware, since a
+  When it runs the units itself, the step requires `USER_PROGRAMMABLE_CC` to be enabled
+  in the NIC firmware, since a
   programmable congestion control algorithm cannot take effect without it, and fails
   with the `mlxconfig` command to fix it otherwise. Setting firmware stays manual.
   A node with `spcx_cc: "off"` is never checked.
+  When congestion control is already run by persistent systemd units from elsewhere,
+  the step defers to them. That needs at least one rail (`mlx5_bond_*` or `rdma_railN`,
+  not VFs or front-end NICs), each rail to have exactly one `doca_spcx_cc` process from
+  such a unit, as its main process or from its command, and every instance of that
+  unit's template to be active. The step then removes this
+  package's own units, stopping any still running, and the check verifies the other
+  units report ready in their current run. Oracle Cloud Agent 1.64 does this on GB300
+  with its own `doca_spcx_cc@rdma_railN` units. When it defers, the step does not check
+  for DOCA or `USER_PROGRAMMABLE_CC`, which are the other owner's to need. Transient
+  units, bare processes and strays left in an unrelated unit are still refused.
 
 Both steps are no-ops for every other `service`/`accelerator` pair, so existing `eks`,
 `aks`, and `bcm` deployments are unaffected and still need no `interrupt`.
