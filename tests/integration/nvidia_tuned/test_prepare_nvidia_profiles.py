@@ -1946,3 +1946,60 @@ def test_uninstall_bootloader_suse_fails_when_refresh_fails(base_image):
         assert check.exit_code != 0, "the check must still see the old tuned_params"
     finally:
         runner.cleanup()
+
+
+@pytest.mark.parametrize("loader_type", ["grub2-bls", "systemd-boot", ""])
+def test_uninstall_bootloader_suse_leaves_grub_cfg_on_other_loaders(base_image, loader_type):
+    """Only grub2 and grub2-efi boot from grub.cfg; on any other loader uninstall leaves it.
+
+    A bcm node with CONFIGURE_BOOTLOADER=false never ran the step, yet nvidia-base's
+    init_on_alloc=0 had tuned set tuned_params in grub.cfg. update-bootloader --refresh
+    would not touch that file on these loaders, and may not be installed at all, so
+    clearing it would fail on every retry.
+    """
+    _skip_non_suse(base_image)
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        create_container_for_testing(
+            runner, {"accelerator": "gb200", "intent": "performance", "service": "bcm"}
+        )
+        _write_bootcmdline(runner, STUB_BOOTCMDLINE, "init_on_alloc=0")
+        _put_file(runner, STUB_GRUB_CFG, SP7_GRUB_CFG)
+        _put_file(runner, STUB_BOOTLOADER_SYSCONFIG, f'LOADER_TYPE="{loader_type}"\n')
+        env = {**SUSE_ENV, "CONFIGURE_BOOTLOADER": "false"}
+
+        result = _run_with_env(runner, "uninstall_bootloader.sh", env)
+        assert_exit_code(result, 0)
+        assert_output_contains(result.stdout, "does not boot from")
+        assert runner.get_file_contents(STUB_GRUB_CFG) == SP7_GRUB_CFG
+        assert_exit_code(_run_with_env(runner, "uninstall_bootloader_check.sh", env), 0)
+    finally:
+        runner.cleanup()
+
+
+@pytest.mark.parametrize(
+    "os_release",
+    [
+        'ID="opensuse-leap"\\nID_LIKE="suse opensuse"\\nVERSION_ID="15.6"\\nPRETTY_NAME="openSUSE Leap 15.6"\\n',
+        'ID="opensuse-leap"\\nID_LIKE="suse opensuse"\\nVERSION_ID="16.0"\\nPRETTY_NAME="openSUSE Leap 16.0"\\n',
+    ],
+    ids=["leap-15.6", "leap-16.0"],
+)
+def test_bootloader_suse_accepts_opensuse_leap(base_image, os_release):
+    """openSUSE Leap takes the same path as SLES, from configure through uninstall."""
+    _skip_non_suse(base_image)
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        _suse_container(runner)
+        _write_os_release(runner, STUB_OS_RELEASE, os_release)
+        env = {**SUSE_ENV, "OS_RELEASE": STUB_OS_RELEASE}
+
+        assert_exit_code(_run_with_env(runner, "configure_bootloader.sh", env), 0)
+        assert f'set tuned_params="{SAMPLE_CMDLINE}"' in runner.get_file_contents(STUB_GRUB_CFG)
+        assert_exit_code(_run_with_env(runner, "configure_bootloader_check.sh", env), 0)
+
+        assert_exit_code(_run_with_env(runner, "uninstall_bootloader.sh", env), 0)
+        assert 'set tuned_params=""' in runner.get_file_contents(STUB_GRUB_CFG)
+        assert_exit_code(_run_with_env(runner, "uninstall_bootloader_check.sh", env), 0)
+    finally:
+        runner.cleanup()

@@ -36,7 +36,10 @@
 # grub.cfg) only if the daemon is running when it is stopped. A tuned that crashed, was
 # stopped, or runs with rollback = not_on_exit leaves grub.cfg passing the old cmdline
 # after the package is gone. So this step does the same rollback itself and regenerates
-# with update-bootloader --refresh, rather than depending on the daemon's state.
+# with update-bootloader --refresh, rather than depending on the daemon's state. Only for
+# LOADER_TYPE grub2 and grub2-efi, the loaders configure_bootloader.sh accepts: any other
+# does not boot from grub.cfg, so tuned_params there reaches no kernel and the refresh
+# would not clear it.
 #
 # Takes effect on the next boot, like the change it reverts.
 
@@ -46,6 +49,7 @@ TUNED_GRUB_DROPIN="${TUNED_GRUB_DROPIN:-/etc/default/grub.d/99-nvidia-tuned-cmdl
 TUNED_BOOTCMDLINE="${TUNED_BOOTCMDLINE:-/etc/tuned/bootcmdline}"
 OS_RELEASE="${OS_RELEASE:-/etc/os-release}"
 GRUB_CFG="${GRUB_CFG:-/boot/grub2/grub.cfg}"
+BOOTLOADER_SYSCONFIG="${BOOTLOADER_SYSCONFIG:-/etc/sysconfig/bootloader}"
 
 # Mirrors DROPIN_MARKER in configure_bootloader.sh.
 DROPIN_MARKER="Managed by the nvidia-tuned Skyhook package (configure_bootloader.sh)"
@@ -91,6 +95,16 @@ bootloader_os_family() {
     esac
 }
 
+# Mirrors bootloader_loader_type() in configure_bootloader.sh.
+bootloader_loader_type() {
+    (
+        set +u
+        # shellcheck source=/dev/null
+        . "${BOOTLOADER_SYSCONFIG}" 2>/dev/null
+        printf '%s' "${LOADER_TYPE:-}"
+    )
+}
+
 # Mirrors refresh_bootloader() in configure_bootloader.sh.
 refresh_bootloader() {
     if [[ -n "${SKIP_SYSTEM_OPERATIONS:-}" ]]; then
@@ -130,6 +144,16 @@ clear_tuned_native() {
         rm -f "${TUNED_GRUB_DROPIN}"
         echo "Removed ${TUNED_GRUB_DROPIN}; this distribution never reads it"
     fi
+
+    local loader
+    loader="$(bootloader_loader_type)"
+    case "${loader}" in
+        grub2 | grub2-efi) ;;
+        *)
+            echo "LOADER_TYPE=${loader:-<unset>} in ${BOOTLOADER_SYSCONFIG} does not boot from ${GRUB_CFG}; nothing to remove"
+            return 0
+            ;;
+    esac
 
     if [[ -z "$(tuned_cmdline)" && -z "$(grub_cfg_tuned_params)" ]]; then
         echo "No tuned bootloader cmdline in ${TUNED_BOOTCMDLINE} or ${GRUB_CFG}; nothing to remove"

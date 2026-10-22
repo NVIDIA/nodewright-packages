@@ -403,7 +403,8 @@ back its bootloader settings when the daemon is stopped, but only if it is runni
 that point and not set to `rollback = not_on_exit`, so the step does that rollback
 itself: it empties `TUNED_BOOT_CMDLINE` in `/etc/tuned/bootcmdline` and runs
 `update-bootloader --refresh`. `uninstall-bootloader-check` fails while `grub.cfg` still
-sets a non-empty `tuned_params`.
+sets a non-empty `tuned_params`. Both act only when `LOADER_TYPE` is `grub2` or
+`grub2-efi`; any other loader does not boot from `grub.cfg`, so there is nothing to clear.
 
 The step supports **Debian-family distributions and SLES/openSUSE Leap**, and fails on
 anything else rather than passing quietly. Sourcing `/etc/default/grub.d/*.cfg` is a

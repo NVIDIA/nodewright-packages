@@ -125,9 +125,9 @@ bootloader_enabled() {
 #
 # Debian checks ID and ID_LIKE so derivatives that do carry the grub.d patch (Pop, Mint,
 # and the vendor rebuilds these nodes run) are recognised without an explicit
-# allowlist. SUSE matches ID for SLES and openSUSE Leap only, the two this step was
-# tested on: Tumbleweed, Slowroll and the transactional variants (MicroOS, Leap Micro)
-# fall through to unsupported.
+# allowlist. SUSE matches ID for SLES, where this step was tested, and openSUSE Leap,
+# which shares its bootloader stack: Tumbleweed, Slowroll and the transactional variants
+# (MicroOS, Leap Micro) fall through to unsupported.
 bootloader_os_family() {
     local ids
 

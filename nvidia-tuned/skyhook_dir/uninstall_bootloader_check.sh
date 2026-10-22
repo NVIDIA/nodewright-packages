@@ -17,7 +17,7 @@
 # limitations under the License.
 
 # Verifies uninstall_bootloader.sh removed the grub.d drop-in and, on SUSE, that grub.cfg
-# no longer sets tuned_params.
+# no longer sets tuned_params when the node boots from it.
 #
 # A non-zero exit is the signal here, so this script does not use `set -e`; expected
 # failures are handled explicitly.
@@ -32,6 +32,7 @@ TUNED_GRUB_DROPIN="${TUNED_GRUB_DROPIN:-/etc/default/grub.d/99-nvidia-tuned-cmdl
 
 OS_RELEASE="${OS_RELEASE:-/etc/os-release}"
 GRUB_CFG="${GRUB_CFG:-/boot/grub2/grub.cfg}"
+BOOTLOADER_SYSCONFIG="${BOOTLOADER_SYSCONFIG:-/etc/sysconfig/bootloader}"
 
 DROPIN_MARKER="Managed by the nvidia-tuned Skyhook package (configure_bootloader.sh)"
 
@@ -53,6 +54,16 @@ bootloader_os_family() {
     esac
 }
 
+# Mirrors bootloader_loader_type() in configure_bootloader.sh.
+bootloader_loader_type() {
+    (
+        set +u
+        # shellcheck source=/dev/null
+        . "${BOOTLOADER_SYSCONFIG}" 2>/dev/null
+        printf '%s' "${LOADER_TYPE:-}"
+    )
+}
+
 # Mirrors grub_cfg_tuned_params() in uninstall_bootloader.sh.
 grub_cfg_tuned_params() {
     [[ -r "${GRUB_CFG}" ]] || return 0
@@ -68,8 +79,9 @@ main() {
     fi
 
     # Runs after the tuned uninstall step too, so this also catches a grub.cfg that
-    # tuned's rollback was expected to clear and did not.
-    if [[ "$(bootloader_os_family)" == suse ]]; then
+    # tuned's rollback was expected to clear and did not. Only on the loaders that boot
+    # from grub.cfg, as uninstall_bootloader.sh leaves it alone on any other.
+    if [[ "$(bootloader_os_family)" == suse && "$(bootloader_loader_type)" =~ ^grub2(-efi)?$ ]]; then
         local params
         params="$(grub_cfg_tuned_params)"
         if [[ -n "${params}" ]]; then
