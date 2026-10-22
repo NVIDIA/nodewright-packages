@@ -103,7 +103,7 @@ Run the checks CI runs, on your machine, before you push. This applies to a codi
 
 - **`.github/labels.yml` is the closed set of labels.** It is the only source of truth, synced to GitHub with `make labels`. Because that sync creates and updates but never deletes, GitHub may carry undeclared extras; treat any label not defined in the file as one that should not exist, never as precedent for adding more.
 - **Never create a label.** No `gh label create`, no `gh issue create --label <something-new>`, no label creation through `gh api`. A label invented once lingers on the repo until someone deletes it by hand. If a label you want is genuinely missing, add it to `.github/labels.yml` in a PR and stop there.
-- **Priority and planning labels belong to maintainers.** `P0`/`P1`/`P2` and the planning labels (`epic`, `feature`, `task`, `initiative`) are set by maintainers during triage, never by agents or issue reporters. If you think something is urgent, say so in the issue body and let a maintainer decide.
+- **Priority is not a label.** It is a native GitHub issue Field (Urgent / High / Medium / Low) in the issue sidebar. **Maintainers set it during triage; agents and issue reporters do not set it at all.** Never apply `priority/*`, `P0` / `P1` / `P2`, or any severity label, and never write the Priority field from automation. If you think something is urgent, say so in the issue body and let a maintainer decide.
 - **When filing an issue, apply no labels yourself.** The issue forms add their own type label, `.github/workflows/triage.yaml` adds `needs-triage` and infers `package/*`, and `.github/labeler.yml` labels PRs by path. Let that automation run rather than pre-labeling.
 
 ## Secrets and credentials
