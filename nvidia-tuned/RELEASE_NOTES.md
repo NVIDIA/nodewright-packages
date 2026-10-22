@@ -40,9 +40,9 @@ Upgrade note: a SUSE node whose `/etc/sysconfig/bootloader` sets `LOADER_TYPE` t
 `grub2-bls` or `systemd-boot` still fails the step; keep `CONFIGURE_BOOTLOADER=false` there.
 
 On SUSE, uninstall clears tuned's bootloader cmdline itself: it empties
-`TUNED_BOOT_CMDLINE` and regenerates `grub.cfg`, the same rollback tuned does when its
+`TUNED_BOOT_CMDLINE` and `TUNED_BOOT_INITRD_ADD` and regenerates `grub.cfg`, the same rollback tuned does when its
 daemon is stopped while running. `uninstall-bootloader-check` fails while `grub.cfg` still
-sets a non-empty `tuned_params`. Both act only when `LOADER_TYPE` is `grub2` or `grub2-efi`,
+sets a non-empty `tuned_params` or `tuned_initrd`. Both act only when `LOADER_TYPE` is `grub2` or `grub2-efi`,
 so a node on another loader, or with no `/etc/sysconfig/bootloader`, uninstalls cleanly.
 openSUSE Tumbleweed and Slowroll are not supported by the step.
 

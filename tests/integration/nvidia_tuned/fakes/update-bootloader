@@ -18,8 +18,8 @@
 
 # Test double for SUSE's update-bootloader. `--refresh` regenerates GRUB_CFG the way
 # grub2-mkconfig does for the two parts the bootloader step depends on: tuned's
-# /etc/grub.d/00_tuned sets tuned_params from TUNED_BOOT_CMDLINE, and 10_linux puts
-# GRUB_CMDLINE_LINUX_DEFAULT from the defaults file on the linux line.
+# /etc/grub.d/00_tuned sets tuned_params and tuned_initrd from bootcmdline, and 10_linux
+# puts GRUB_CMDLINE_LINUX_DEFAULT from the defaults file on the linux line.
 
 set -euo pipefail
 
@@ -47,11 +47,17 @@ params="$(
     . "${TUNED_BOOTCMDLINE:-/etc/tuned/bootcmdline}" 2>/dev/null
     printf '%s' "${TUNED_BOOT_CMDLINE:-}"
 )"
+initrd="$(
+    set +u
+    # shellcheck source=/dev/null
+    . "${TUNED_BOOTCMDLINE:-/etc/tuned/bootcmdline}" 2>/dev/null
+    printf '%s' "${TUNED_BOOT_INITRD_ADD:-}"
+)"
 
 cat > "${GRUB_CFG:-/boot/grub2/grub.cfg}" <<CFG
 ### BEGIN /etc/grub.d/00_tuned ###
 set tuned_params="${params}"
-set tuned_initrd=""
+set tuned_initrd="${initrd}"
 ### END /etc/grub.d/00_tuned ###
 menuentry 'SLES' {
 	linux	/boot/vmlinuz root=UUID=0000 ${cmdline}

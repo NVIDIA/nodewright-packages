@@ -17,7 +17,7 @@
 # limitations under the License.
 
 # Verifies uninstall_bootloader.sh removed the grub.d drop-in and, on SUSE, that grub.cfg
-# no longer sets tuned_params when the node boots from it.
+# no longer sets tuned_params or tuned_initrd when the node boots from it.
 #
 # A non-zero exit is the signal here, so this script does not use `set -e`; expected
 # failures are handled explicitly.
@@ -64,10 +64,10 @@ bootloader_loader_type() {
     )
 }
 
-# Mirrors grub_cfg_tuned_params() in uninstall_bootloader.sh.
-grub_cfg_tuned_params() {
+# Mirrors grub_cfg_value() in uninstall_bootloader.sh.
+grub_cfg_value() {
     [[ -r "${GRUB_CFG}" ]] || return 0
-    sed -n 's/^[[:space:]]*set[[:space:]]\{1,\}tuned_params="\(.*\)"[[:space:]]*$/\1/p' "${GRUB_CFG}" | tail -n 1
+    sed -n "s/^[[:space:]]*set[[:space:]]\{1,\}$1=\"\(.*\)\"[[:space:]]*\$/\1/p" "${GRUB_CFG}" | tail -n 1
 }
 
 main() {
@@ -82,13 +82,15 @@ main() {
     # tuned's rollback was expected to clear and did not. Only on the loaders that boot
     # from grub.cfg, as uninstall_bootloader.sh leaves it alone on any other.
     if [[ "$(bootloader_os_family)" == suse && "$(bootloader_loader_type)" =~ ^grub2(-efi)?$ ]]; then
-        local params
-        params="$(grub_cfg_tuned_params)"
-        if [[ -n "${params}" ]]; then
-            echo "ERROR: ${GRUB_CFG} still sets tuned_params, so the next boot keeps the profile cmdline:"
-            echo "  ${params}"
-            exit 1
-        fi
+        local var value
+        for var in tuned_params tuned_initrd; do
+            value="$(grub_cfg_value "${var}")"
+            if [[ -n "${value}" ]]; then
+                echo "ERROR: ${GRUB_CFG} still sets ${var}, so the next boot keeps the profile's ${var}:"
+                echo "  ${value}"
+                exit 1
+            fi
+        done
     fi
 
     echo "Verified the bootloader drop-in is removed"

@@ -31,15 +31,15 @@
 # aks services write their own grub.d file from inside the tuned profile; removing that
 # one is not this step's business.
 #
-# On SUSE there is no drop-in: tuned's own grub2 integration carries the cmdline, and
-# tuned's full rollback clears it (blanks TUNED_BOOT_CMDLINE, then tuned_params in
-# grub.cfg) only if the daemon is running when it is stopped. A tuned that crashed, was
-# stopped, or runs with rollback = not_on_exit leaves grub.cfg passing the old cmdline
-# after the package is gone. So this step does the same rollback itself and regenerates
-# with update-bootloader --refresh, rather than depending on the daemon's state. Only for
-# LOADER_TYPE grub2 and grub2-efi, the loaders configure_bootloader.sh accepts: any other
-# does not boot from grub.cfg, so tuned_params there reaches no kernel and the refresh
-# would not clear it.
+# On SUSE there is no drop-in: tuned's own grub2 integration carries the cmdline and any
+# initrd overlay, and tuned's full rollback clears them (blanks TUNED_BOOT_CMDLINE and
+# TUNED_BOOT_INITRD_ADD, then tuned_params and tuned_initrd in grub.cfg) only if the daemon
+# is running when it is stopped. A tuned that crashed, was stopped, or runs with
+# rollback = not_on_exit leaves grub.cfg passing them after the package is gone. So this
+# step does the same rollback itself and regenerates with update-bootloader --refresh,
+# rather than depending on the daemon's state. Only for LOADER_TYPE grub2 and grub2-efi,
+# the loaders configure_bootloader.sh accepts: any other does not boot from grub.cfg, so
+# what it sets reaches no kernel and the refresh would not clear it.
 #
 # Takes effect on the next boot, like the change it reverts.
 
@@ -120,20 +120,21 @@ refresh_bootloader() {
     update-bootloader --refresh
 }
 
-# The cmdline tuned last resolved, or empty.
-tuned_cmdline() {
+# The value tuned last resolved for a variable in bootcmdline, or empty.
+bootcmdline_value() {
+    local var="$1"
     (
         set +u
         # shellcheck source=/dev/null
         . "${TUNED_BOOTCMDLINE}" 2>/dev/null
-        printf '%s' "${TUNED_BOOT_CMDLINE:-}"
+        printf '%s' "${!var:-}"
     )
 }
 
-# The last tuned_params value grub.cfg sets, or empty.
-grub_cfg_tuned_params() {
+# The last value grub.cfg sets for a variable, or empty.
+grub_cfg_value() {
     [[ -r "${GRUB_CFG}" ]] || return 0
-    sed -n 's/^[[:space:]]*set[[:space:]]\{1,\}tuned_params="\(.*\)"[[:space:]]*$/\1/p' "${GRUB_CFG}" | tail -n 1
+    sed -n "s/^[[:space:]]*set[[:space:]]\{1,\}$1=\"\(.*\)\"[[:space:]]*\$/\1/p" "${GRUB_CFG}" | tail -n 1
 }
 
 # SUSE: tuned's full rollback, done here so it does not depend on the daemon running.
@@ -155,13 +156,17 @@ clear_tuned_native() {
             ;;
     esac
 
-    if [[ -z "$(tuned_cmdline)" && -z "$(grub_cfg_tuned_params)" ]]; then
-        echo "No tuned bootloader cmdline in ${TUNED_BOOTCMDLINE} or ${GRUB_CFG}; nothing to remove"
+    # An initrd-only profile sets no cmdline, so all four are checked.
+    local state
+    state="$(bootcmdline_value TUNED_BOOT_CMDLINE)$(bootcmdline_value TUNED_BOOT_INITRD_ADD)"
+    state+="$(grub_cfg_value tuned_params)$(grub_cfg_value tuned_initrd)"
+    if [[ -z "${state}" ]]; then
+        echo "No tuned bootloader cmdline or initrd in ${TUNED_BOOTCMDLINE} or ${GRUB_CFG}; nothing to remove"
         return 0
     fi
 
     # The same two variables tuned blanks. If tuned is already gone, so is 00_tuned, and
-    # the refresh drops tuned_params from grub.cfg altogether.
+    # the refresh drops tuned_params and tuned_initrd from grub.cfg altogether.
     if [[ -f "${TUNED_BOOTCMDLINE}" ]]; then
         sed -i -E 's/^(TUNED_BOOT_CMDLINE|TUNED_BOOT_INITRD_ADD)=.*/\1=""/' "${TUNED_BOOTCMDLINE}"
     fi
@@ -171,7 +176,7 @@ clear_tuned_native() {
         return 1
     fi
 
-    echo "Cleared tuned's bootloader cmdline; a reboot is required to drop it"
+    echo "Cleared tuned's bootloader cmdline and initrd; a reboot is required to drop it"
 }
 
 main() {

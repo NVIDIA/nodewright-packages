@@ -2003,3 +2003,28 @@ def test_bootloader_suse_accepts_opensuse_leap(base_image, os_release):
         assert_exit_code(_run_with_env(runner, "uninstall_bootloader_check.sh", env), 0)
     finally:
         runner.cleanup()
+
+
+def test_uninstall_bootloader_suse_clears_initrd_only_profile(base_image):
+    """A profile with initrd_add_img and no cmdline leaves only tuned_initrd; that is cleared too."""
+    _skip_non_suse(base_image)
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        _suse_container(runner)
+        _put_file(runner, STUB_BOOTCMDLINE,
+                  'TUNED_BOOT_CMDLINE=""\nTUNED_BOOT_INITRD_ADD="/boot/tuned-initrd.img"\n')
+        _put_file(runner, STUB_GRUB_CFG,
+                  'set tuned_params=""\nset tuned_initrd="/boot/tuned-initrd.img"\n')
+
+        check = _run_with_env(runner, "uninstall_bootloader_check.sh", SUSE_ENV)
+        assert check.exit_code != 0, f"uninstall check passed with tuned_initrd still set: {check.stdout}"
+        assert_output_contains(check.stdout, "still sets tuned_initrd")
+
+        result = _run_with_env(runner, "uninstall_bootloader.sh", SUSE_ENV)
+        assert_exit_code(result, 0)
+        assert runner.file_exists("/tmp/update-bootloader.ran"), "grub.cfg was not regenerated"
+        assert 'TUNED_BOOT_INITRD_ADD=""' in runner.get_file_contents(STUB_BOOTCMDLINE)
+        assert 'set tuned_initrd=""' in runner.get_file_contents(STUB_GRUB_CFG)
+        assert_exit_code(_run_with_env(runner, "uninstall_bootloader_check.sh", SUSE_ENV), 0)
+    finally:
+        runner.cleanup()
