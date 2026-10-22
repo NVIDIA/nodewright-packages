@@ -93,7 +93,7 @@ jobs:
                   '- A package change has been run on a real node, and the PR says which OS, which hardware, and what changed on the host. If you could not test on hardware, say so',
                   '- The PR says what you ran and what you could not',
                   '- The PR description explains the *why* behind your changes',
-                  `- The PR links the issue it closes with \`closes #N\`, and that issue is assigned to you; only trivial changes need none (see [CONTRIBUTING.md](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/main/CONTRIBUTING.md#open-an-issue-first))`,
+                  `- The PR links the issue it closes with \`closes #N\`, and that issue is assigned to you; trivial changes and security fixes coordinated through SECURITY.md need none, and a security fix must never reference the non-public report (see [CONTRIBUTING.md](https://github.com/${context.repo.owner}/${context.repo.repo}/blob/main/CONTRIBUTING.md#open-an-issue-first))`,
                   '',
                   'A maintainer will review this soon.',
                 ].join('\n'),
