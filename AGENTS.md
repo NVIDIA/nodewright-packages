@@ -110,7 +110,7 @@ Almost all package logic is bash. The existing scripts are not yet consistent (s
 - **Quote every expansion:** `"${var}"`, `"$@"`, `"$(cmd)"`. Unquoted expansions (shellcheck `SC2086`) are by far the most common issue in this repo and the main thing to avoid adding.
 - **Prefer** `[[ ... ]]` over `[ ... ]`, `$(...)` over backticks, and declare-then-assign for command substitution (`local x; x="$(cmd)"`) so a failing command is not masked (`SC2155`).
 - **Idempotence:** lifecycle scripts must be safe to re-run (see `PACKAGE_LIFECYCLE.md`); either rely on the agent's idempotence tracking or write the script so repeats are no-ops.
-- **Lint locally** before pushing: `shellcheck path/to/script.sh`. CI runs shellcheck across all tracked `*.sh` files whenever a `.sh` file, `.shellcheckrc`, or the workflow changes (advisory today; it reports findings without blocking, and will become a required check as the count reaches zero). `SC1091` (can't follow runtime-sourced files like `${SKYHOOK_DIR}/...`) is suppressed via `.shellcheckrc`.
+- **Lint locally** before pushing: `shellcheck path/to/script.sh`. CI runs ShellCheck across all tracked `*.sh` files whenever a `.sh` file, `.shellcheckrc`, or the workflow changes. The `shellcheck (advisory)` job is not a required merge check: error-severity findings and invocation failures fail the job, while warnings and notes are advisory. `SC1091` (can't follow runtime-sourced files like `${SKYHOOK_DIR}/...`) is suppressed via `.shellcheckrc`.
 
 ## CI and release mechanics
 
