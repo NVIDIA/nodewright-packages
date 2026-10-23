@@ -5,6 +5,17 @@
 
 All notable changes to this package will be documented in this file.
 
+## [0.11.0] - 2026-10-23
+
+### Bug Fixes
+
+- *(nvidia-tuned)* Support OCA 1.64 and rail device names on OCI GB300 
+
+### New Features
+
+- *(nvidia-tuned)* Support SLES and openSUSE Leap in the bootloader step 
+
+
 ## [0.10.1] - 2026-10-19
 
 ### Bug Fixes
@@ -14,7 +25,7 @@ All notable changes to this package will be documented in this file.
 ### Other Tasks
 
 - Bump source image to 1.4.0 for SUSE support
-
+- *(nvidia-tuned/0.10.1)* Changelog updates
 
 ## [0.10.0] - 2026-09-15
 
