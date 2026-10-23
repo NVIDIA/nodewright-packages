@@ -13,5 +13,5 @@ summary=NVIDIA RKE2 service profile: keeps the accelerator's bootloader tuning
 #
 # No [script] here on purpose either: only one [script] survives tuned's include chain,
 # so a stanza here would suppress the containerd_service.sh that the gb200 and vr200
-# performance profiles carry. The grub.d work this service needs runs as the
+# performance profiles carry. The bootloader work this service needs runs as the
 # configure-bootloader lifecycle step instead (skyhook_dir/configure_bootloader.sh).
