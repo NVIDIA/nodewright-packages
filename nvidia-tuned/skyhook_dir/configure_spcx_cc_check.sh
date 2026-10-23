@@ -44,6 +44,10 @@ RAIL_GLOB="${RAIL_GLOB:-mlx5_bond_*}"
 READY_PATTERN="${READY_PATTERN:-PCC host status Active}"
 READY_TIMEOUT_SECS="${READY_TIMEOUT_SECS:-60}"
 READY_POLL_SECS="${READY_POLL_SECS:-2}"
+PROC_DIR="${PROC_DIR:-/proc}"
+
+# shellcheck source=spcx_cc_owners.sh
+source "${STEP_ROOT:?STEP_ROOT is required}/spcx_cc_owners.sh"
 
 # Mirrors resolve_asset_dir() in configure_spcx_cc.sh.
 resolve_asset_dir() {
@@ -88,13 +92,6 @@ discover_rails() {
     done
 }
 
-# Mirrors owning_unit() in configure_spcx_cc.sh.
-owning_unit() {
-    local pid="$1" cgroup
-    cgroup="$(cat "/proc/${pid}/cgroup" 2>/dev/null || true)"
-    awk -F/ '$NF ~ /\.service$/ { print $NF; exit }' <<< "${cgroup}"
-}
-
 # Returns non-zero when a doca_spcx_cc process is owned by anything other than this
 # package's template. Mirrors the configure-time guard so drift after config is caught.
 assert_no_foreign_processes() {
@@ -106,7 +103,7 @@ assert_no_foreign_processes() {
     for pid in "${pids[@]}"; do
         unit="$(owning_unit "${pid}")"
         [[ "${unit}" == doca-spcx-cc@* ]] && continue
-        rail="$(tr '\0' ' ' < "/proc/${pid}/cmdline" 2>/dev/null | sed -n 's/.*-d[= ]\([^ ]*\).*/\1/p')"
+        rail="$(process_rail "${pid}")"
         if [[ "${found}" -eq 0 ]]; then
             echo "ERROR: doca_spcx_cc process(es) running outside this package:"
         fi
@@ -118,17 +115,24 @@ assert_no_foreign_processes() {
 }
 
 # Wait for the daemon to report readiness in its journal. Returns non-zero on timeout.
+#
+# Only the unit's current run counts. A persistent journal keeps readiness lines from
+# earlier boots and earlier runs of the same unit, which would otherwise satisfy this for
+# a daemon that is now stuck. That matters most for units this package does not control.
 wait_for_ready() {
-    local unit="$1" elapsed=0 log
+    local unit="$1" elapsed=0 invocation log
     while [[ "${elapsed}" -lt "${READY_TIMEOUT_SECS}" ]]; do
-        # Captured rather than piped: `grep -q` exits at the first match, so under
-        # pipefail the pipeline can return 141 and be misread as "not ready".
-        log="$(journalctl -u "${unit}" --no-pager 2>/dev/null || true)"
-        if grep -qF "${READY_PATTERN}" <<< "${log}"; then
-            return 0
-        fi
         if ! systemctl is-active --quiet "${unit}"; then
             return 1
+        fi
+        invocation="$(systemctl show -p InvocationID --value "${unit}" 2>/dev/null || true)"
+        if [[ -n "${invocation}" ]]; then
+            # Captured rather than piped: `grep -q` exits at the first match, so under
+            # pipefail the pipeline can return 141 and be misread as "not ready".
+            log="$(journalctl _SYSTEMD_INVOCATION_ID="${invocation}" --no-pager 2>/dev/null || true)"
+            if grep -qF "${READY_PATTERN}" <<< "${log}"; then
+                return 0
+            fi
         fi
         sleep "${READY_POLL_SECS}"
         elapsed=$((elapsed + READY_POLL_SECS))
@@ -136,25 +140,27 @@ wait_for_ready() {
     return 1
 }
 
-verify_off() {
-    # Only this package's own artifacts are asserted. Switching the feature off means
-    # this package takes no part in congestion control, not that nothing else may run
-    # it: processes started elsewhere are not ours to stop, so their presence is not an
-    # "off" failure. The uninstall check reasons about them the same way.
+# Exits non-zero when any of this package's own artifacts remain. $1 says why they
+# should be gone, for the error message.
+assert_own_artifacts_absent() {
+    local why="$1"
+
     if [[ -e "${RULES_DEST}" ]]; then
-        echo "ERROR: spcx_cc is off but the udev rule is still present at ${RULES_DEST}"
+        echo "ERROR: ${why} but the udev rule is still present at ${RULES_DEST}"
         exit 1
     fi
 
     if [[ -e "${UNIT_DEST}" ]]; then
-        echo "ERROR: spcx_cc is off but the unit template is still present at ${UNIT_DEST}"
+        echo "ERROR: ${why} but the unit template is still present at ${UNIT_DEST}"
         exit 1
     fi
 
+    # not-found stubs are ignored for the reason given in uninstall_spcx_cc_check.sh: the
+    # device units udev created keep referencing the removed instances until reboot.
     local remaining
-    remaining="$(systemctl list-units --all --plain --no-legend 'doca-spcx-cc@*.service' 2>/dev/null | awk '{print $1}')"
+    remaining="$(systemctl list-units --all --plain --no-legend 'doca-spcx-cc@*.service' 2>/dev/null | awk '$2 != "not-found" {print $1}')"
     if [[ -n "${remaining}" ]]; then
-        echo "ERROR: spcx_cc is off but this package's unit(s) are still known to systemd:"
+        echo "ERROR: ${why} but this package's unit(s) are still loaded:"
         local unit
         while read -r unit; do
             [[ -n "${unit}" ]] || continue
@@ -162,6 +168,14 @@ verify_off() {
         done <<< "${remaining}"
         exit 1
     fi
+}
+
+verify_off() {
+    # Only this package's own artifacts are asserted. Switching the feature off means
+    # this package takes no part in congestion control, not that nothing else may run
+    # it: processes started elsewhere are not ours to stop, so their presence is not an
+    # "off" failure. The uninstall check reasons about them the same way.
+    assert_own_artifacts_absent "spcx_cc is off"
 
     # Report anything else running congestion control, without failing on it. Useful
     # context when a node is deliberately excluded while the rest of a rack is not.
@@ -173,6 +187,26 @@ verify_off() {
     fi
 
     echo "Verified Spectrum-X congestion control is off"
+}
+
+# Congestion control is run by persistent units from elsewhere, so this package must
+# have none of its own, and each of those units must be up and reporting ready.
+verify_deferred() {
+    local owners="$1" unit failed=0
+    assert_own_artifacts_absent "congestion control is run outside this package"
+
+    while read -r unit; do
+        [[ -n "${unit}" ]] || continue
+        if ! wait_for_ready "${unit}"; then
+            echo "ERROR: ${unit} did not report '${READY_PATTERN}' within ${READY_TIMEOUT_SECS}s"
+            failed=1
+            continue
+        fi
+        echo "Verified ${unit} (outside this package) is active and reporting ready"
+    done <<< "${owners}"
+
+    [[ "${failed}" -eq 0 ]] || exit 1
+    echo "Verified Spectrum-X congestion control is run outside this package"
 }
 
 verify_on() {
@@ -248,6 +282,21 @@ main() {
     if ! spcx_cc_requested; then
         verify_off
         return 0
+    fi
+
+    local owners
+    if owners="$(external_owners)"; then
+        verify_deferred "${owners}"
+        return 0
+    fi
+
+    # Configure deferred earlier but the outside owner no longer qualifies, for example
+    # while one of its instances restarts. Say so rather than report this package's
+    # missing template, which is not what went wrong.
+    if [[ ! -e "${UNIT_DEST}" ]] && ! assert_no_foreign_processes; then
+        echo "This package cannot defer to them (see any reason above) and has no units of its own."
+        echo "If an outside owner was restarting, re-run once all of its instances are active."
+        exit 1
     fi
 
     verify_on "${src}"

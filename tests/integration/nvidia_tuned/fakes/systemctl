@@ -105,10 +105,13 @@ case "${verb}" in
         fi
         ;;
     is-active)
+        # Like systemctl, --quiet suppresses the state and leaves only the exit code.
+        quiet=false
+        for arg in "$@"; do [[ "${arg}" == "--quiet" ]] && quiet=true; done
         if [[ -f "${STATE_DIR}/active.${unit}" ]]; then
-            echo "active"
+            "${quiet}" || echo "active"
         else
-            echo "inactive"
+            "${quiet}" || echo "inactive"
             exit 3
         fi
         ;;
@@ -141,6 +144,26 @@ case "${verb}" in
                 fi
                 if [[ "${prop}" == "LimitSTACK" ]]; then echo "${hard}"; else echo "${soft}"; fi
                 ;;
+            Transient)
+                # A transient.<unit> marker models a unit created by `systemd-run`.
+                if [[ -f "${STATE_DIR}/transient.${unit}" ]]; then echo "yes"; else echo "no"; fi
+                ;;
+            MainPID)
+                # A mainpid.<unit> file holds the unit's main process; 0 when it has none,
+                # as for a oneshot unit that stays active after its script ended.
+                if [[ -f "${STATE_DIR}/mainpid.${unit}" ]]; then cat "${STATE_DIR}/mainpid.${unit}"; else echo "0"; fi
+                ;;
+            ExecStart)
+                # An execstart.<unit> file holds the command line systemd would report.
+                if [[ -f "${STATE_DIR}/execstart.${unit}" ]]; then
+                    echo "{ path=$(cut -d' ' -f1 "${STATE_DIR}/execstart.${unit}") ; argv[]=$(cat "${STATE_DIR}/execstart.${unit}") ; }"
+                fi
+                ;;
+            InvocationID)
+                # Empty unless the unit is running, like systemd. The fake journalctl maps
+                # the ID back to the unit.
+                if [[ -f "${STATE_DIR}/active.${unit}" ]]; then echo "inv-${unit}"; fi
+                ;;
             *)
                 echo "fake systemctl: unsupported property '${prop}' for show" >&2
                 exit 64
@@ -167,7 +190,7 @@ case "${verb}" in
         # `unit` holds the glob the caller passed, e.g. 'doca-spcx-cc@*.service'.
         # Emit one unit name per line; callers take field 1.
         seen=""
-        for marker in "${STATE_DIR}"/enabled.* "${STATE_DIR}"/active.* "${STATE_DIR}"/stub.*; do
+        for marker in "${STATE_DIR}"/enabled.* "${STATE_DIR}"/active.* "${STATE_DIR}"/stub.* "${STATE_DIR}"/failed.*; do
             [[ -e "${marker}" ]] || continue
             name="${marker##*/}"
             # A stub.<unit> marker models what systemd lists after the unit file is
@@ -175,11 +198,13 @@ case "${verb}" in
             # not-found. That residue is what a successful uninstall leaves behind.
             case "${name}" in
                 stub.*) load="not-found inactive dead" ;;
+                failed.*) load="loaded failed failed" ;;
                 *) load="loaded active running" ;;
             esac
             name="${name#enabled.}"
             name="${name#active.}"
             name="${name#stub.}"
+            name="${name#failed.}"
             case " ${seen} " in *" ${name} "*) continue ;; esac
             seen="${seen} ${name}"
             # Glob matching on the right-hand side is the point: callers pass a
