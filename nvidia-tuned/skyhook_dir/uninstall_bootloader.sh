@@ -31,11 +31,25 @@
 # aks services write their own grub.d file from inside the tuned profile; removing that
 # one is not this step's business.
 #
+# On SUSE there is no drop-in: tuned's own grub2 integration carries the cmdline and any
+# initrd overlay, and tuned's full rollback clears them (blanks TUNED_BOOT_CMDLINE and
+# TUNED_BOOT_INITRD_ADD, then tuned_params and tuned_initrd in grub.cfg) only if the daemon
+# is running when it is stopped. A tuned that crashed, was stopped, or runs with
+# rollback = not_on_exit leaves grub.cfg passing them after the package is gone. So this
+# step does the same rollback itself and regenerates with update-bootloader --refresh,
+# rather than depending on the daemon's state. Only for LOADER_TYPE grub2 and grub2-efi,
+# the loaders configure_bootloader.sh accepts: any other does not boot from grub.cfg, so
+# what it sets reaches no kernel and the refresh would not clear it.
+#
 # Takes effect on the next boot, like the change it reverts.
 
 set -euo pipefail
 
 TUNED_GRUB_DROPIN="${TUNED_GRUB_DROPIN:-/etc/default/grub.d/99-nvidia-tuned-cmdline.cfg}"
+TUNED_BOOTCMDLINE="${TUNED_BOOTCMDLINE:-/etc/tuned/bootcmdline}"
+OS_RELEASE="${OS_RELEASE:-/etc/os-release}"
+GRUB_CFG="${GRUB_CFG:-/boot/grub2/grub.cfg}"
+BOOTLOADER_SYSCONFIG="${BOOTLOADER_SYSCONFIG:-/etc/sysconfig/bootloader}"
 
 # Mirrors DROPIN_MARKER in configure_bootloader.sh.
 DROPIN_MARKER="Managed by the nvidia-tuned Skyhook package (configure_bootloader.sh)"
@@ -63,7 +77,114 @@ regenerate_grub() {
     update-grub
 }
 
+# Mirrors bootloader_os_family() in configure_bootloader.sh.
+bootloader_os_family() {
+    local ids
+
+    [[ -r "${OS_RELEASE}" ]] || return 0
+    ids="$(
+        set +u
+        # shellcheck source=/dev/null
+        . "${OS_RELEASE}" 2>/dev/null
+        printf '%s %s' "${ID:-}" "${ID_LIKE:-}"
+    )"
+
+    case " ${ids} " in
+        *" debian "* | *" ubuntu "*) echo debian ;;
+        " sles"* | " opensuse-leap "*) echo suse ;;
+    esac
+}
+
+# Mirrors bootloader_loader_type() in configure_bootloader.sh.
+bootloader_loader_type() {
+    (
+        set +u
+        # shellcheck source=/dev/null
+        . "${BOOTLOADER_SYSCONFIG}" 2>/dev/null
+        printf '%s' "${LOADER_TYPE:-}"
+    )
+}
+
+# Mirrors refresh_bootloader() in configure_bootloader.sh.
+refresh_bootloader() {
+    if [[ -n "${SKIP_SYSTEM_OPERATIONS:-}" ]]; then
+        echo "SKIP_SYSTEM_OPERATIONS set: not regenerating the bootloader config"
+        return 0
+    fi
+
+    if ! command -v update-bootloader >/dev/null 2>&1; then
+        echo "ERROR: update-bootloader is not available, so grub.cfg cannot be regenerated"
+        return 1
+    fi
+
+    update-bootloader --refresh
+}
+
+# The value tuned last resolved for a variable in bootcmdline, or empty.
+bootcmdline_value() {
+    local var="$1"
+    (
+        set +u
+        # shellcheck source=/dev/null
+        . "${TUNED_BOOTCMDLINE}" 2>/dev/null
+        printf '%s' "${!var:-}"
+    )
+}
+
+# The last value grub.cfg sets for a variable, or empty.
+grub_cfg_value() {
+    [[ -r "${GRUB_CFG}" ]] || return 0
+    sed -n "s/^[[:space:]]*set[[:space:]]\{1,\}$1=\"\(.*\)\"[[:space:]]*\$/\1/p" "${GRUB_CFG}" | tail -n 1
+}
+
+# SUSE: tuned's full rollback, done here so it does not depend on the daemon running.
+clear_tuned_native() {
+    # A drop-in this package wrote before SUSE support: grub2-mkconfig never read it, so
+    # removing it needs no regeneration, and update-grub does not exist here.
+    if dropin_is_ours; then
+        rm -f "${TUNED_GRUB_DROPIN}"
+        echo "Removed ${TUNED_GRUB_DROPIN}; this distribution never reads it"
+    fi
+
+    local loader
+    loader="$(bootloader_loader_type)"
+    case "${loader}" in
+        grub2 | grub2-efi) ;;
+        *)
+            echo "LOADER_TYPE=${loader:-<unset>} in ${BOOTLOADER_SYSCONFIG} does not boot from ${GRUB_CFG}; nothing to remove"
+            return 0
+            ;;
+    esac
+
+    # An initrd-only profile sets no cmdline, so all four are checked.
+    local state
+    state="$(bootcmdline_value TUNED_BOOT_CMDLINE)$(bootcmdline_value TUNED_BOOT_INITRD_ADD)"
+    state+="$(grub_cfg_value tuned_params)$(grub_cfg_value tuned_initrd)"
+    if [[ -z "${state}" ]]; then
+        echo "No tuned bootloader cmdline or initrd in ${TUNED_BOOTCMDLINE} or ${GRUB_CFG}; nothing to remove"
+        return 0
+    fi
+
+    # The same two variables tuned blanks. If tuned is already gone, so is 00_tuned, and
+    # the refresh drops tuned_params and tuned_initrd from grub.cfg altogether.
+    if [[ -f "${TUNED_BOOTCMDLINE}" ]]; then
+        sed -i -E 's/^(TUNED_BOOT_CMDLINE|TUNED_BOOT_INITRD_ADD)=.*/\1=""/' "${TUNED_BOOTCMDLINE}"
+    fi
+
+    if ! refresh_bootloader; then
+        echo "ERROR: could not regenerate the bootloader config; ${GRUB_CFG} still passes the profile cmdline"
+        return 1
+    fi
+
+    echo "Cleared tuned's bootloader cmdline and initrd; a reboot is required to drop it"
+}
+
 main() {
+    if [[ "$(bootloader_os_family)" == suse ]]; then
+        clear_tuned_native
+        return
+    fi
+
     if ! dropin_is_ours; then
         echo "No nvidia-tuned bootloader drop-in at ${TUNED_GRUB_DROPIN}; nothing to remove"
         return 0

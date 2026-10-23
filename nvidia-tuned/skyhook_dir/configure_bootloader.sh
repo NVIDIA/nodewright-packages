@@ -16,22 +16,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Makes the active profile's [bootloader] cmdline reach the booted kernel on Ubuntu.
+# Makes the active profile's [bootloader] cmdline reach the booted kernel.
 #
 # tuned writes the resolved [bootloader] stanza to /etc/tuned/bootcmdline as
-# TUNED_BOOT_CMDLINE, then rewrites /etc/default/grub itself. Ubuntu assembles
-# GRUB_CMDLINE_LINUX_DEFAULT from /etc/default/grub.d/ instead, so on Ubuntu that rewrite
-# is ignored and the profile's cmdline silently never applies. This step writes a
-# /etc/default/grub.d/ drop-in that sources tuned's file, then regenerates grub.
+# TUNED_BOOT_CMDLINE, then rewrites /etc/default/grub itself. What that takes to reach the
+# kernel depends on the distribution, so this step has one mechanism per family:
 #
-# DEBIAN-FAMILY ONLY. Sourcing /etc/default/grub.d/*.cfg is a Debian/Ubuntu patch to
-# grub-mkconfig. RHEL-family grub2-mkconfig reads /etc/default/grub and /etc/grub.d/ and
-# ignores that directory entirely, so the drop-in would be written, grub would regenerate
-# happily, and the arguments would never reach the kernel. The package as a whole falls
-# back to os/common profiles on untested distributions, so this step cannot assume the
-# OS gate happened upstream and checks for itself. It fails rather than skipping quietly:
-# a node that reports success while running none of the tuning it was selected for is the
-# worse outcome. Set CONFIGURE_BOOTLOADER=false to opt out deliberately.
+# Debian family: GRUB_CMDLINE_LINUX_DEFAULT is assembled from /etc/default/grub.d/
+# instead, so tuned's rewrite is ignored and the profile's cmdline silently never
+# applies. This step writes a /etc/default/grub.d/ drop-in that sources tuned's file,
+# then regenerates grub. Sourcing /etc/default/grub.d/*.cfg is a Debian-family patch to
+# grub-mkconfig.
+#
+# SLES and openSUSE Leap: tuned's own grub2 integration works, because SUSE's
+# grub2-mkconfig reads /etc/default/grub and tuned ships /etc/grub.d/00_tuned. What tuned
+# does not do reliably is regenerate grub.cfg: on SLES 15 SP7 the config it left defined
+# tuned_params but no linux line passed it, so the arguments never reached the kernel.
+# This step checks tuned's pieces are in place and regenerates with
+# update-bootloader --refresh. No drop-in: SUSE never reads /etc/default/grub.d/.
+#
+# RHEL-family grub2-mkconfig ignores /etc/default/grub.d/ too and is not supported. The
+# package as a whole falls back to os/common profiles on untested distributions, so this
+# step cannot assume the OS gate happened upstream and checks for itself. It fails rather
+# than skipping quietly: a node that reports success while running none of the tuning it
+# was selected for is the worse outcome. Set CONFIGURE_BOOTLOADER=false to opt out
+# deliberately.
 #
 # Gated on ${SKYHOOK_DIR}/profiles/service/${service}/bootloader.enabled, so services
 # without the marker are a no-op. The marker is service-wide rather than per-accelerator:
@@ -51,6 +60,8 @@ PROFILES_DIR="${SKYHOOK_DIR}/profiles"
 TUNED_GRUB_DROPIN="${TUNED_GRUB_DROPIN:-/etc/default/grub.d/99-nvidia-tuned-cmdline.cfg}"
 TUNED_BOOTCMDLINE="${TUNED_BOOTCMDLINE:-/etc/tuned/bootcmdline}"
 OS_RELEASE="${OS_RELEASE:-/etc/os-release}"
+GRUB_DEFAULTS="${GRUB_DEFAULTS:-/etc/default/grub}"
+BOOTLOADER_SYSCONFIG="${BOOTLOADER_SYSCONFIG:-/etc/sysconfig/bootloader}"
 
 # Identifies a drop-in this package owns. The eks and aks services write their own
 # grub.d file from inside the tuned profile; scoping removal to our marker keeps this
@@ -109,14 +120,18 @@ bootloader_enabled() {
     [[ -f "${PROFILES_DIR}/service/${service}/bootloader.enabled" ]]
 }
 
-# Returns 0 on a distribution whose grub-mkconfig sources /etc/default/grub.d/*.cfg.
+# Prints the bootloader mechanism this distribution gets: debian (the grub.d drop-in),
+# suse (tuned's native grub2 integration), or nothing when it is unsupported.
 #
-# Checks ID and ID_LIKE so Debian derivatives that do carry the patch (Pop, Mint, and the
-# vendor Ubuntu rebuilds these nodes run) are recognised without an explicit allowlist.
-bootloader_os_supported() {
+# Debian checks ID and ID_LIKE so derivatives that do carry the grub.d patch (Pop, Mint,
+# and the vendor rebuilds these nodes run) are recognised without an explicit
+# allowlist. SUSE matches ID for SLES, where this step was tested, and openSUSE Leap,
+# which shares its bootloader stack: Tumbleweed, Slowroll and the transactional variants
+# (MicroOS, Leap Micro) fall through to unsupported.
+bootloader_os_family() {
     local ids
 
-    [[ -r "${OS_RELEASE}" ]] || return 1
+    [[ -r "${OS_RELEASE}" ]] || return 0
     # set +u inside the subshell: os-release is a fragment, not a script of ours.
     ids="$(
         set +u
@@ -126,9 +141,34 @@ bootloader_os_supported() {
     )"
 
     case " ${ids} " in
-        *" debian "* | *" ubuntu "*) return 0 ;;
-        *) return 1 ;;
+        *" debian "* | *" ubuntu "*) echo debian ;;
+        " sles"* | " opensuse-leap "*) echo suse ;;
     esac
+}
+
+# SUSE's LOADER_TYPE (grub2, grub2-efi, grub2-bls, systemd-boot, ...), or empty.
+bootloader_loader_type() {
+    (
+        set +u
+        # shellcheck source=/dev/null
+        . "${BOOTLOADER_SYSCONFIG}" 2>/dev/null
+        printf '%s' "${LOADER_TYPE:-}"
+    )
+}
+
+# Returns 0 when /etc/default/grub passes tuned's $tuned_params on to the kernel.
+#
+# Evaluated the way grub2-mkconfig does rather than grepped, so a commented-out or later
+# overridden line does not count.
+tuned_placeholder_present() {
+    local cmdline
+    cmdline="$(
+        set +u
+        # shellcheck source=/dev/null
+        . "${GRUB_DEFAULTS}" 2>/dev/null
+        printf '%s' "${GRUB_CMDLINE_LINUX_DEFAULT:-}"
+    )"
+    [[ "${cmdline}" == *[$]tuned_params* ]]
 }
 
 # Reports the distribution for error messages.
@@ -161,11 +201,34 @@ regenerate_grub() {
     update-grub
 }
 
+# SUSE only. update-bootloader rather than grub2-mkconfig directly: it is what SUSE's own
+# grub2 package scripts call, and it finds grub.cfg for LOADER_TYPE itself.
+refresh_bootloader() {
+    if [[ -n "${SKIP_SYSTEM_OPERATIONS:-}" ]]; then
+        echo "SKIP_SYSTEM_OPERATIONS set: not regenerating the bootloader config"
+        return 0
+    fi
+
+    if ! command -v update-bootloader >/dev/null 2>&1; then
+        echo "ERROR: update-bootloader is not available (perl-Bootloader on SLE 15, update-bootloader on SLE 16), so grub.cfg cannot be regenerated"
+        return 1
+    fi
+
+    update-bootloader --refresh
+}
+
 # Drop a drop-in this package previously wrote. Called when the service gate stops
 # matching, so a custom resource switched from rke2 to a no-reboot service does not keep
 # contributing the old cmdline on every future boot with no package owning it.
 remove_dropin() {
     dropin_is_ours || return 0
+
+    # SUSE grub2-mkconfig never read it, so there is no generated config to update.
+    if [[ "${1:-}" == suse ]]; then
+        rm -f "${TUNED_GRUB_DROPIN}"
+        echo "Removed ${TUNED_GRUB_DROPIN}; this distribution never reads it"
+        return 0
+    fi
 
     local backup
     backup="$(mktemp)"
@@ -189,11 +252,12 @@ ERROR: This node's distribution does not support the bootloader mechanism this s
 
   Detected: $(os_pretty_name)
 
-  The step writes ${TUNED_GRUB_DROPIN} and relies on grub-mkconfig sourcing
-  /etc/default/grub.d/*.cfg, which is a Debian/Ubuntu patch. RHEL-family grub2-mkconfig
-  reads /etc/default/grub and /etc/grub.d/ and ignores that directory, so the drop-in
-  would be written, GRUB would regenerate without error, and none of the profile's kernel
-  arguments would reach the booted kernel.
+  The step supports Debian-family distributions, where it writes ${TUNED_GRUB_DROPIN}
+  and relies on grub-mkconfig sourcing /etc/default/grub.d/*.cfg (a Debian-family patch),
+  and SLES and openSUSE Leap, where it relies on tuned's own grub2 integration.
+  RHEL-family grub2-mkconfig reads /etc/default/grub and /etc/grub.d/ and ignores the
+  grub.d directory, so the drop-in would be written, GRUB would regenerate without error,
+  and none of the profile's kernel arguments would reach the booted kernel.
 
   This fails rather than passing quietly because the alternative is a node that reports
   success while running none of the tuning it was selected for.
@@ -207,24 +271,44 @@ EOF
     exit 1
 }
 
-main() {
-    if ! bootloader_requested; then
-        echo "Bootloader step switched off via CONFIGURE_BOOTLOADER; nothing to configure"
-        return 0
-    fi
+fail_unsupported_loader() {
+    cat <<EOF
+ERROR: This node's bootloader is not one this step can configure.
 
-    if ! bootloader_enabled; then
-        echo "Bootloader drop-in not enabled for this service; nothing to configure"
-        remove_dropin
-        return 0
-    fi
+  Detected: LOADER_TYPE=${1:-<unset>} in ${BOOTLOADER_SYSCONFIG} on $(os_pretty_name)
 
-    # After the service gate, so an unsupported distribution running a service that never
-    # wanted a drop-in is not failed for it.
-    if ! bootloader_os_supported; then
-        fail_unsupported_os
-    fi
+  On SUSE the step relies on tuned's grub2 integration: /etc/grub.d/00_tuned and the
+  \$tuned_params reference tuned adds to ${GRUB_DEFAULTS}. Only LOADER_TYPE grub2 and
+  grub2-efi generate grub.cfg from those. grub2-bls and systemd-boot build their kernel
+  command line from boot entries instead, so the profile's arguments would never reach the
+  booted kernel.
 
+  Set CONFIGURE_BOOTLOADER=false in the package env on the custom resource to skip this
+  step and its checks, and set the kernel arguments by another route.
+EOF
+    exit 1
+}
+
+fail_no_placeholder() {
+    cat <<EOF
+ERROR: ${GRUB_DEFAULTS} does not pass \$tuned_params to the kernel, so the profile's
+  [bootloader] cmdline cannot reach the booted kernel.
+
+  tuned's bootloader plugin appends that reference to GRUB_CMDLINE_LINUX_DEFAULT when it
+  applies a profile carrying a [bootloader] stanza. Its absence means the plugin did not
+  run, or the line was removed or overridden afterwards.
+
+  Where to look:
+    - tuned-adm active
+    - cat ${TUNED_BOOTCMDLINE}
+    - grep -n tuned ${GRUB_DEFAULTS}
+    - /var/log/tuned/tuned.log
+EOF
+    exit 1
+}
+
+# Debian family: write the grub.d drop-in sourcing tuned's file, then regenerate.
+configure_dropin() {
     # Not fatal. The drop-in guards on the file, so it starts contributing as soon as
     # tuned writes one, and a profile chain carrying no [bootloader] stanza legitimately
     # produces no bootcmdline at all. configure_bootloader_check.sh reports the mismatch.
@@ -262,6 +346,67 @@ main() {
     fi
 
     echo "Wrote ${TUNED_GRUB_DROPIN}; a reboot is required for the profile cmdline to take effect"
+}
+
+# SUSE: tuned already wires its cmdline into /etc/default/grub and /etc/grub.d/00_tuned,
+# so only confirm that and regenerate grub.cfg from it.
+configure_tuned_native() {
+    local loader
+
+    remove_dropin suse
+
+    loader="$(bootloader_loader_type)"
+    case "${loader}" in
+        grub2 | grub2-efi) ;;
+        *) fail_unsupported_loader "${loader}" ;;
+    esac
+
+    if ! tuned_placeholder_present; then
+        fail_no_placeholder
+    fi
+
+    # Not fatal, as on Debian: 00_tuned emits whatever bootcmdline holds when grub.cfg is
+    # generated. configure_bootloader_check.sh reports the mismatch.
+    if [[ ! -f "${TUNED_BOOTCMDLINE}" ]]; then
+        echo "WARNING: ${TUNED_BOOTCMDLINE} does not exist; the active profile chain resolved no [bootloader] settings"
+    fi
+
+    # Deliberately no "grub.cfg already current, skipping" short-circuit either. tuned
+    # patches grub.cfg in place when it applies a profile, and whether the linux lines
+    # carry $tuned_params depends on how grub.cfg was last generated, which is exactly what
+    # SLES 15 SP7 got wrong. Regenerating on every pass makes grub.cfg follow the current
+    # /etc/default/grub and bootcmdline, whatever produced the file before.
+    if ! refresh_bootloader; then
+        echo "ERROR: could not regenerate the bootloader config; the profile cmdline will not apply on the next boot"
+        exit 1
+    fi
+
+    echo "Regenerated the bootloader config from tuned's settings; a reboot is required for the profile cmdline to take effect"
+}
+
+main() {
+    local family
+
+    if ! bootloader_requested; then
+        echo "Bootloader step switched off via CONFIGURE_BOOTLOADER; nothing to configure"
+        return 0
+    fi
+
+    family="$(bootloader_os_family)"
+
+    if ! bootloader_enabled; then
+        echo "Bootloader drop-in not enabled for this service; nothing to configure"
+        remove_dropin "${family}"
+        return 0
+    fi
+
+    # After the service gate, so an unsupported distribution running a service that never
+    # wanted a drop-in is not failed for it.
+    case "${family}" in
+        debian) configure_dropin ;;
+        suse) configure_tuned_native ;;
+        *) fail_unsupported_os ;;
+    esac
 }
 
 main "$@"

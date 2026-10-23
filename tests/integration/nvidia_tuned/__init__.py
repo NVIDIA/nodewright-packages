@@ -36,4 +36,6 @@ TEST_MATRIX = [
     "ubuntu:22.04",  # Jammy
     "debian:12",     # Bookworm
     "rockylinux:9",  # Rocky Linux 9
+    "registry.suse.com/bci/bci-base:16.0",  # SUSE Linux Enterprise 16.0
+    "registry.suse.com/bci/bci-base:15.7",  # SUSE Linux Enterprise 15 SP7
 ]

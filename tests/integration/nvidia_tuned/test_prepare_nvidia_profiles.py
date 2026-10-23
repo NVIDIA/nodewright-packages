@@ -28,7 +28,8 @@ Tests verify:
 - accelerator=generic uses self-contained nvidia-generic profile, ignoring intent and service
 - For AWS service, verifies grub config file is created correctly
 - For the rke2 service, verifies the [bootloader] chain survives and the grub.d drop-in,
-  its checks, and its teardown behave
+  its checks, and its teardown behave; on SUSE, that tuned's native grub2 path is
+  regenerated and verified instead
 """
 
 import pytest
@@ -1062,7 +1063,8 @@ def test_prepare_nvidia_profiles_rke2_marker_not_deployed(base_image):
 # /etc/default/grub.d/*.cfg is a Debian/Ubuntu patch to grub-mkconfig, and RHEL-family
 # grub2-mkconfig ignores that directory. The step fails loudly there rather than writing
 # a file nothing reads, so the matrix's rockylinux:9 entry exercises the rejection path
-# while the Debian-family entries exercise the working one.
+# while the Debian-family entries exercise the working one. The SLE BCI entries exercise
+# the SUSE path, which uses tuned's own grub2 integration instead of a drop-in.
 
 # Cleared so the stub update-grub actually runs. run_script_in_container sets
 # SKIP_SYSTEM_OPERATIONS=true for the whole suite, and the step honours it by not
@@ -1078,6 +1080,14 @@ RHEL_OS_RELEASE = 'ID="rocky"\\nID_LIKE="rhel centos fedora"\\nPRETTY_NAME="Rock
 
 def _is_debian_family(base_image: str) -> bool:
     return "ubuntu" in base_image or "debian" in base_image
+
+
+def _is_rhel_family(base_image: str) -> bool:
+    return "rocky" in base_image
+
+
+def _is_suse(base_image: str) -> bool:
+    return "registry.suse.com/bci/" in base_image
 
 
 def _skip_non_debian(base_image):
@@ -1242,7 +1252,7 @@ def test_configure_bootloader_rejects_unsupported_os(base_image):
     """RHEL-family nodes fail loudly instead of getting a drop-in grub never reads.
 
     On the matrix's rockylinux:9 entry this runs against the real /etc/os-release; on the
-    Debian-family entries it runs against a stub, so the path is covered either way.
+    other entries it runs against a stub, so the path is covered either way.
     """
     runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
     try:
@@ -1251,7 +1261,7 @@ def test_configure_bootloader_rejects_unsupported_os(base_image):
         _write_bootcmdline(runner, STUB_BOOTCMDLINE, SAMPLE_CMDLINE)
 
         env = dict(RUN_ENV)
-        if _is_debian_family(base_image):
+        if not _is_rhel_family(base_image):
             _write_os_release(runner, STUB_OS_RELEASE, RHEL_OS_RELEASE)
             env["OS_RELEASE"] = STUB_OS_RELEASE
 
@@ -1575,5 +1585,446 @@ def test_uninstall_bootloader_leaves_foreign_dropin_alone(base_image):
 
         check = _run_with_env(runner, "uninstall_bootloader_check.sh", RUN_ENV)
         assert_exit_code(check, 0)
+    finally:
+        runner.cleanup()
+
+
+# --- SUSE: tuned's native grub2 integration ------------------------------------------
+#
+# No drop-in on SUSE: grub2-mkconfig reads /etc/default/grub, where tuned's bootloader
+# plugin adds a $tuned_params reference, and tuned ships /etc/grub.d/00_tuned, which sets
+# tuned_params from /etc/tuned/bootcmdline. The step checks those pieces and regenerates
+# with update-bootloader --refresh; the check verifies the generated grub.cfg. Uninstall
+# does tuned's full rollback itself (blank TUNED_BOOT_CMDLINE, refresh), since tuned only
+# does it when the daemon is running as it stops. These run against the real
+# /etc/os-release of the SLE BCI matrix entries.
+
+STUB_GRUB_DEFAULTS = "/tmp/default-grub"
+STUB_GRUB_CFG = "/tmp/grub.cfg"
+STUB_BOOTLOADER_SYSCONFIG = "/tmp/sysconfig-bootloader"
+SUSE_ENV = {
+    **RUN_ENV,
+    "GRUB_DEFAULTS": STUB_GRUB_DEFAULTS,
+    "GRUB_CFG": STUB_GRUB_CFG,
+    "BOOTLOADER_SYSCONFIG": STUB_BOOTLOADER_SYSCONFIG,
+}
+
+# The two lines tuned's bootloader plugin appends to /etc/default/grub, verbatim from a
+# SLES 16.0 host running tuned 2.25.1.
+TUNED_PLACEHOLDER_LINES = (
+    'GRUB_CMDLINE_LINUX_DEFAULT="${GRUB_CMDLINE_LINUX_DEFAULT:+$GRUB_CMDLINE_LINUX_DEFAULT }\\$tuned_params"\n'
+    'GRUB_INITRD_OVERLAY="${GRUB_INITRD_OVERLAY:+$GRUB_INITRD_OVERLAY }\\$tuned_initrd"\n'
+)
+PLATFORM_GRUB_DEFAULTS = 'GRUB_TIMEOUT=8\nGRUB_CMDLINE_LINUX_DEFAULT="console=ttyS0,115200 quiet"\n'
+
+# What a SLES 15 SP7 host was left with after tuned-adm profile: tuned_params defined,
+# never passed to the kernel. The node rebooted without the profile's arguments.
+SP7_GRUB_CFG = f"""### BEGIN /etc/grub.d/00_tuned ###
+set tuned_params="{SAMPLE_CMDLINE}"
+set tuned_initrd=""
+### END /etc/grub.d/00_tuned ###
+menuentry 'SLES 15 SP7' {{
+\tlinux\t/boot/vmlinuz root=UUID=0000 console=ttyS0,115200 quiet
+\tinitrd\t/boot/initrd
+}}
+"""
+
+FAKE_UPDATE_BOOTLOADER = Path(__file__).resolve().parent / "fakes" / "update-bootloader"
+
+
+def _skip_non_suse(base_image):
+    """tuned's native grub2 path is the SUSE mechanism; other images test their own."""
+    if not _is_suse(base_image):
+        pytest.skip(f"tuned's native grub2 path is SUSE only; skipping for {base_image}")
+
+
+def _put_file(runner: DockerTestRunner, path: str, contents: str, mode: str = "644"):
+    """Write contents verbatim: a quoted heredoc does no expansion or escape processing."""
+    result = runner.container.exec_run(
+        ["bash", "-c", f"cat > {path} <<'NWT_EOF'\n{contents}NWT_EOF\nchmod {mode} {path}"],
+        workdir="/",
+    )
+    assert result.exit_code == 0, result.output
+
+
+def _suse_container(runner: DockerTestRunner, loader_type="grub2", grub_defaults=None):
+    """An rke2 node where tuned has applied a [bootloader] profile, update-bootloader faked."""
+    _rke2_container(runner)
+    _write_bootcmdline(runner, STUB_BOOTCMDLINE, SAMPLE_CMDLINE)
+    if grub_defaults is None:
+        grub_defaults = PLATFORM_GRUB_DEFAULTS + TUNED_PLACEHOLDER_LINES
+    _put_file(runner, STUB_GRUB_DEFAULTS, grub_defaults)
+    _put_file(runner, STUB_BOOTLOADER_SYSCONFIG, f'LOADER_TYPE="{loader_type}"\n')
+    _put_file(runner, "/usr/local/bin/update-bootloader", FAKE_UPDATE_BOOTLOADER.read_text(), "755")
+
+
+def test_configure_bootloader_suse_regenerates_through_tuned(base_image):
+    """No drop-in on SUSE: grub.cfg is regenerated from tuned's own settings and verified.
+
+    A package drop-in left from before is removed without update-grub, which SUSE does
+    not have; grub2-mkconfig there never read it.
+    """
+    _skip_non_suse(base_image)
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        _suse_container(runner)
+        runner.container.exec_run(["mkdir", "-p", str(Path(STUB_DROPIN).parent)], workdir="/")
+        _put_file(runner, STUB_DROPIN,
+                  "# Managed by the nvidia-tuned Skyhook package (configure_bootloader.sh). Do not edit.\n")
+
+        result = _run_with_env(runner, "configure_bootloader.sh", SUSE_ENV)
+        assert_exit_code(result, 0)
+        assert_output_contains(result.stdout, "a reboot is required")
+        assert runner.file_exists("/tmp/update-bootloader.ran"), "grub.cfg was not regenerated"
+        assert not runner.file_exists(STUB_DROPIN), "SUSE must not keep a grub.d drop-in"
+
+        grub_cfg = runner.get_file_contents(STUB_GRUB_CFG)
+        assert f'set tuned_params="{SAMPLE_CMDLINE}"' in grub_cfg, grub_cfg
+        assert "console=ttyS0,115200 quiet $tuned_params" in grub_cfg, \
+            f"the platform cmdline must survive alongside tuned's: {grub_cfg!r}"
+
+        check = _run_with_env(runner, "configure_bootloader_check.sh", SUSE_ENV)
+        assert_exit_code(check, 0)
+        assert_output_contains(check.stdout, "passes the profile cmdline to the kernel")
+    finally:
+        runner.cleanup()
+
+
+def test_configure_bootloader_check_suse_catches_unused_tuned_params(base_image):
+    """The SLES 15 SP7 failure: tuned_params set in grub.cfg but on no linux line.
+
+    The check must fail on it before the reboot, and configure must repair it.
+    """
+    _skip_non_suse(base_image)
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        _suse_container(runner)
+        _put_file(runner, STUB_GRUB_CFG, SP7_GRUB_CFG)
+
+        check = _run_with_env(runner, "configure_bootloader_check.sh", SUSE_ENV)
+        assert check.exit_code != 0, f"check passed a grub.cfg that never uses tuned_params: {check.stdout}"
+        assert_output_contains(check.stdout, "no linux line passes $tuned_params")
+
+        assert_exit_code(_run_with_env(runner, "configure_bootloader.sh", SUSE_ENV), 0)
+        check = _run_with_env(runner, "configure_bootloader_check.sh", SUSE_ENV)
+        assert_exit_code(check, 0)
+    finally:
+        runner.cleanup()
+
+
+def test_configure_bootloader_check_suse_catches_stale_tuned_params(base_image):
+    """grub.cfg generated before an intent change carries the old cmdline; that fails."""
+    _skip_non_suse(base_image)
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        _suse_container(runner)
+        assert_exit_code(_run_with_env(runner, "configure_bootloader.sh", SUSE_ENV), 0)
+        _write_bootcmdline(runner, STUB_BOOTCMDLINE, "iommu.passthrough=1 hugepagesz=2M hugepages=2")
+
+        check = _run_with_env(runner, "configure_bootloader_check.sh", SUSE_ENV)
+        assert check.exit_code != 0, f"check passed a stale grub.cfg: {check.stdout}"
+        assert_output_contains(check.stdout, "does not set tuned_params to the profile's cmdline")
+        assert_output_contains(check.stdout, "hugepages=2")
+    finally:
+        runner.cleanup()
+
+
+@pytest.mark.parametrize("loader_type", ["grub2-bls", "systemd-boot", ""])
+def test_configure_bootloader_suse_rejects_unsupported_loader(base_image, loader_type):
+    """Only grub2 and grub2-efi build grub.cfg from tuned's settings; the rest fail loudly."""
+    _skip_non_suse(base_image)
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        _suse_container(runner, loader_type=loader_type)
+
+        result = _run_with_env(runner, "configure_bootloader.sh", SUSE_ENV)
+        assert result.exit_code != 0, f"LOADER_TYPE={loader_type!r} must fail the step"
+        assert_output_contains(result.stdout, "bootloader is not one this step can configure")
+        assert_output_contains(result.stdout, "CONFIGURE_BOOTLOADER=false")
+        assert not runner.file_exists("/tmp/update-bootloader.ran"), \
+            "nothing should be regenerated for a loader that ignores tuned's settings"
+    finally:
+        runner.cleanup()
+
+
+@pytest.mark.parametrize(
+    "grub_defaults",
+    [
+        PLATFORM_GRUB_DEFAULTS,
+        PLATFORM_GRUB_DEFAULTS + "".join(f"# {line}\n" for line in TUNED_PLACEHOLDER_LINES.splitlines()),
+    ],
+    ids=["absent", "commented-out"],
+)
+def test_configure_bootloader_suse_requires_tuned_placeholder(base_image, grub_defaults):
+    """Without tuned's $tuned_params in /etc/default/grub, regenerating cannot help."""
+    _skip_non_suse(base_image)
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        _suse_container(runner, grub_defaults=grub_defaults)
+
+        result = _run_with_env(runner, "configure_bootloader.sh", SUSE_ENV)
+        assert result.exit_code != 0, "a missing tuned placeholder must fail the step"
+        assert_output_contains(result.stdout, "does not pass $tuned_params to the kernel")
+        assert not runner.file_exists("/tmp/update-bootloader.ran")
+    finally:
+        runner.cleanup()
+
+
+def test_configure_bootloader_suse_fails_when_refresh_fails(base_image):
+    """A failed update-bootloader fails the step rather than reporting a pending reboot."""
+    _skip_non_suse(base_image)
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        _suse_container(runner)
+
+        result = _run_with_env(
+            runner, "configure_bootloader.sh", {**SUSE_ENV, "FAKE_UPDATE_BOOTLOADER_FAIL": "1"}
+        )
+        assert result.exit_code != 0, "a failed regeneration must fail the step"
+        assert_output_contains(result.stdout, "could not regenerate the bootloader config")
+    finally:
+        runner.cleanup()
+
+
+def test_configure_bootloader_suse_skips_system_operations(base_image):
+    """SKIP_SYSTEM_OPERATIONS keeps update-bootloader from running, as with update-grub."""
+    _skip_non_suse(base_image)
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        _suse_container(runner)
+
+        result = _run_with_env(
+            runner, "configure_bootloader.sh", {**SUSE_ENV, "SKIP_SYSTEM_OPERATIONS": "true"}
+        )
+        assert_exit_code(result, 0)
+        assert_output_contains(result.stdout, "SKIP_SYSTEM_OPERATIONS set")
+        assert not runner.file_exists("/tmp/update-bootloader.ran"), \
+            "update-bootloader ran despite SKIP_SYSTEM_OPERATIONS"
+    finally:
+        runner.cleanup()
+
+
+def test_post_interrupt_bootloader_check_suse(base_image):
+    """The /proc/cmdline check applies to SUSE as is, in both directions."""
+    _skip_non_suse(base_image)
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        _suse_container(runner)
+        env = {**SUSE_ENV, "PROC_CMDLINE": STUB_PROC_CMDLINE}
+
+        _put_file(runner, STUB_PROC_CMDLINE, f"BOOT_IMAGE=/boot/vmlinuz root=UUID=0000 quiet {SAMPLE_CMDLINE}\n")
+        result = _run_with_env(runner, "post_interrupt_bootloader_check.sh", env)
+        assert_exit_code(result, 0)
+        assert_output_contains(result.stdout, "live after reboot")
+
+        _put_file(runner, STUB_PROC_CMDLINE, "BOOT_IMAGE=/boot/vmlinuz root=UUID=0000 quiet\n")
+        result = _run_with_env(runner, "post_interrupt_bootloader_check.sh", env)
+        assert result.exit_code != 0, "check should fail when the cmdline did not take effect"
+        assert_output_contains(result.stdout, "did not take effect")
+        assert_output_contains(result.stdout, f"grep -n tuned_params {STUB_GRUB_CFG}")
+    finally:
+        runner.cleanup()
+
+
+def test_configure_bootloader_check_suse_catches_extra_tuned_params(base_image):
+    """An argument in grub.cfg that the profile no longer carries is stale, not a pass."""
+    _skip_non_suse(base_image)
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        _suse_container(runner)
+        assert_exit_code(_run_with_env(runner, "configure_bootloader.sh", SUSE_ENV), 0)
+        runner.container.exec_run(
+            ["sed", "-i", f's/^set tuned_params="\\(.*\\)"$/set tuned_params="\\1 isolcpus=2-7"/', STUB_GRUB_CFG],
+            workdir="/",
+        )
+        assert "isolcpus=2-7" in runner.get_file_contents(STUB_GRUB_CFG)
+
+        check = _run_with_env(runner, "configure_bootloader_check.sh", SUSE_ENV)
+        assert check.exit_code != 0, f"check passed a grub.cfg with a stale extra argument: {check.stdout}"
+        assert_output_contains(check.stdout, "does not set tuned_params to the profile's cmdline")
+        assert_output_contains(check.stdout, "isolcpus=2-7")
+    finally:
+        runner.cleanup()
+
+
+@pytest.mark.parametrize(
+    "os_release",
+    [
+        'ID="opensuse-tumbleweed"\\nID_LIKE="opensuse suse"\\nPRETTY_NAME="openSUSE Tumbleweed"\\n',
+        'ID="opensuse-slowroll"\\nID_LIKE="opensuse suse"\\nPRETTY_NAME="openSUSE Slowroll"\\n',
+        'ID="opensuse-leap-micro"\\nID_LIKE="suse opensuse"\\nPRETTY_NAME="openSUSE Leap Micro 6.2"\\n',
+    ],
+    ids=["tumbleweed", "slowroll", "leap-micro"],
+)
+def test_configure_bootloader_rejects_untested_suse(base_image, os_release):
+    """Only SLES and openSUSE Leap get the SUSE mechanism; other openSUSE IDs fail."""
+    _skip_non_suse(base_image)
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        _suse_container(runner)
+        _write_os_release(runner, STUB_OS_RELEASE, os_release)
+
+        result = _run_with_env(runner, "configure_bootloader.sh", {**SUSE_ENV, "OS_RELEASE": STUB_OS_RELEASE})
+        assert result.exit_code != 0, "an untested openSUSE flavour must fail the step"
+        assert_output_contains(result.stdout, "does not support the bootloader mechanism")
+        assert not runner.file_exists("/tmp/update-bootloader.ran")
+    finally:
+        runner.cleanup()
+
+
+def test_uninstall_bootloader_suse_clears_tuned_cmdline(base_image):
+    """Uninstall does tuned's rollback itself, so a stopped tuned cannot leave it behind.
+
+    No update-grub here, as SUSE has none: a stray package drop-in is removed without it.
+    """
+    _skip_non_suse(base_image)
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        _suse_container(runner)
+        assert_exit_code(_run_with_env(runner, "configure_bootloader.sh", SUSE_ENV), 0)
+        assert f'set tuned_params="{SAMPLE_CMDLINE}"' in runner.get_file_contents(STUB_GRUB_CFG)
+
+        check = _run_with_env(runner, "uninstall_bootloader_check.sh", SUSE_ENV)
+        assert check.exit_code != 0, f"uninstall check passed before uninstall ran: {check.stdout}"
+        assert_output_contains(check.stdout, "still sets tuned_params")
+
+        runner.container.exec_run(["mkdir", "-p", str(Path(STUB_DROPIN).parent)], workdir="/")
+        _put_file(runner, STUB_DROPIN,
+                  "# Managed by the nvidia-tuned Skyhook package (configure_bootloader.sh). Do not edit.\n")
+        runner.container.exec_run(["rm", "-f", "/tmp/update-bootloader.ran"], workdir="/")
+
+        result = _run_with_env(runner, "uninstall_bootloader.sh", SUSE_ENV)
+        assert_exit_code(result, 0)
+        assert_output_contains(result.stdout, "a reboot is required")
+        assert runner.file_exists("/tmp/update-bootloader.ran"), "grub.cfg was not regenerated"
+        assert not runner.file_exists(STUB_DROPIN), "the stray drop-in should be removed"
+        assert 'TUNED_BOOT_CMDLINE=""' in runner.get_file_contents(STUB_BOOTCMDLINE)
+        assert 'set tuned_params=""' in runner.get_file_contents(STUB_GRUB_CFG)
+
+        check = _run_with_env(runner, "uninstall_bootloader_check.sh", SUSE_ENV)
+        assert_exit_code(check, 0)
+
+        again = _run_with_env(runner, "uninstall_bootloader.sh", SUSE_ENV)
+        assert_exit_code(again, 0)
+        assert_output_contains(again.stdout, "nothing to remove")
+    finally:
+        runner.cleanup()
+
+
+def test_uninstall_bootloader_suse_clears_grub_cfg_after_tuned_is_gone(base_image):
+    """bootcmdline already gone (tuned removed) but grub.cfg stale: refresh still runs."""
+    _skip_non_suse(base_image)
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        _suse_container(runner)
+        _put_file(runner, STUB_GRUB_CFG, SP7_GRUB_CFG)
+        runner.container.exec_run(["rm", "-f", STUB_BOOTCMDLINE], workdir="/")
+
+        result = _run_with_env(runner, "uninstall_bootloader.sh", SUSE_ENV)
+        assert_exit_code(result, 0)
+        assert runner.file_exists("/tmp/update-bootloader.ran"), "grub.cfg was not regenerated"
+        assert_exit_code(_run_with_env(runner, "uninstall_bootloader_check.sh", SUSE_ENV), 0)
+    finally:
+        runner.cleanup()
+
+
+def test_uninstall_bootloader_suse_fails_when_refresh_fails(base_image):
+    """A failed update-bootloader fails uninstall, so it retries rather than passing."""
+    _skip_non_suse(base_image)
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        _suse_container(runner)
+        assert_exit_code(_run_with_env(runner, "configure_bootloader.sh", SUSE_ENV), 0)
+
+        result = _run_with_env(
+            runner, "uninstall_bootloader.sh", {**SUSE_ENV, "FAKE_UPDATE_BOOTLOADER_FAIL": "1"}
+        )
+        assert result.exit_code != 0, "a failed regeneration must fail uninstall"
+        assert_output_contains(result.stdout, "could not regenerate the bootloader config")
+
+        check = _run_with_env(runner, "uninstall_bootloader_check.sh", SUSE_ENV)
+        assert check.exit_code != 0, "the check must still see the old tuned_params"
+    finally:
+        runner.cleanup()
+
+
+@pytest.mark.parametrize("loader_type", ["grub2-bls", "systemd-boot", ""])
+def test_uninstall_bootloader_suse_leaves_grub_cfg_on_other_loaders(base_image, loader_type):
+    """Only grub2 and grub2-efi boot from grub.cfg; on any other loader uninstall leaves it.
+
+    A bcm node with CONFIGURE_BOOTLOADER=false never ran the step, yet nvidia-base's
+    init_on_alloc=0 had tuned set tuned_params in grub.cfg. update-bootloader --refresh
+    would not touch that file on these loaders, and may not be installed at all, so
+    clearing it would fail on every retry.
+    """
+    _skip_non_suse(base_image)
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        create_container_for_testing(
+            runner, {"accelerator": "gb200", "intent": "performance", "service": "bcm"}
+        )
+        _write_bootcmdline(runner, STUB_BOOTCMDLINE, "init_on_alloc=0")
+        _put_file(runner, STUB_GRUB_CFG, SP7_GRUB_CFG)
+        _put_file(runner, STUB_BOOTLOADER_SYSCONFIG, f'LOADER_TYPE="{loader_type}"\n')
+        env = {**SUSE_ENV, "CONFIGURE_BOOTLOADER": "false"}
+
+        result = _run_with_env(runner, "uninstall_bootloader.sh", env)
+        assert_exit_code(result, 0)
+        assert_output_contains(result.stdout, "does not boot from")
+        assert runner.get_file_contents(STUB_GRUB_CFG) == SP7_GRUB_CFG
+        assert_exit_code(_run_with_env(runner, "uninstall_bootloader_check.sh", env), 0)
+    finally:
+        runner.cleanup()
+
+
+@pytest.mark.parametrize(
+    "os_release",
+    [
+        'ID="opensuse-leap"\\nID_LIKE="suse opensuse"\\nVERSION_ID="15.6"\\nPRETTY_NAME="openSUSE Leap 15.6"\\n',
+        'ID="opensuse-leap"\\nID_LIKE="suse opensuse"\\nVERSION_ID="16.0"\\nPRETTY_NAME="openSUSE Leap 16.0"\\n',
+    ],
+    ids=["leap-15.6", "leap-16.0"],
+)
+def test_bootloader_suse_accepts_opensuse_leap(base_image, os_release):
+    """openSUSE Leap takes the same path as SLES, from configure through uninstall."""
+    _skip_non_suse(base_image)
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        _suse_container(runner)
+        _write_os_release(runner, STUB_OS_RELEASE, os_release)
+        env = {**SUSE_ENV, "OS_RELEASE": STUB_OS_RELEASE}
+
+        assert_exit_code(_run_with_env(runner, "configure_bootloader.sh", env), 0)
+        assert f'set tuned_params="{SAMPLE_CMDLINE}"' in runner.get_file_contents(STUB_GRUB_CFG)
+        assert_exit_code(_run_with_env(runner, "configure_bootloader_check.sh", env), 0)
+
+        assert_exit_code(_run_with_env(runner, "uninstall_bootloader.sh", env), 0)
+        assert 'set tuned_params=""' in runner.get_file_contents(STUB_GRUB_CFG)
+        assert_exit_code(_run_with_env(runner, "uninstall_bootloader_check.sh", env), 0)
+    finally:
+        runner.cleanup()
+
+
+def test_uninstall_bootloader_suse_clears_initrd_only_profile(base_image):
+    """A profile with initrd_add_img and no cmdline leaves only tuned_initrd; that is cleared too."""
+    _skip_non_suse(base_image)
+    runner = DockerTestRunner(package="nvidia-tuned", base_image=base_image)
+    try:
+        _suse_container(runner)
+        _put_file(runner, STUB_BOOTCMDLINE,
+                  'TUNED_BOOT_CMDLINE=""\nTUNED_BOOT_INITRD_ADD="/boot/tuned-initrd.img"\n')
+        _put_file(runner, STUB_GRUB_CFG,
+                  'set tuned_params=""\nset tuned_initrd="/boot/tuned-initrd.img"\n')
+
+        check = _run_with_env(runner, "uninstall_bootloader_check.sh", SUSE_ENV)
+        assert check.exit_code != 0, f"uninstall check passed with tuned_initrd still set: {check.stdout}"
+        assert_output_contains(check.stdout, "still sets tuned_initrd")
+
+        result = _run_with_env(runner, "uninstall_bootloader.sh", SUSE_ENV)
+        assert_exit_code(result, 0)
+        assert runner.file_exists("/tmp/update-bootloader.ran"), "grub.cfg was not regenerated"
+        assert 'TUNED_BOOT_INITRD_ADD=""' in runner.get_file_contents(STUB_BOOTCMDLINE)
+        assert 'set tuned_initrd=""' in runner.get_file_contents(STUB_GRUB_CFG)
+        assert_exit_code(_run_with_env(runner, "uninstall_bootloader_check.sh", SUSE_ENV), 0)
     finally:
         runner.cleanup()

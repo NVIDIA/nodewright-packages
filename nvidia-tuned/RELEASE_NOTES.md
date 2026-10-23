@@ -20,6 +20,32 @@ example is not itself picked up as release notes):
     - Notable behavior change worth calling out.
 -->
 
+## 0.11.0
+
+The `configure-bootloader` step, used by `service=rke2`, now supports SLES 15 SP7, SLES
+16.0 and openSUSE Leap. Until now it failed on every distribution outside the Debian
+family, so an `rke2` node on SUSE needed `CONFIGURE_BOOTLOADER=false` and got none of its
+profile's kernel arguments. Debian-family nodes are unchanged.
+
+On SUSE the step writes no grub.d drop-in, because SUSE's `grub2-mkconfig` never reads
+`/etc/default/grub.d/`. It relies on tuned's own grub2 integration instead: the
+`$tuned_params` reference tuned adds to `/etc/default/grub`, and `/etc/grub.d/00_tuned`.
+The step requires `LOADER_TYPE` `grub2` or `grub2-efi` and that reference, then runs
+`update-bootloader --refresh`. The regeneration is the part that matters: on SLES 15 SP7
+tuned left a `grub.cfg` that set `tuned_params` but passed it on no `linux` line, so the
+node rebooted without the arguments. `configure-bootloader-check` now reads the generated
+`grub.cfg` on SUSE and fails on exactly that.
+
+Upgrade note: a SUSE node whose `/etc/sysconfig/bootloader` sets `LOADER_TYPE` to
+`grub2-bls` or `systemd-boot` still fails the step; keep `CONFIGURE_BOOTLOADER=false` there.
+
+On SUSE, uninstall clears tuned's bootloader cmdline itself: it empties
+`TUNED_BOOT_CMDLINE` and `TUNED_BOOT_INITRD_ADD` and regenerates `grub.cfg`, the same rollback tuned does when its
+daemon is stopped while running. `uninstall-bootloader-check` fails while `grub.cfg` still
+sets a non-empty `tuned_params` or `tuned_initrd`. Both act only when `LOADER_TYPE` is `grub2` or `grub2-efi`,
+so a node on another loader, or with no `/etc/sysconfig/bootloader`, uninstalls cleanly.
+openSUSE Tumbleweed and Slowroll are not supported by the step.
+
 ## 0.10.2
 
 Compatibility with OCI GB300 nodes on Oracle Cloud Agent 1.64 and
