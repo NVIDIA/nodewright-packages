@@ -20,7 +20,7 @@
 # Label categories:
 #   Issue types  — applied automatically by issue templates
 #   Planning     — applied by engineering/product during triage (per DGXC OSS Policy)
-#   Priority     — P0/P1/P2 per DGXC OSS Policy, applied by engineering
+#   Priority is not a label: it is a native GitHub issue Field set by maintainers
 #   Lifecycle    — stale automation and freeze exemptions
 #   Standard     — common GitHub labels
 
@@ -59,22 +59,11 @@
   description: "Container for a group of related features (optional)"
 
 # ── Priority ─────────────────────────────────────────────────────────────────
-# Set by engineering only. SLAs per DGXC OSS Policy:
-#   P0: major functionality broken, no workaround — 30 day fix SLA
-#   P1: product works but not as expected, workaround exists — 6 month SLA
-#   P2: minor defect, minor impact — no fix commitment
-
-- name: "P0"
-  color: "b60205"
-  description: "Critical: major functionality broken, no workaround. 30-day SLA."
-
-- name: "P1"
-  color: "e11d48"
-  description: "High: product works but not as expected. Workaround exists. 6-month SLA."
-
-- name: "P2"
-  color: "f97316"
-  description: "Medium: minor defect or minor impact. No fix commitment."
+# Priority is a native GitHub issue Field (Urgent / High / Medium / Low), set
+# from the Fields section of the issue sidebar. It is deliberately NOT modelled
+# as a label and is NOT collected by the issue forms: prioritization is a
+# maintainer call made during triage, not something a reporter self-declares.
+# Do not add priority/*, P0/P1/P2, or severity labels here.
 
 # ── Lifecycle ─────────────────────────────────────────────────────────────────
 # Used by stale automation (see .github/workflows/stale.yaml)
