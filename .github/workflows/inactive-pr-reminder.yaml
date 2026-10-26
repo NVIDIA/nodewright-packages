@@ -105,8 +105,21 @@ jobs:
                 per_page: 100,
               });
               const lastReminder = latest(timeline.filter(isReminder).map(e => e.created_at));
-              const lastActivity = latest(timeline.map(activityTime));
-              if (lastReminder > lastActivity) continue;
+              if (lastReminder) {
+                // The timeline leaves out replies in review threads, so read
+                // inline review comments separately.
+                const reviewComments = await github.paginate(github.rest.pulls.listReviewComments, {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  pull_number: pr.number,
+                  per_page: 100,
+                });
+                const lastActivity = latest([
+                  ...timeline.map(activityTime),
+                  ...reviewComments.filter(c => !isBot(c.user)).map(c => c.created_at),
+                ]);
+                if (lastReminder > lastActivity) continue;
+              }
 
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
