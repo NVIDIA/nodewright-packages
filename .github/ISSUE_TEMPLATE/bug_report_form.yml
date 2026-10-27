@@ -40,6 +40,7 @@ body:
       label: Which package does this relate to?
       options:
         - bind-mount
+        - kata-containers
         - shellscript
         - tuning
         - tuned

@@ -72,6 +72,7 @@ jobs:
             // (e.g. "tuned" inside "nvidia-tuned") never beats the specific one.
             const PACKAGES = [
               'nvidia-tuning-gke',
+              'kata-containers',
               'nvidia-tuned',
               'nvidia-setup',
               'copy-fail',

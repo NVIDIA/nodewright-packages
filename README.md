@@ -131,6 +131,14 @@ A fail-closed package that exposes an existing host mount at a stable second pat
 - Activates through a controlled NodeWright interrupt and verifies the host mount afterward
 - Removes persistence on uninstall without live-unmounting active workloads
 
+### 9. Kata Containers Package (`kata-containers/`)
+
+Installs, configures, upgrades and removes Kata's `qemu-nvidia-cpu-runtime-rs`
+through NodeWright's rollout and drain controls. Package versions follow the Kata
+release. GPU Operator and GPU provisioning components are not dependencies.
+
+See the [package guide](kata-containers/README.md) for requirements and deployment.
+
 ## Package Structure
 
 Each package follows the standard NodeWright package structure:

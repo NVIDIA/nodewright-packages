@@ -123,6 +123,10 @@
   color: "1d76db"
   description: "Relates to the bind-mount package"
 
+- name: "package/kata-containers"
+  color: "1d76db"
+  description: "Relates to the Kata Containers package"
+
 - name: "package/kdump"
   color: "1d76db"
   description: "Relates to the kdump package"
