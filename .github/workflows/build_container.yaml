@@ -28,10 +28,16 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
-# There is a single job in this workflow. It uses the composite build-package action.
+# build-and-push-image builds, signs and publishes the package to GHCR with the
+# composite build-package action; publish-ngc then stages that same image in NGC.
 jobs:
   build-and-push-image:
     runs-on: ubuntu-latest
+    outputs:
+      subject-name: ${{ steps.manifest.outputs.subject-name }}
+      digest: ${{ steps.manifest.outputs.digest }}
+      version: ${{ steps.extract.outputs.version }}
+      package-name: ${{ steps.extract.outputs.package_name }}
     # Sets the permissions granted to the `GITHUB_TOKEN` for the actions in this job.
     permissions:
       contents: read
@@ -45,7 +51,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
-      - name: Extract package name from tag
+      - name: Extract package name and version from tag
         id: extract
         # The tag name goes through env rather than inline ${{ }} expansion so
         # a crafted tag cannot inject shell into the script.
@@ -58,14 +64,31 @@ jobs:
             exit 1
           fi
           echo "package_name=${PACKAGE_NAME}" >> $GITHUB_OUTPUT
+          # The same version forms release.yml accepts.
+          VERSION="${REF_NAME#*/}"
+          if [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            PRERELEASE=false
+          elif [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]]; then
+            PRERELEASE=true
+          else
+            echo "ERROR: tag '${REF_NAME}' must match <package>/<MAJOR>.<MINOR>.<PATCH> or <package>/<MAJOR>.<MINOR>.<PATCH>-rc.<N>" >&2
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "prerelease=${PRERELEASE}" >> "${GITHUB_OUTPUT}"
 
       - name: Build and push Docker image
         id: build
         uses: ./.github/actions/build-package
         with:
           package_name: ${{ steps.extract.outputs.package_name }}
+          # type=raw rather than type=match: docker/metadata-action adds `latest`
+          # to every type=match tag (its latest=auto default), so a release
+          # candidate would move `latest`, and a match on \d+\.\d+\.\d+ also
+          # dropped the -rc.N suffix, publishing an RC under its final version.
           tags: |
-            type=match,pattern=\d+\.\d+\.\d+
+            type=raw,value=${{ steps.extract.outputs.version }}
+            type=raw,value=latest,enable=${{ steps.extract.outputs.prerelease == 'false' }}
           registry: ${{ env.REGISTRY }}
           image_name: ${{ env.IMAGE_NAME }}
           generate_attestation: 'true'
@@ -111,6 +134,90 @@ jobs:
             --certificate-identity "${EXPECTED_IDENTITY}" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com
           # SLSA v1 build provenance (from actions/attest-build-provenance).
+          cosign verify-attestation "${IMAGE}@${DIGEST}" \
+            --certificate-identity "${EXPECTED_IDENTITY}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            --type https://slsa.dev/provenance/v1
+
+  # Copies the published image to NGC staging, from where NVIDIA's internal
+  # release process promotes it to nvcr.io/nvidia. It is copied by digest rather
+  # than rebuilt so both registries serve the same bytes, and `oras cp -r` brings
+  # the signature and provenance along rather than signing again, so this job
+  # holds no signing identity. A separate job so only a release tag ever enters
+  # the ngc-publish environment that holds NGC_API_KEY, and so an NGC failure can
+  # be re-run without rebuilding or republishing to GHCR.
+  publish-ngc:
+    runs-on: ubuntu-latest
+    needs: build-and-push-image
+    environment: ngc-publish
+    env:
+      NGC_REPOSITORY: nvcr.io/1070195845945670/nodewright-packages
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6  # v4.7.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to NGC
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6  # v4.7.0
+        with:
+          registry: nvcr.io
+          username: $oauthtoken
+          password: ${{ secrets.NGC_API_KEY }}
+
+      - name: Set up oras
+        uses: ./.github/actions/setup-oras
+
+      # -r follows the referrers of every manifest in the graph, not only the
+      # index: build-package signs each platform manifest as well as the index,
+      # and those signatures would otherwise be left behind on GHCR. Only the
+      # version tag is copied: staging is promoted by version, so `latest` stays
+      # a GHCR tag, as it does for NVIDIA/nodewright's NGC staging.
+      - name: Copy the image and its evidence to NGC
+        id: copy
+        env:
+          SOURCE_NAME: ${{ needs.build-and-push-image.outputs.subject-name }}
+          DIGEST: ${{ needs.build-and-push-image.outputs.digest }}
+          VERSION: ${{ needs.build-and-push-image.outputs.version }}
+          PACKAGE_NAME: ${{ needs.build-and-push-image.outputs.package-name }}
+        run: |
+          set -euo pipefail
+          NGC_IMAGE="${NGC_REPOSITORY}/${PACKAGE_NAME}"
+          oras cp -r "${SOURCE_NAME}@${DIGEST}" "${NGC_IMAGE}:${VERSION}"
+          NGC_DIGEST="$(oras manifest fetch --descriptor "${NGC_IMAGE}:${VERSION}" | jq -r .digest)"
+          if [[ "${NGC_DIGEST}" != "${DIGEST}" ]]; then
+            echo "ERROR: NGC image ${NGC_DIGEST} is not the GHCR image ${DIGEST}" >&2
+            exit 1
+          fi
+          echo "subject-name=${NGC_IMAGE}" >> "${GITHUB_OUTPUT}"
+          echo "Copied ${SOURCE_NAME}@${DIGEST} to ${NGC_IMAGE}:${VERSION}"
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+
+      # The same checks the GHCR job runs, against the copy. The certificate
+      # identity is unchanged: the evidence was produced by the build job on this
+      # tag, and copying it does not re-sign it.
+      - name: Verify NGC image signature and provenance
+        env:
+          IMAGE: ${{ steps.copy.outputs.subject-name }}
+          DIGEST: ${{ needs.build-and-push-image.outputs.digest }}
+          EXPECTED_IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/build_container.yaml@${{ github.ref }}
+        run: |
+          set -euo pipefail
+          cosign verify "${IMAGE}@${DIGEST}" \
+            --certificate-identity "${EXPECTED_IDENTITY}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
           cosign verify-attestation "${IMAGE}@${DIGEST}" \
             --certificate-identity "${EXPECTED_IDENTITY}" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
