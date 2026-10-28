@@ -1,0 +1,158 @@
+{
+  "schema_version": "v1",
+  "package_name": "kata-containers",
+  "package_version": "4.3.1",
+  "expected_config_files": [],
+  "modes": {
+    "apply": [
+      {
+        "name": "apply",
+        "path": "run.sh",
+        "arguments": [
+          "prepare"
+        ],
+        "returncodes": [
+          0
+        ],
+        "on_host": true,
+        "idempotence": false,
+        "upgrade_step": false
+      }
+    ],
+    "apply-check": [
+      {
+        "name": "apply-check",
+        "path": "run_check.sh",
+        "arguments": [
+          "check-prepared"
+        ],
+        "returncodes": [
+          0
+        ],
+        "on_host": true,
+        "idempotence": true,
+        "upgrade_step": false
+      }
+    ],
+    "upgrade": [
+      {
+        "name": "upgrade",
+        "path": "run.sh",
+        "arguments": [
+          "prepare"
+        ],
+        "returncodes": [
+          0
+        ],
+        "on_host": true,
+        "idempotence": false,
+        "upgrade_step": false
+      }
+    ],
+    "upgrade-check": [
+      {
+        "name": "upgrade-check",
+        "path": "run_check.sh",
+        "arguments": [
+          "check-prepared"
+        ],
+        "returncodes": [
+          0
+        ],
+        "on_host": true,
+        "idempotence": true,
+        "upgrade_step": false
+      }
+    ],
+    "post-interrupt": [
+      {
+        "name": "post-interrupt",
+        "path": "run.sh",
+        "arguments": [
+          "finalize"
+        ],
+        "returncodes": [
+          0
+        ],
+        "on_host": true,
+        "idempotence": true,
+        "upgrade_step": false
+      }
+    ],
+    "post-interrupt-check": [
+      {
+        "name": "post-interrupt-check",
+        "path": "run_check.sh",
+        "arguments": [
+          "check-finalized"
+        ],
+        "returncodes": [
+          0
+        ],
+        "on_host": true,
+        "idempotence": true,
+        "upgrade_step": false
+      }
+    ],
+    "uninstall": [
+      {
+        "name": "uninstall",
+        "path": "run.sh",
+        "arguments": [
+          "uninstall"
+        ],
+        "returncodes": [
+          0
+        ],
+        "on_host": true,
+        "idempotence": false,
+        "upgrade_step": false
+      }
+    ],
+    "uninstall-check": [
+      {
+        "name": "uninstall-check",
+        "path": "run_check.sh",
+        "arguments": [
+          "check-removed"
+        ],
+        "returncodes": [
+          0
+        ],
+        "on_host": true,
+        "idempotence": true,
+        "upgrade_step": false
+      }
+    ],
+    "config": [
+      {
+        "name": "config",
+        "path": "run.sh",
+        "arguments": [
+          "install"
+        ],
+        "returncodes": [
+          0
+        ],
+        "on_host": true,
+        "idempotence": true,
+        "upgrade_step": false
+      }
+    ],
+    "config-check": [
+      {
+        "name": "config-check",
+        "path": "run_check.sh",
+        "arguments": [
+          "check-installed"
+        ],
+        "returncodes": [
+          0
+        ],
+        "on_host": true,
+        "idempotence": true,
+        "upgrade_step": false
+      }
+    ]
+  }
+}
