@@ -32,6 +32,11 @@ package/bind-mount:
       - any-glob-to-any-file:
           - 'bind-mount/**'
 
+package/kata-containers:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'kata-containers/**'
+
 package/kdump:
   - changed-files:
       - any-glob-to-any-file:
