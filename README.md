@@ -192,7 +192,7 @@ To build a package for multi-architecture deployment:
 
 Example:
 ```bash
-docker buildx build -t ghcr.io/nvidia/skyhook-packages/shellscript:1.1.1 \
+docker buildx build -t ghcr.io/nvidia/nodewright-packages/shellscript:1.1.2 \
   -f shellscript/Dockerfile \
   --platform=linux/amd64,linux/arm64 \
   --push shellscript/
@@ -200,7 +200,7 @@ docker buildx build -t ghcr.io/nvidia/skyhook-packages/shellscript:1.1.1 \
 
 ## Using Packages
 
-Packages are used by creating NodeWright Custom Resources that reference the package images. Here's a basic example:
+Packages are used by creating NodeWright Custom Resources that reference the package images, published at `ghcr.io/nvidia/nodewright-packages/<package>:<version>`. Older versions and the former `skyhook-packages` location are listed in [Package Image Locations](docs/artifact-locations.md). Here's a basic example:
 
 ```yaml
 apiVersion: skyhook.nvidia.com/v1alpha1
@@ -213,8 +213,8 @@ spec:
       skyhook.nvidia.com/node-type: worker
   packages:
     my-package:
-      version: 1.1.1
-      image: ghcr.io/nvidia/skyhook-packages/shellscript:1.1.1
+      version: 1.1.2
+      image: ghcr.io/nvidia/nodewright-packages/shellscript:1.1.2
       configMap:
         apply.sh: |
           #!/bin/bash

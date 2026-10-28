@@ -23,7 +23,7 @@ This repo does **not** contain the operator, the agent, or any Go code. It is sh
 - `scripts/`: repo tooling (`validate.py`, `sync_labels.py`).
 - `tests/integration/`: Docker-based pytest suites, one subdir per package that has tests (with hyphens converted to underscores, e.g. `nvidia-setup` to `nvidia_setup`; not every package has a subdir).
 - `.github/`: workflows, the `build-package` composite action, issue/PR templates, `labels.yml`, `CODEOWNERS`.
-- `docs/`: note that `docs/plans` and `docs/superpowers` are gitignored; `docs/` is not a tracked doc tree in this repo. Authoritative prose lives in the root `*.md` files below.
+- `docs/`: two tracked references, `docs/release-process.md` and `docs/artifact-locations.md` (which versions of each package image live under which registry path). `docs/plans` and `docs/superpowers` are gitignored working areas. Other authoritative prose lives in the root `*.md` files below.
 
 ### Package internal structure
 
@@ -137,7 +137,9 @@ Almost all package logic is bash. The existing scripts are not yet consistent (s
 
 - **On PR (`pr_build.yaml`):** detects which package directories changed, then for each changed package runs validate, test, and a dev build tagged `<version>-dev.sha<short>`. Changed-package detection keys on a directory having a `Dockerfile`; `scripts/` and hidden dirs are skipped.
 - **On tag push `<package>/<version>`:** two independent workflows run. `build_container.yaml` builds and pushes the multi-arch image (`linux/amd64,linux/arm64`) with a build-provenance attestation; `release.yml` creates the GitHub Release with `git-cliff` notes scoped to that package. The image build (here and in `pr_build.yaml`) goes through the `.github/actions/build-package` composite action. (`build_package.yml` is a reusable `workflow_call` workflow that exists but is not currently wired up.)
-- **Published image path for new releases:** `ghcr.io/nvidia/nodewright-packages/<package>:<version>`. Verify legacy versions before changing an existing consumer because some older tags remain only under `ghcr.io/nvidia/skyhook-packages/`.
+- **Image tags:** the image is tagged with the version exactly as written in the git tag, so `tuned/1.4.0` publishes `tuned:1.4.0` and `tuned/1.4.0-rc.1` publishes `tuned:1.4.0-rc.1`. A stable release also moves `latest`; a release candidate does not. Any other version form fails the build, matching what `release.yml` accepts.
+- **Published image path for new releases:** `ghcr.io/nvidia/nodewright-packages/<package>:<version>`. Verify legacy versions before changing an existing consumer because some older tags remain only under `ghcr.io/nvidia/skyhook-packages/`; [docs/artifact-locations.md](docs/artifact-locations.md) lists which versions are on which path.
+- **NGC staging:** after the GHCR build, the `publish-ngc` job in `build_container.yaml` copies the image by digest to `nvcr.io/1070195845945670/nodewright-packages/<package>:<version>`, from where NVIDIA's internal release process promotes it to the public `nvcr.io/nvidia` catalog. It copies with `oras cp -r`, so the keyless signatures (index and every platform manifest) and the provenance attestation come along unchanged; the job fails if the NGC digest differs from GHCR, then runs the same `cosign verify` checks against the copy. It runs in the `ngc-publish` environment, which holds `NGC_API_KEY` (a service key scoped to the `nodewright-packages` NGC team) and admits only `<package>/<version>` tags. An NGC failure leaves the GHCR release intact and can be re-run on its own.
 - An optional `<package>/preprocess.sh` is run before the image build and can emit `BUILD_ARGS`.
 
 ## Code review (CodeRabbit)

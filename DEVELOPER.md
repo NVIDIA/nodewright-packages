@@ -67,7 +67,7 @@ make validate-inherited PACKAGE=nvidia-tuned
 
 **Important for Inherited Packages:**
 
-If your package inherits from another skyhook-packages image (i.e., your Dockerfile has `FROM ghcr.io/nvidia/skyhook-packages/...`), you **must build the container first** before validating. This is because the validation needs access to all files that will be in the final container, including those from the base image.
+If your package inherits from another package image (i.e., your Dockerfile has `FROM ghcr.io/nvidia/nodewright-packages/...`, or the legacy `FROM ghcr.io/nvidia/skyhook-packages/...` in older versions), you **must build the container first** before validating. This is because the validation needs access to all files that will be in the final container, including those from the base image.
 
 **For inherited packages, build first:**
 ```bash
@@ -222,8 +222,8 @@ The CI pipeline automatically runs validations:
 
 ### Dockerfile Requirements
 
-- If your package inherits from another skyhook-packages image, the `FROM` line must contain `skyhook-packages` in the image path
-- Example: `FROM ghcr.io/nvidia/skyhook-packages/tuned:${TUNED_VERSION}`
+- If your package inherits from another package image, the `FROM` line must contain `nodewright-packages` in the image path. The tooling also accepts the former `skyhook-packages` name so that older versions still build; see [Package Image Locations](docs/artifact-locations.md).
+- Example: `FROM ghcr.io/nvidia/nodewright-packages/tuned:${TUNED_VERSION}`
 
 ## Troubleshooting
 
@@ -250,7 +250,7 @@ This means:
 
 Either:
 - Add a `config.json` file to your package, OR
-- Update your Dockerfile to inherit from a skyhook-packages image (e.g., `FROM ghcr.io/nvidia/skyhook-packages/<package-name>:<version>`)
+- Update your Dockerfile to inherit from a package image (e.g., `FROM ghcr.io/nvidia/nodewright-packages/<package-name>:<version>`)
 
 ## Additional Resources
 

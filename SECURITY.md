@@ -43,15 +43,15 @@ Each package in this repository is versioned and released independently, followi
 
 | Package | Image | Supported |
 |---|---|---|
-| `shellscript/` | `ghcr.io/nvidia/skyhook-packages/shellscript` | Latest minor |
-| `tuning/` | `ghcr.io/nvidia/skyhook-packages/tuning` | Latest minor |
-| `tuned/` | `ghcr.io/nvidia/skyhook-packages/tuned` | Latest minor |
-| `kdump/` | `ghcr.io/nvidia/skyhook-packages/kdump` | Latest minor |
-| `nvidia-setup/` | `ghcr.io/nvidia/skyhook-packages/nvidia-setup` | Latest minor |
-| `nvidia-tuned/` | `ghcr.io/nvidia/skyhook-packages/nvidia-tuned` | Latest minor |
-| `nvidia-tuning-gke/` | `ghcr.io/nvidia/skyhook-packages/nvidia-tuning-gke` | Latest minor |
-| `copy-fail/` | `ghcr.io/nvidia/skyhook-packages/copy-fail` | Latest minor |
-| `bind-mount/` | `ghcr.io/nvidia/skyhook-packages/bind-mount` | Latest minor |
+| `shellscript/` | `ghcr.io/nvidia/nodewright-packages/shellscript` | Latest minor |
+| `tuning/` | `ghcr.io/nvidia/nodewright-packages/tuning` | Latest minor |
+| `tuned/` | `ghcr.io/nvidia/nodewright-packages/tuned` | Latest minor |
+| `kdump/` | `ghcr.io/nvidia/nodewright-packages/kdump` | Latest minor |
+| `nvidia-setup/` | `ghcr.io/nvidia/nodewright-packages/nvidia-setup` | Latest minor |
+| `nvidia-tuned/` | `ghcr.io/nvidia/nodewright-packages/nvidia-tuned` | Latest minor |
+| `nvidia-tuning-gke/` | `ghcr.io/nvidia/nodewright-packages/nvidia-tuning-gke` | Latest minor |
+| `copy-fail/` | `ghcr.io/nvidia/nodewright-packages/copy-fail` | Latest minor |
+| `bind-mount/` | `ghcr.io/nvidia/nodewright-packages/bind-mount` | Latest minor |
 
 Older minors are not patched. If you pin a package version in a NodeWright custom resource, upgrade the pin to pick up a security fix. Published versions are on the [releases page](https://github.com/NVIDIA/nodewright-packages/releases).
 
@@ -68,7 +68,7 @@ Verify a package image before you run it:
 Verify by digest, not by tag. A tag can be repointed between the moment you verify it and the moment you pull it; a digest cannot. This is also what the build workflow itself does.
 
 ```bash
-REPO=ghcr.io/nvidia/skyhook-packages/<package>
+REPO=ghcr.io/nvidia/nodewright-packages/<package>
 ISSUER=https://token.actions.githubusercontent.com
 IDENTITY="https://github.com/NVIDIA/nodewright-packages/.github/workflows/build_container.yaml@refs/tags/<package>/<version>"
 
@@ -96,6 +96,6 @@ DIGEST=$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$REPO
 
 Take the top-level manifest digest, which is what the signature and attestation are bound to. Do not substitute one of the per-platform digests listed under `Manifests:` in the plain `docker buildx imagetools inspect` output; those are children of the index and will not verify.
 
-The certificate identity is the exact workflow and tag that built the image, so substitute the package and version you are verifying. Images published before the Skyhook to NodeWright repository rename carry a `NVIDIA/skyhook-packages` identity.
+The certificate identity is the exact workflow and tag that built the image, so substitute the package and version you are verifying. Images published before the Skyhook to NodeWright repository rename live under `ghcr.io/nvidia/skyhook-packages/<package>` and carry a `NVIDIA/skyhook-packages` identity; [Package Image Locations](docs/artifact-locations.md) lists which versions are on which path.
 
 A verification failure on a published image is itself a security report. Route it through the channels above.
