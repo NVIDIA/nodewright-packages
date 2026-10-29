@@ -182,6 +182,8 @@ def test_apply_dynamic_supported_listing(base_image):
         assert_output_contains(result.stdout, "eks-gb200")
         assert_output_contains(result.stdout, "eks-gb300")
         assert_output_contains(result.stdout, "aks-h100")
+        assert_output_contains(result.stdout, "aks-any")
+        assert_output_contains(result.stdout, "oci-any")
     finally:
         runner.cleanup()
 
