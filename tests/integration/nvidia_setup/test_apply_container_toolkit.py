@@ -226,19 +226,27 @@ def test_apply_check_fails_on_stock_config(base_image, tmp_path, configmaps):
         runner.cleanup()
 
 
-def test_apply_fails_without_nvidia_ctk(base_image, tmp_path):
-    """apply.sh fails when the toolkit config exists but nvidia-ctk cannot be found."""
+@pytest.mark.parametrize("configmaps", TOOLKIT_COMBINATIONS[1:], ids=TOOLKIT_IDS[1:])
+def test_config_without_nvidia_ctk_is_skipped(base_image, tmp_path, configmaps):
+    """With the toolkit config but no nvidia-ctk, apply.sh warns and skips, and apply_check.sh passes."""
     runner = DockerTestRunner(package="nvidia-setup", base_image=base_image)
     try:
+        stock = _fixture("config-stock.toml")
+        no_ctk = {**TOOLKIT_ENV, "NVIDIA_CTK": "/nonexistent/nvidia-ctk"}
         result = runner.run_script(
             script="apply.sh",
-            configmaps={"service": "oci", "accelerator": "any"},
-            env_vars={**TOOLKIT_ENV, "NVIDIA_CTK": "/nonexistent/nvidia-ctk"},
+            configmaps=configmaps,
+            env_vars=no_ctk,
             skip_system_operations=True,
-            extra_files=_stage(tmp_path, _fixture("config-stock.toml")),
+            extra_files=_stage(tmp_path, stock),
         )
-        assert_exit_code(result, 1)
-        assert_output_contains(result.stdout + result.stderr, "was not found")
+        assert_exit_code(result, 0)
+        assert_output_contains(result.stdout, "was not found")
+        assert runner.get_file_contents(CONFIG) == stock
+
+        code, output = _exec(runner, "apply_check.sh", no_ctk)
+        assert code == 0, output
+        assert "nothing to check" in output, output
     finally:
         runner.cleanup()
 

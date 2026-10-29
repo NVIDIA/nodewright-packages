@@ -18,17 +18,24 @@
 
 # container_toolkit_check.sh: apply-check for the configure_container_toolkit
 # step. Verifies both device-isolation keys are set in the toolkit config, or
-# that the node has no toolkit config to harden (matching the step's no-op).
+# that the step had nothing to harden (no config, or no nvidia-ctk), matching
+# its no-ops.
 
 set -euo pipefail
 
 # shellcheck source=../utilities.sh
 . "${SKYHOOK_DIR}/skyhook_dir/utilities.sh"
 
+NVIDIA_CTK="${NVIDIA_CTK:-nvidia-ctk}"
 CONFIG_FILE="${NVIDIA_CONTAINER_RUNTIME_CONFIG:-/etc/nvidia-container-runtime/config.toml}"
 
 if [[ ! -f "${CONFIG_FILE}" ]]; then
   echo "container_toolkit_check: ${CONFIG_FILE} not present, nothing to check"
+  exit 0
+fi
+
+if ! command -v "${NVIDIA_CTK}" >/dev/null 2>&1; then
+  echo "container_toolkit_check: WARNING: ${CONFIG_FILE} exists but ${NVIDIA_CTK} was not found; the step skipped it, nothing to check"
   exit 0
 fi
 

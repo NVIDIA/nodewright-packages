@@ -29,6 +29,9 @@
 # The toolkit re-reads its config on every container start, so no interrupt is
 # needed. A node without the toolkit config (a GPU Operator toolkit owns the
 # runtime, as on driverless pools) has nothing to harden, so the step no-ops.
+# So does a node whose config has no nvidia-ctk next to it: an incomplete host
+# toolkit (a GPU Operator toolkit keeps its own config elsewhere), not a reason
+# to block the node.
 
 set -euo pipefail
 
@@ -53,8 +56,8 @@ if toml_key_is "${CONFIG_FILE}" "${ENVVAR_KEY}" false \
 fi
 
 if ! command -v "${NVIDIA_CTK}" >/dev/null 2>&1; then
-  echo "configure_container_toolkit: ${CONFIG_FILE} exists but ${NVIDIA_CTK} was not found to edit it" >&2
-  exit 1
+  echo "configure_container_toolkit: WARNING: ${CONFIG_FILE} exists but ${NVIDIA_CTK} was not found; not hardening an incomplete host toolkit, skipping"
+  exit 0
 fi
 
 echo "=== configure_container_toolkit: ${CONFIG_FILE} ==="

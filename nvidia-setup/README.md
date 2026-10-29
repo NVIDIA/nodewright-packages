@@ -112,7 +112,7 @@ On nodes where the node's own NVIDIA container toolkit handles every container (
 - `accept-nvidia-visible-devices-envvar-when-unprivileged = false`, which stops unprivileged containers from selecting GPUs through the environment variable;
 - `accept-nvidia-visible-devices-as-volume-mounts = true`, so device plugins that hand out GPUs as volume mounts keep working (OKE's `NvidiaGpuPlugin` add-on runs with `deviceListStrategy=volume-mounts`).
 
-The toolkit re-reads its config on every container start, so the step needs no interrupt. When the node has no `/etc/nvidia-container-runtime/config.toml` (a GPU Operator toolkit owns the runtime, as on driverless pools), there is nothing to harden and the step does nothing.
+The toolkit re-reads its config on every container start, so the step needs no interrupt. When the node has no `/etc/nvidia-container-runtime/config.toml` (a GPU Operator toolkit owns the runtime, as on driverless pools), there is nothing to harden and the step does nothing. When the file exists but `nvidia-ctk` does not, the host toolkit is incomplete (a GPU Operator toolkit keeps its own config under its install directory), so the step logs a warning and skips rather than blocking the node.
 
 Things to know before enabling it:
 
@@ -121,7 +121,7 @@ Things to know before enabling it:
 - **Upgrades.** The package's `upgrade` stage runs `apply.sh`, so nodes moving to this version from an earlier one get the keys without a re-apply. The step itself needs no interrupt, but NodeWright runs whatever interrupt the CR declares after any version change: on `aks-h100` that restarts containerd and kubelet, as every previous version bump did.
 - **One-time write.** The package sets the keys when it applies or upgrades and does not re-assert them. If something later rewrites `config.toml` on the same node, the keys stay changed until the package runs again. Downgrading or removing the package leaves the keys set: it has no uninstall stage.
 - **Running next to a DaemonSet that sets the same keys** (aicr's `nvidia-toolkit-hardening`): both write the same values with `nvidia-ctk`, so running both during a migration changes nothing; remove the DaemonSet once nodes run this version.
-- **Failure mode.** If the file exists but `nvidia-ctk` is not available, the step fails and the node's package stays in error until that is fixed.
+- **No `nvidia-ctk`.** A node whose `config.toml` has no `nvidia-ctk` next to it is not hardened; look for the step's `WARNING` line if such a node runs workloads through the host toolkit.
 
 ## Apply-Check
 
