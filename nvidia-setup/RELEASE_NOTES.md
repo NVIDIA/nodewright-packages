@@ -124,6 +124,27 @@ upgrading, add `NVIDIA_EFA_DRIVER` next to any `NVIDIA_EFA`.
 Expect every EKS node set up before 0.9.0, which has efa 3.0.0, to run the EFA installer on its
 next apply. Until it does, apply-check's EFA check fails on such a node.
 
+### Container toolkit device-isolation keys
+
+`aks-h100` now also sets two keys in the node's NVIDIA container toolkit config
+(`/etc/nvidia-container-runtime/config.toml`):
+`accept-nvidia-visible-devices-envvar-when-unprivileged = false` and
+`accept-nvidia-visible-devices-as-volume-mounts = true`. Unprivileged pods can no longer
+select GPUs by setting `NVIDIA_VISIBLE_DEVICES` without a Kubernetes allocation. This is
+the same change aicr's `nvidia-toolkit-hardening` DaemonSet makes today, so a cluster
+running both sees no difference. Nodes without that config file (a GPU Operator toolkit
+owns the runtime) are left alone.
+
+Before upgrading, check how your device plugin hands GPUs to containers: it must use CDI
+or volume mounts. With the `envvar` strategy, unprivileged pods would lose the GPUs they
+were allocated.
+
+Nodes upgraded in place from an earlier version get the keys too, since the `upgrade` stage
+now runs apply (see "A version bump now runs apply"). As with any version bump, NodeWright
+then runs the interrupt the CR declares: on `aks-h100` that restarts containerd and kubelet.
+
+New combinations: `aks-any` and `oci-any`, which run only this hardening.
+
 ## 0.8.1
 
 With `NVIDIA_SETUP_INSTALL_KERNEL=true`, the kernel step no longer runs apt on a node that

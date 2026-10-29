@@ -428,3 +428,15 @@ target_kernel_packages() {
     printf '%s\n' "linux-modules-extra-${ver}"
   fi
 }
+
+# Whether a top-level TOML key in a file is set to an exact value, tolerating
+# spacing around '=' and a trailing comment (nvidia-ctk writes "key = value").
+# Only lines before the first table header count, so a same-named key inside a
+# table does not match. Bare keys only: a quoted key ("key" = value) does not
+# match, which nvidia-ctk does not write.
+# Usage: toml_key_is <file> <key> <value>
+toml_key_is() {
+  local file="$1" key="$2" value="$3" top
+  top="$(awk '/^[[:space:]]*\[/ { exit } { print }' "${file}")"
+  grep -Eq "^[[:space:]]*${key}[[:space:]]*=[[:space:]]*${value}[[:space:]]*(#.*)?$" <<<"${top}"
+}
