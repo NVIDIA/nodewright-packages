@@ -156,6 +156,12 @@ spec:
 
 Flow: apply `nvidia-setup-kernel` → kernel install → reboot (interrupt) → post-interrupt-check verifies kernel → apply `nvidia-setup-full` (kernel check passes, then upgrade, EFA, and when uncommented: Lustre, chrony, local disks).
 
+## Upgrading to a new version
+
+Raising a package's `version` on a node that completed an earlier version does not run `apply`; the operator runs the `upgrade` stage, then `config` and the interrupt. `upgrade` runs `apply.sh` and `upgrade-check` runs `apply_check.sh`, so a version bump does everything a first apply does, with the same `NVIDIA_SETUP_INSTALL_KERNEL` routing. Before 0.9.0 the package declared no upgrade mode, so a version bump ran nothing and still reported complete.
+
+In the two-package layout above, bump both packages and the `dependsOn` that names the kernel package's version. The kernel package's reboot then runs again, so the full package's apply sees the new kernel. If the reboot comes from another package whose version does not change, that package does not run again, and the full package's apply runs on the old kernel and fails its kernel check.
+
 ## Usage Example
 
 ```yaml

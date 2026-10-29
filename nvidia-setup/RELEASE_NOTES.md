@@ -42,6 +42,22 @@ Ubuntu ships no `linux-modules-extra` package for the 7.0 aws kernels; those mod
 carries it, so a 6.x kernel set through `NVIDIA_KERNEL` still gets it and the 7.0 install does
 not fail on a package that does not exist.
 
+### A version bump now runs apply
+
+When a package's version rises on a node that completed the old version, the operator runs
+the `upgrade` stage, then `config` and the interrupt; it does not run `apply`. nvidia-setup
+declared no `upgrade` mode, so moving a node between versions ran nothing and still reported
+complete: the node kept its old kernel and EFA. 0.9.0 declares `upgrade` running `apply.sh`
+and `upgrade-check` running `apply_check.sh`, so moving a node to 0.9.0 runs the full apply,
+including the kernel and EFA work below.
+
+Upgrade note: a node moving to 0.9.0 needs a reboot onto 7.0 between the kernel package and the
+full-setup package, because the full package's apply requires the 7.0 kernel to be running.
+With the two-package layout in the README, bump both packages and the `dependsOn` naming the
+kernel package's version, and the kernel package's own reboot provides it. If the reboot comes
+from a different package whose version does not change, that package does not run again, and
+the full package fails its kernel check on the old kernel.
+
 ### EFA is upgraded before the kernel on existing nodes
 
 Installing a kernel makes dkms rebuild every efa module it has for that kernel. On a node that

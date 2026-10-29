@@ -28,6 +28,30 @@
         "upgrade_step": false
       }
     ],
+    "upgrade": [
+      {
+        "name": "upgrade",
+        "path": "apply.sh",
+        "arguments": [],
+        "returncodes": [0],
+        "on_host": true,
+        "env": {},
+        "idempotence": true,
+        "upgrade_step": false
+      }
+    ],
+    "upgrade-check": [
+      {
+        "name": "upgrade-check",
+        "path": "apply_check.sh",
+        "arguments": [],
+        "returncodes": [0],
+        "on_host": true,
+        "env": {},
+        "idempotence": true,
+        "upgrade_step": false
+      }
+    ],
     "post-interrupt-check": [
       {
         "name": "post-interrupt-check",
