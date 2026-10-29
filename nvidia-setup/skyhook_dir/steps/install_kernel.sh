@@ -56,12 +56,12 @@ downgrade_kernel() {
     # Installing the kernel makes dkms build every efa module it has for it, and
     # a build failure leaves the kernel packages half-configured, which every
     # later apt call then trips over (aicr#2870: efa 3.0.0 against 7.0). So
-    # bring EFA to the configured installer first, while the running kernel can
+    # bring EFA to the configured driver first, while the running kernel can
     # still build it. A node with no efa module has nothing to rebuild; the full
     # setup installs EFA after the reboot.
-    if [ -n "${EFA:-}" ] && efa_dkms_registered && ! efa_driver_current "${EFA}"; then
+    if [ -n "${EFA:-}" ] && efa_dkms_registered && ! efa_driver_current "${EFA_DRIVER}"; then
       echo "Upgrading EFA to installer ${EFA} before installing kernel ${full_kernel_ver}..."
-      "$(dirname "$0")/install-efa-driver.sh" "${EFA}"
+      "$(dirname "$0")/install-efa-driver.sh" "${EFA}" "${EFA_DRIVER}"
     fi
     # The lists are current now, so ask again whether the target has a
     # linux-modules-extra package.

@@ -19,11 +19,11 @@
 """
 Tests for efa_driver_installed and efa_driver_current in utilities.sh.
 
-install-efa-driver.sh skips when EFA from the configured installer is already
-installed, and install_efa_driver_check.sh passes on the same condition, so both
-ask efa_driver_current. It must answer on evidence that EFA installed, not on
-traces a failed install leaves behind, and an installed EFA from another
-installer version is not current.
+install-efa-driver.sh skips when EFA is installed at the efa driver version the
+configured installer ships or newer, and install_efa_driver_check.sh passes on
+the same condition, so both ask efa_driver_current. It must answer on evidence
+that EFA installed, not on traces a failed install leaves behind, and it reads
+the driver version from dkms, so an older efa module is not current.
 
 The harness stubs dpkg-query, dkms and ldconfig, so no scenario inspects the
 real package database.
@@ -91,21 +91,29 @@ def test_traces_are_not_proof_of_installation(scenario):
     assert _run_scenario(scenario) == 0
 
 
-def test_efa_from_configured_installer_is_current():
-    assert _run_scenario("efa_current_when_recorded_installer_matches") == 0
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        "efa_current_when_driver_matches",
+        # The installer does not downgrade, so a newer module is as good.
+        "efa_current_when_driver_newer",
+        "efa_current_compares_versions_numerically",
+    ],
+)
+def test_efa_at_configured_driver_or_newer_is_current(scenario):
+    assert _run_scenario(scenario) == 0
 
 
 @pytest.mark.parametrize(
     "scenario",
     [
-        # Every node set up before the record existed, so it upgrades once.
-        "efa_not_current_without_record",
-        "efa_not_current_when_recorded_installer_differs",
-        # The record says what ran, not what is installed now.
+        "efa_not_current_when_driver_older",
+        # dkms builds every efa module it has for a new kernel.
+        "efa_not_current_when_an_older_driver_is_also_registered",
         "efa_not_current_when_not_installed",
     ],
 )
-def test_efa_not_from_configured_installer_is_not_current(scenario):
+def test_efa_older_than_configured_driver_is_not_current(scenario):
     """An installed efa 3.0.0 cannot build for the 7.0 kernels, so installed alone is not enough."""
     assert _run_scenario(scenario) == 0
 

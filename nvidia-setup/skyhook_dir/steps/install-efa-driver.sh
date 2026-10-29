@@ -18,6 +18,7 @@
 
 set -e
 EFA_VERSION="${1:?EFA version required}"
+EFA_DRIVER_VERSION="${2:?EFA driver version required}"
 export DEBIAN_FRONTEND=noninteractive
 
 # Load helpers (nvidia-setup skyhook_dir layout)
@@ -32,12 +33,12 @@ else
   exit 1
 fi
 
-# Skip only when EFA is actually installed from this installer version (same
-# criteria as install_efa_driver_check.sh). Anything short of that is a reason
-# to install, not a reason to skip. Re-running over an older install upgrades
-# it in place.
-if efa_driver_current "${EFA_VERSION}"; then
-  echo "EFA from installer ${EFA_VERSION} already installed, skipping."
+# Skip only when EFA is actually installed at the driver version this installer
+# ships or newer (same criteria as install_efa_driver_check.sh). Anything short
+# of that is a reason to install, not a reason to skip. Re-running over an older
+# install upgrades it in place.
+if efa_driver_current "${EFA_DRIVER_VERSION}"; then
+  echo "EFA driver ${EFA_DRIVER_VERSION} or newer already installed, skipping."
   exit 0
 fi
 
@@ -49,7 +50,6 @@ install_efa() {
   cd aws-efa-installer
 
   ./efa_installer.sh -y
-  record_efa_installer_version "${EFA_VERSION}"
   echo "EFA installation completed successfully"
 }
 

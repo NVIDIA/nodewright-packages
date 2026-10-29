@@ -19,7 +19,8 @@
 # Load nvidia-setup defaults and env overrides. Source this from apply.sh, apply_check.sh,
 # kernel_install_check.sh, and any other script that needs SERVICE, ACCELERATOR, KERNEL, LUSTRE, EFA.
 # Requires: SKYHOOK_DIR set.
-# Sets and exports: CONFIGMAP_DIR, DEFAULTS_DIR, SERVICE, ACCELERATOR, COMBINATION, KERNEL, LUSTRE, EFA.
+# Sets and exports: CONFIGMAP_DIR, DEFAULTS_DIR, SERVICE, ACCELERATOR, COMBINATION, KERNEL, LUSTRE, EFA,
+# EFA_DRIVER.
 
 CONFIGMAP_DIR="${SKYHOOK_DIR}/configmaps"
 DEFAULTS_DIR="${SKYHOOK_DIR}/skyhook_dir/defaults"
@@ -42,5 +43,13 @@ fi
 [ -n "${NVIDIA_KERNEL:-}" ] && KERNEL="${NVIDIA_KERNEL}"
 [ -n "${NVIDIA_LUSTRE:-}" ] && LUSTRE="${NVIDIA_LUSTRE}"
 [ -n "${NVIDIA_EFA:-}" ] && EFA="${NVIDIA_EFA}"
+[ -n "${NVIDIA_EFA_DRIVER:-}" ] && EFA_DRIVER="${NVIDIA_EFA_DRIVER}"
 
-export CONFIGMAP_DIR DEFAULTS_DIR SERVICE ACCELERATOR COMBINATION KERNEL LUSTRE EFA
+# EFA names the installer; EFA_DRIVER is the efa driver version it ships, which
+# is what dkms reports and what decides whether EFA is current.
+if [ -n "${EFA:-}" ] && [ -z "${EFA_DRIVER:-}" ]; then
+  echo "EFA=${EFA} needs EFA_DRIVER, the efa driver version that installer ships (set NVIDIA_EFA_DRIVER)" >&2
+  exit 1
+fi
+
+export CONFIGMAP_DIR DEFAULTS_DIR SERVICE ACCELERATOR COMBINATION KERNEL LUSTRE EFA EFA_DRIVER

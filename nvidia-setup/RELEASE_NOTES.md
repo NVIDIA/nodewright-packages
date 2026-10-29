@@ -63,8 +63,8 @@ the full package fails its kernel check on the old kernel.
 Installing a kernel makes dkms rebuild every efa module it has for that kernel. On a node that
 ran an earlier version of this package, that module is efa 3.0.0, the build fails, and the new
 kernel is left half-configured. With `NVIDIA_SETUP_INSTALL_KERNEL=true`, the kernel step
-therefore runs the configured EFA installer first when dkms has an efa module that did not come
-from it, then installs the kernel. If the EFA upgrade fails, the kernel is not installed.
+therefore runs the configured EFA installer first when dkms has an efa module older than
+`EFA_DRIVER`, then installs the kernel. If the EFA upgrade fails, the kernel is not installed.
 
 Upgrade note: on those nodes the kernel package now downloads and runs the EFA installer and
 builds efa with dkms twice (for the running kernel, then for 7.0), where it previously only
@@ -77,18 +77,22 @@ Not covered: a node already left with a half-configured 7.0 kernel by `unattende
 that path has not been exercised. Such a node may still need the half-configured kernel
 packages purged by hand.
 
-### The EFA step now checks which installer it came from
+### The EFA step now checks the efa driver version dkms reports
 
 `install-efa-driver.sh` and `install_efa_driver_check.sh` used to accept any installed EFA,
-which is how efa 3.0.0 would have stayed in place under a kernel it cannot build for. After a
-successful run the step records the installer version in
-`/var/lib/nvidia-setup/efa-installer-version`, and it skips (and the check passes) only when
-EFA is installed and that record matches the configured `EFA` (or `NVIDIA_EFA`).
+which is how efa 3.0.0 would have stayed in place under a kernel it cannot build for. They now
+also read the efa module versions from `dkms status efa`, and skip (and the check passes) only
+when every one is at least `EFA_DRIVER`, the efa driver version the configured installer ships.
+A newer module counts, because the installer does not downgrade one. An older module still
+registered next to a current one does not, because dkms builds every efa module it has for a
+newly installed kernel.
 
-Expect every EKS node set up before 0.9.0 to run the EFA installer once on its next full
-apply, because it has no record. The installer skips any package already at its
-version or newer, so on a node that is already current this changes nothing but adds the
-record. Until that apply runs, apply-check's EFA check fails on such a node.
+The `eks-*` defaults pair `EFA=1.51.0` with `EFA_DRIVER=3.3.1`. `NVIDIA_EFA_DRIVER` overrides
+`EFA_DRIVER` the way `NVIDIA_EFA` overrides `EFA`; set both together when changing the installer,
+since a node already at the configured driver or newer skips the installer.
+
+Expect every EKS node set up before 0.9.0, which has efa 3.0.0, to run the EFA installer on its
+next apply. Until it does, apply-check's EFA check fails on such a node.
 
 ## 0.8.1
 

@@ -17,7 +17,7 @@
 # limitations under the License.
 
 set -e
-EFA_VERSION="${1:?EFA version required}"
+EFA_DRIVER_VERSION="${1:?EFA driver version required}"
 
 # Load helpers (nvidia-setup skyhook_dir layout)
 if [ -f "${SKYHOOK_DIR:-}/skyhook_dir/utilities.sh" ]; then
@@ -32,9 +32,9 @@ else
 fi
 
 # efa_driver_current prints the specific reason to stderr when it fails.
-if efa_driver_current "${EFA_VERSION}"; then
+if efa_driver_current "${EFA_DRIVER_VERSION}"; then
   exit 0
 fi
 
-echo "EFA driver from installer ${EFA_VERSION} is not installed" >&2
+echo "EFA driver ${EFA_DRIVER_VERSION} or newer is not installed" >&2
 exit 1

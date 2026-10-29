@@ -265,42 +265,31 @@ efa_driver_installed() {
   return 0
 }
 
-# Where install-efa-driver.sh records the installer version it last ran. It
-# lives outside SKYHOOK_DIR because a new package version gets a fresh one.
-efa_installer_record() {
-  echo "${NVIDIA_SETUP_STATE_DIR:-/var/lib/nvidia-setup}/efa-installer-version"
-}
-
-# Usage: record_efa_installer_version <installer_version>
-record_efa_installer_version() {
-  local record
-  record="$(efa_installer_record)"
-  mkdir -p "$(dirname "${record}")"
-  printf '%s\n' "$1" > "${record}"
-}
-
-# Report whether EFA is installed (efa_driver_installed) and came from the
-# configured installer version. An installed EFA is not enough on its own: it
-# may be a driver too old for the target kernel. efa 3.0.0 (installer 1.48.0)
-# does not compile against the 7.0 aws kernels, and nothing upgrades it while
-# installed alone counts as done. A node with no record, such as one set up
-# before the record existed, is not current, so it runs the installer once; the
-# installer skips any package already at that version or newer.
-# Usage: efa_driver_current <installer_version>
+# Report whether EFA is installed (efa_driver_installed) and every efa module
+# dkms has is at least <driver_version>, the efa driver the configured installer
+# ships. Installed alone is not enough: dkms builds every efa module it has for a
+# newly installed kernel, and efa 3.0.0 (installer 1.48.0) does not compile
+# against the 7.0 aws kernels. The versions come from dkms, so they describe what
+# is on the node, whoever installed it. A newer module counts, since the
+# installer does not downgrade one.
+# Usage: efa_driver_current <driver_version>
 # Returns: 0 when current, 1 otherwise, with the reason on stderr.
 efa_driver_current() {
   local want="$1"
-  local record
-  local have=""
+  local status
+  local oldest
 
   efa_driver_installed || return 1
 
-  record="$(efa_installer_record)"
-  if [ -f "${record}" ]; then
-    have="$(cat "${record}")"
+  # `efa/3.3.1, <kernel>, <arch>: installed`, or `efa/3.3.1: added`.
+  status="$(dkms status efa 2>/dev/null || true)"
+  oldest="$(sed -nE 's#^efa[/,] *([0-9][^,: ]*).*#\1#p' <<< "${status}" | sort -V | sed -n 1p)"
+  if [ -z "${oldest}" ]; then
+    echo "EFA: dkms reports no efa version" >&2
+    return 1
   fi
-  if [ "${have}" != "${want}" ]; then
-    echo "EFA: installed from installer '${have:-unrecorded}', configured installer is '${want}'" >&2
+  if [ "$(printf '%s\n' "${want}" "${oldest}" | sort -V | sed -n 1p)" != "${want}" ]; then
+    echo "EFA: dkms has efa ${oldest}, the configured installer ships ${want}" >&2
     return 1
   fi
 

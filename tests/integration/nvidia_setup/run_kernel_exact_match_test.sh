@@ -57,13 +57,12 @@ ARCHIVE_FILE="${WORK_DIR}/archive"
 DKMS_FILE="${WORK_DIR}/dkms"
 CALL_LOG="${WORK_DIR}/calls.log"
 OUTPUT="${WORK_DIR}/output.log"
-NVIDIA_SETUP_STATE_DIR="${WORK_DIR}/state"
 mkdir -p "${STUB_BIN}" "${DPKG_ADMINDIR}/updates"
 : > "${STATUS_FILE}"
 : > "${ARCHIVE_FILE}"
 : > "${DKMS_FILE}"
 : > "${CALL_LOG}"
-export DPKG_ADMINDIR STATUS_FILE ARCHIVE_FILE DKMS_FILE CALL_LOG NVIDIA_SETUP_STATE_DIR
+export DPKG_ADMINDIR STATUS_FILE ARCHIVE_FILE DKMS_FILE CALL_LOG
 
 # STATUS_FILE holds one "<package> <dpkg status>" line per package dpkg knows.
 # ARCHIVE_FILE holds one package name per line for each package apt can install.
@@ -279,10 +278,10 @@ run_install_kernel() {
 }
 
 # A GB node as nvidia-setup 0.8.x left it: on 6.17 with efa 3.0.0 from
-# installer 1.48.0, which predates the installer record.
+# installer 1.48.0.
 gb_node_with_efa_3_0() {
   KERNEL="7.0.0-1014-aws"
-  export EFA="1.51.0"
+  export EFA="1.51.0" EFA_DRIVER="3.3.1"
   node aarch64 "6.17.0-1019-aws-64k"
   # shellcheck disable=SC2046
   archive $(folded_kernel_packages "7.0.0-1014-aws-64k")
@@ -293,7 +292,7 @@ gb_node_with_efa_3_0() {
 # The same for an H100 node, which installs the flavor as-is.
 h100_node_with_efa_3_0() {
   KERNEL="7.0.0-1014-aws"
-  export EFA="1.51.0"
+  export EFA="1.51.0" EFA_DRIVER="3.3.1"
   node x86_64 "6.17.0-1019-aws"
   # shellcheck disable=SC2046
   archive $(folded_kernel_packages "7.0.0-1014-aws")
@@ -461,20 +460,18 @@ case "${SCENARIO}" in
   upgrades_stale_efa_before_installing_kernel)
     gb_node_with_efa_3_0
     run_install_kernel || fail "install_kernel.sh exited non-zero"
-    efa_installer_ran || fail "an efa module from another installer must be upgraded"
+    efa_installer_ran || fail "an efa module older than the configured driver must be upgraded"
     efa_line="$(first_call '^efa_installer\.sh ')"
     kernel_line="$(first_call '^apt-get .*install .*linux-image-7\.0\.0-1014-aws-64k')"
     [ -n "${kernel_line}" ] || fail "the kernel must still be installed"
     [ "${efa_line}" -lt "${kernel_line}" ] || fail "EFA must be upgraded before the kernel is installed"
-    grep -qx '1.51.0' "${NVIDIA_SETUP_STATE_DIR}/efa-installer-version" \
-      || fail "the installer version must be recorded"
     ;;
 
   # eks-h100 is on 7.0 too: the same order, the 4k flavor, no modules-extra.
   upgrades_stale_efa_before_installing_kernel_x86)
     h100_node_with_efa_3_0
     run_install_kernel || fail "install_kernel.sh exited non-zero"
-    efa_installer_ran || fail "an efa module from another installer must be upgraded"
+    efa_installer_ran || fail "an efa module older than the configured driver must be upgraded"
     efa_line="$(first_call '^efa_installer\.sh ')"
     kernel_line="$(first_call '^apt-get .*install .*linux-image-7\.0\.0-1014-aws( |$)')"
     [ -n "${kernel_line}" ] || fail "the kernel must still be installed"
@@ -488,10 +485,8 @@ case "${SCENARIO}" in
   installs_kernel_without_reinstalling_current_efa)
     gb_node_with_efa_3_0
     echo "efa/3.3.1, 6.17.0-1019-aws-64k, aarch64: installed" > "${DKMS_FILE}"
-    mkdir -p "${NVIDIA_SETUP_STATE_DIR}"
-    echo "1.51.0" > "${NVIDIA_SETUP_STATE_DIR}/efa-installer-version"
     run_install_kernel || fail "install_kernel.sh exited non-zero"
-    efa_installer_ran && fail "EFA from the configured installer must not be reinstalled"
+    efa_installer_ran && fail "an efa module at the configured driver must not be reinstalled"
     # shellcheck disable=SC2046
     assert_install_requested $(folded_kernel_packages "7.0.0-1014-aws-64k")
     ;;
@@ -500,7 +495,7 @@ case "${SCENARIO}" in
   # EFA after the reboot.
   installs_kernel_without_efa_on_node_without_efa)
     KERNEL="7.0.0-1014-aws"
-    export EFA="1.51.0"
+    export EFA="1.51.0" EFA_DRIVER="3.3.1"
     node aarch64 "6.17.0-1019-aws-64k"
     # shellcheck disable=SC2046
     archive $(folded_kernel_packages "7.0.0-1014-aws-64k")
@@ -530,8 +525,6 @@ case "${SCENARIO}" in
     run_install_kernel && fail "a failed EFA upgrade must fail the step"
     grep -qE '^apt-get .*install .*linux-image-' "${CALL_LOG}" \
       && fail "the kernel must not be installed after the EFA upgrade failed"
-    [ -f "${NVIDIA_SETUP_STATE_DIR}/efa-installer-version" ] \
-      && fail "a failed install must not be recorded"
     ;;
 
   *)

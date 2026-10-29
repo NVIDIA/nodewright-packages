@@ -45,6 +45,7 @@ Set these on the package spec in the NodeWright Custom Resource (`spec.packages.
 - `NVIDIA_SETUP_APT_UPGRADE` – `true` or `false` (default: `false`). Controls the blanket `apt-get upgrade` in the **upgrade** step. Off by default because that upgrade installs whatever the distro has queued, which can include the container runtime: upgrading containerd restarts it and kills the pod running the step, taking the node NotReady mid-apply and interrupting dpkg partway through a transaction. The targeted `apt-get install` of `curl git wget gpg` in the same step is unaffected and always runs. Set to `true` on nodes where you do want the full distro upgrade.
 - `NVIDIA_KERNEL` – kernel version (overrides default from defaults file)
 - `NVIDIA_EFA` – EFA installer version
+- `NVIDIA_EFA_DRIVER` – the efa driver version that installer ships, as `dkms status efa` reports it (default: `EFA_DRIVER` from the defaults file). EFA counts as current when every efa module dkms has is at least this version. Set it together with `NVIDIA_EFA`: a node already at this driver or newer skips the installer.
 
 ## BCM Service
 
@@ -76,9 +77,9 @@ packages:
 
 For `service=eks` the apply step currently runs, in order:
 
-1. **ensure_kernel** – if `NVIDIA_SETUP_INSTALL_KERNEL=false`: verify running kernel meets requirement (exact match by default; allow newer if `NVIDIA_SETUP_KERNEL_ALLOW_NEWER=true`); if `true`: install exact kernel only (then exit; reboot required), skipping apt when that exact kernel is already running with its packages installed. Before installing a kernel, if dkms has an efa module that did not come from the configured EFA installer, it runs **install-efa-driver** first: installing a kernel makes dkms rebuild every efa module for it, and an efa driver too old for that kernel fails the build and leaves the kernel packages half-configured. A node with no efa module skips this, and the full setup installs EFA after the reboot.
+1. **ensure_kernel** – if `NVIDIA_SETUP_INSTALL_KERNEL=false`: verify running kernel meets requirement (exact match by default; allow newer if `NVIDIA_SETUP_KERNEL_ALLOW_NEWER=true`); if `true`: install exact kernel only (then exit; reboot required), skipping apt when that exact kernel is already running with its packages installed. Before installing a kernel, if dkms has an efa module older than the configured `EFA_DRIVER`, it runs **install-efa-driver** first: installing a kernel makes dkms rebuild every efa module for it, and an efa driver too old for that kernel fails the build and leaves the kernel packages half-configured. A node with no efa module skips this, and the full setup installs EFA after the reboot.
 2. **upgrade** – `apt-get update && apt-get upgrade -y`
-3. **install-efa-driver** – download and run the configured AWS EFA installer. Skipped only when EFA is installed (dpkg has the `efa` package configured and dkms reports the module installed) **and** came from that installer version, which the step records in `/var/lib/nvidia-setup/efa-installer-version` after a successful run. An EFA from another installer version, or with no record, is upgraded in place.
+3. **install-efa-driver** – download and run the configured AWS EFA installer. Skipped only when EFA is installed (dpkg has the `efa` package configured and dkms reports the module installed) **and** every efa module `dkms status efa` lists is at least `EFA_DRIVER`, the efa driver version that installer ships. An older efa module is upgraded in place.
 
 The following steps exist in the codebase but are **commented out** in `apply.sh` for now: **install-lustre** Re-enable them in `apply.sh` when needed.
 
@@ -94,7 +95,7 @@ Kernel install/upgrade, EFA, Lustre, chrony, and local disks do not apply to AKS
 
 ## Apply-Check
 
-When `NVIDIA_SETUP_INSTALL_KERNEL=true` is set, apply-check (and **post-interrupt-check**) only verify that the running kernel matches the expected version from defaults/env. When the env var is false or unset, apply-check runs upgrade (apt update ok) and EFA present from the configured installer version; Lustre are commented out in `apply_check.sh` to match `apply.sh`. Re-enable them in both when adding those steps back.
+When `NVIDIA_SETUP_INSTALL_KERNEL=true` is set, apply-check (and **post-interrupt-check**) only verify that the running kernel matches the expected version from defaults/env. When the env var is false or unset, apply-check runs upgrade (apt update ok) and EFA present at `EFA_DRIVER` or newer; Lustre are commented out in `apply_check.sh` to match `apply.sh`. Re-enable them in both when adding those steps back.
 
 ## Post-Interrupt-Check
 
