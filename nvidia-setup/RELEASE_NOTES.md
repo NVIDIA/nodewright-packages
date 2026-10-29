@@ -20,6 +20,60 @@ example is not itself picked up as release notes):
     - Notable behavior change worth calling out.
 -->
 
+## 0.9.0
+
+Every EKS combination moves to kernel `7.0.0-1014-aws` and EFA installer `1.51.0` (efa driver
+3.3.1). `eks-h100` installs `7.0.0-1014-aws`; `eks-gb200` and `eks-gb300` are Grace arm64 and
+install the `-64k` flavor, `7.0.0-1014-aws-64k`. No default names a 6.17 kernel any more.
+
+The two move together because the efa 3.0.0 driver in installer 1.48.0 does not compile
+against the 7.0 aws kernels (`kcompat.h:274: error: 'struct ib_umem' has no member named
+'nmap'`, the failure in NVIDIA/aicr#2870). efa 3.3.1 builds against both
+`7.0.0-1014-aws-64k` and `6.17.0-1019-aws-64k`.
+
+Upgrade note: with `NVIDIA_SETUP_INSTALL_KERNEL=false`, the default, apply requires the running
+kernel to be 7.0, and `NVIDIA_SETUP_KERNEL_ALLOW_NEWER=true` does not help a node on 6.17
+because 6.17 is older. A node still on 6.17 therefore fails apply on this version until it is
+moved to 7.0 with `NVIDIA_SETUP_INSTALL_KERNEL=true` and a reboot, or until `NVIDIA_KERNEL`
+names the kernel it runs.
+
+Ubuntu ships no `linux-modules-extra` package for the 7.0 aws kernels; those modules are in
+`linux-modules`. The kernel step now asks apt for `linux-modules-extra` only when the archive
+carries it, so a 6.x kernel set through `NVIDIA_KERNEL` still gets it and the 7.0 install does
+not fail on a package that does not exist.
+
+### EFA is upgraded before the kernel on existing nodes
+
+Installing a kernel makes dkms rebuild every efa module it has for that kernel. On a node that
+ran an earlier version of this package, that module is efa 3.0.0, the build fails, and the new
+kernel is left half-configured. With `NVIDIA_SETUP_INSTALL_KERNEL=true`, the kernel step
+therefore runs the configured EFA installer first when dkms has an efa module that did not come
+from it, then installs the kernel. If the EFA upgrade fails, the kernel is not installed.
+
+Upgrade note: on those nodes the kernel package now downloads and runs the EFA installer and
+builds efa with dkms twice (for the running kernel, then for 7.0), where it previously only
+installed kernel packages. Size the kernel package's resources for an EFA build. A node already
+running the exact target kernel still skips apt entirely, EFA included, and a node with no efa
+module skips the EFA upgrade.
+
+Not covered: a node already left with a half-configured 7.0 kernel by `unattended-upgrades`
+(the aicr#2870 state). The EFA installer's own apt calls meet the same broken dpkg state, and
+that path has not been exercised. Such a node may still need the half-configured kernel
+packages purged by hand.
+
+### The EFA step now checks which installer it came from
+
+`install-efa-driver.sh` and `install_efa_driver_check.sh` used to accept any installed EFA,
+which is how efa 3.0.0 would have stayed in place under a kernel it cannot build for. After a
+successful run the step records the installer version in
+`/var/lib/nvidia-setup/efa-installer-version`, and it skips (and the check passes) only when
+EFA is installed and that record matches the configured `EFA` (or `NVIDIA_EFA`).
+
+Expect every EKS node set up before 0.9.0 to run the EFA installer once on its next full
+apply, because it has no record. The installer skips any package already at its
+version or newer, so on a node that is already current this changes nothing but adds the
+record. Until that apply runs, apply-check's EFA check fails on such a node.
+
 ## 0.8.1
 
 With `NVIDIA_SETUP_INSTALL_KERNEL=true`, the kernel step no longer runs apt on a node that

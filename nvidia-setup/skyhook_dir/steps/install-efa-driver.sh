@@ -32,11 +32,12 @@ else
   exit 1
 fi
 
-# Skip only when EFA is actually installed (same criteria as
-# install_efa_driver_check.sh). Anything short of that is a reason to install,
-# not a reason to skip.
-if efa_driver_installed; then
-  echo "EFA already installed, skipping."
+# Skip only when EFA is actually installed from this installer version (same
+# criteria as install_efa_driver_check.sh). Anything short of that is a reason
+# to install, not a reason to skip. Re-running over an older install upgrades
+# it in place.
+if efa_driver_current "${EFA_VERSION}"; then
+  echo "EFA from installer ${EFA_VERSION} already installed, skipping."
   exit 0
 fi
 
@@ -46,8 +47,9 @@ install_efa() {
   curl -sSfO "https://efa-installer.amazonaws.com/aws-efa-installer-${EFA_VERSION}.tar.gz"
   tar -xf "aws-efa-installer-${EFA_VERSION}.tar.gz"
   cd aws-efa-installer
-  
+
   ./efa_installer.sh -y
+  record_efa_installer_version "${EFA_VERSION}"
   echo "EFA installation completed successfully"
 }
 

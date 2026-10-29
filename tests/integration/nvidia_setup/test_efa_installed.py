@@ -17,12 +17,13 @@
 # limitations under the License.
 
 """
-Tests for efa_driver_installed in utilities.sh.
+Tests for efa_driver_installed and efa_driver_current in utilities.sh.
 
-install-efa-driver.sh skips when EFA is already installed, and
-install_efa_driver_check.sh passes on the same condition, so both ask this one
-function. It must answer on evidence that EFA installed, not on traces a failed
-install leaves behind.
+install-efa-driver.sh skips when EFA from the configured installer is already
+installed, and install_efa_driver_check.sh passes on the same condition, so both
+ask efa_driver_current. It must answer on evidence that EFA installed, not on
+traces a failed install leaves behind, and an installed EFA from another
+installer version is not current.
 
 The harness stubs dpkg-query, dkms and ldconfig, so no scenario inspects the
 real package database.
@@ -87,4 +88,32 @@ def test_module_not_built_is_not_installed(scenario):
 )
 def test_traces_are_not_proof_of_installation(scenario):
     """Regression guards: /opt/amazon/efa and a stray libfabric used to mean 'skip'."""
+    assert _run_scenario(scenario) == 0
+
+
+def test_efa_from_configured_installer_is_current():
+    assert _run_scenario("efa_current_when_recorded_installer_matches") == 0
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        # Every node set up before the record existed, so it upgrades once.
+        "efa_not_current_without_record",
+        "efa_not_current_when_recorded_installer_differs",
+        # The record says what ran, not what is installed now.
+        "efa_not_current_when_not_installed",
+    ],
+)
+def test_efa_not_from_configured_installer_is_not_current(scenario):
+    """An installed efa 3.0.0 cannot build for the 7.0 kernels, so installed alone is not enough."""
+    assert _run_scenario(scenario) == 0
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    ["efa_dkms_registered_in_any_state", "efa_dkms_not_registered"],
+)
+def test_efa_dkms_registered(scenario):
+    """Any efa module dkms knows is one it builds for a newly installed kernel."""
     assert _run_scenario(scenario) == 0

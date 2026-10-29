@@ -18,9 +18,9 @@ See [VERSION_OVERVIEW.md](VERSION_OVERVIEW.md) for more information about what i
 
 | service | accelerator | default kernel      |  default efa |
 |---------|-------------|---------------------|--------------|
-| eks     | h100        | 6.17.0-1019-aws     |  1.48.0      |
-| eks     | gb200       | 6.17.0-1019-aws     |  1.48.0      |
-| eks     | gb300       | 6.17.0-1019-aws     |  1.48.0      |
+| eks     | h100        | 7.0.0-1014-aws      |  1.51.0      |
+| eks     | gb200       | 7.0.0-1014-aws      |  1.51.0      |
+| eks     | gb300       | 7.0.0-1014-aws      |  1.51.0      |
 | aks     | h100        | (AKS-managed)       |  n/a         |
 | bcm     | h100        | n/a                 |  n/a         |
 | bcm     | gb200       | n/a                 |  n/a         |
@@ -39,7 +39,7 @@ Defaults are defined in `skyhook_dir/defaults/eks-h100.conf`, `eks-gb200.conf`, 
 
 Set these on the package spec in the NodeWright Custom Resource (`spec.packages.<name>.env`):
 
-- `NVIDIA_SETUP_INSTALL_KERNEL` – `true` or `false` (default: `false`). If `true`, apply **only** installs the exact kernel from the defaults file (via `steps/install_kernel.sh`) and then exits; a reboot is required. When the node is already running that exact kernel (flavor included, so `-64k` on arm64) and its image, headers, modules and modules-extra packages are installed, apt is skipped; the GRUB default is still set to the target kernel. After reboot, the **post-interrupt-check** verifies the running kernel matches the expected version. If `false`, apply verifies the current kernel meets the requirement (see `NVIDIA_SETUP_KERNEL_ALLOW_NEWER`) and errors otherwise, then continues with the full apply.
+- `NVIDIA_SETUP_INSTALL_KERNEL` – `true` or `false` (default: `false`). If `true`, apply **only** installs the exact kernel from the defaults file (via `steps/install_kernel.sh`) and then exits; a reboot is required. When the node is already running that exact kernel (flavor included, so `-64k` on arm64) and its image, headers, modules and (where the archive ships one) modules-extra packages are installed, apt is skipped; the 7.0 aws kernels have no separate modules-extra package, so none is requested for them; the GRUB default is still set to the target kernel. After reboot, the **post-interrupt-check** verifies the running kernel matches the expected version. If `false`, apply verifies the current kernel meets the requirement (see `NVIDIA_SETUP_KERNEL_ALLOW_NEWER`) and errors otherwise, then continues with the full apply.
 - `NVIDIA_SETUP_KERNEL_ALLOW_NEWER` – `true` or `false` (default: `false`). When `NVIDIA_SETUP_INSTALL_KERNEL=false`, this controls the kernel check: if `false`, the running kernel must match the required upstream version exactly; if `true`, the running kernel may be newer (current >= required).
 - `NVIDIA_PIN_KERNEL` - `true` or `false` (defaults: `false`). If `true`, pin the kernel to the exact version in the package so that it will not upgrade in future.
 - `NVIDIA_SETUP_APT_UPGRADE` – `true` or `false` (default: `false`). Controls the blanket `apt-get upgrade` in the **upgrade** step. Off by default because that upgrade installs whatever the distro has queued, which can include the container runtime: upgrading containerd restarts it and kills the pod running the step, taking the node NotReady mid-apply and interrupting dpkg partway through a transaction. The targeted `apt-get install` of `curl git wget gpg` in the same step is unaffected and always runs. Set to `true` on nodes where you do want the full distro upgrade.
@@ -76,9 +76,9 @@ packages:
 
 For `service=eks` the apply step currently runs, in order:
 
-1. **ensure_kernel** – if `NVIDIA_SETUP_INSTALL_KERNEL=false`: verify running kernel meets requirement (exact match by default; allow newer if `NVIDIA_SETUP_KERNEL_ALLOW_NEWER=true`); if `true`: install exact kernel only (then exit; reboot required), skipping apt when that exact kernel is already running with its packages installed.
+1. **ensure_kernel** – if `NVIDIA_SETUP_INSTALL_KERNEL=false`: verify running kernel meets requirement (exact match by default; allow newer if `NVIDIA_SETUP_KERNEL_ALLOW_NEWER=true`); if `true`: install exact kernel only (then exit; reboot required), skipping apt when that exact kernel is already running with its packages installed. Before installing a kernel, if dkms has an efa module that did not come from the configured EFA installer, it runs **install-efa-driver** first: installing a kernel makes dkms rebuild every efa module for it, and an efa driver too old for that kernel fails the build and leaves the kernel packages half-configured. A node with no efa module skips this, and the full setup installs EFA after the reboot.
 2. **upgrade** – `apt-get update && apt-get upgrade -y`
-3. **install-efa-driver** – download and run AWS EFA installer
+3. **install-efa-driver** – download and run the configured AWS EFA installer. Skipped only when EFA is installed (dpkg has the `efa` package configured and dkms reports the module installed) **and** came from that installer version, which the step records in `/var/lib/nvidia-setup/efa-installer-version` after a successful run. An EFA from another installer version, or with no record, is upgraded in place.
 
 The following steps exist in the codebase but are **commented out** in `apply.sh` for now: **install-lustre** Re-enable them in `apply.sh` when needed.
 
@@ -94,7 +94,7 @@ Kernel install/upgrade, EFA, Lustre, chrony, and local disks do not apply to AKS
 
 ## Apply-Check
 
-When `NVIDIA_SETUP_INSTALL_KERNEL=true` is set, apply-check (and **post-interrupt-check**) only verify that the running kernel matches the expected version from defaults/env. When the env var is false or unset, apply-check runs upgrade (apt update ok) and EFA present; Lustre are commented out in `apply_check.sh` to match `apply.sh`. Re-enable them in both when adding those steps back.
+When `NVIDIA_SETUP_INSTALL_KERNEL=true` is set, apply-check (and **post-interrupt-check**) only verify that the running kernel matches the expected version from defaults/env. When the env var is false or unset, apply-check runs upgrade (apt update ok) and EFA present from the configured installer version; Lustre are commented out in `apply_check.sh` to match `apply.sh`. Re-enable them in both when adding those steps back.
 
 ## Post-Interrupt-Check
 

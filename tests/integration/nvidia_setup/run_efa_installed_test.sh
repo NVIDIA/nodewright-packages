@@ -16,9 +16,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Test harness for efa_driver_installed in utilities.sh. Set SCENARIO to pick a
-# case. dpkg-query, dkms and ldconfig are stubbed, so nothing here inspects the
-# real package database or the real filesystem.
+# Test harness for efa_driver_installed and efa_driver_current in utilities.sh.
+# Set SCENARIO to pick a case. dpkg-query, dkms and ldconfig are stubbed, so
+# nothing here inspects the real package database or the real filesystem, and the
+# installer record lives in a scratch NVIDIA_SETUP_STATE_DIR.
 #
 # Exit code 0 = the scenario behaved as specified, 1 = it did not.
 
@@ -58,7 +59,18 @@ ldconfig() {
 # shellcheck source=../../../nvidia-setup/skyhook_dir/utilities.sh
 . "${UTILITIES}"
 
+# Nested one level so record_efa_installer_version has a directory to create.
+STATE_ROOT="$(mktemp -d)"
+trap 'rm -rf "${STATE_ROOT}"' EXIT
+export NVIDIA_SETUP_STATE_DIR="${STATE_ROOT}/nvidia-setup"
+
 fail() { echo "FAIL (${SCENARIO}): $*" >&2; exit 1; }
+
+# A fully installed EFA, as efa_driver_installed sees it.
+efa_present() {
+  FAKE_EFA_PKG_STATE="installed"
+  FAKE_DKMS_STATUS="efa/3.0.0, 6.17.0-1019-aws-64k, aarch64: installed"
+}
 
 case "${SCENARIO}" in
   # The only state that should count as installed.
@@ -119,6 +131,43 @@ case "${SCENARIO}" in
     FAKE_EFA_PKG_STATE=""
     FAKE_DKMS_STATUS=""
     efa_driver_installed && fail "an unrelated libfabric must not count as installed"
+    ;;
+
+  efa_current_when_recorded_installer_matches)
+    efa_present
+    record_efa_installer_version "1.51.0"
+    efa_driver_current "1.51.0" || fail "EFA installed from the configured installer must be current"
+    ;;
+
+  # Every node set up before the record existed. Installed alone is how efa
+  # 3.0.0 stayed in place under a kernel it cannot build for.
+  efa_not_current_without_record)
+    efa_present
+    efa_driver_current "1.51.0" && fail "EFA with no installer record must not be current"
+    ;;
+
+  efa_not_current_when_recorded_installer_differs)
+    efa_present
+    record_efa_installer_version "1.48.0"
+    efa_driver_current "1.51.0" && fail "EFA from another installer must not be current"
+    ;;
+
+  # The record says what ran, not what is installed now.
+  efa_not_current_when_not_installed)
+    FAKE_EFA_PKG_STATE="half-configured"
+    FAKE_DKMS_STATUS="efa/3.3.1, 6.17.0-1019-aws-64k, aarch64: installed"
+    record_efa_installer_version "1.51.0"
+    efa_driver_current "1.51.0" && fail "a half-configured efa must not be current, whatever the record says"
+    ;;
+
+  efa_dkms_registered_in_any_state)
+    FAKE_DKMS_STATUS="efa/3.0.0: added"
+    efa_dkms_registered || fail "an efa module dkms only added is still one it will build"
+    ;;
+
+  efa_dkms_not_registered)
+    FAKE_DKMS_STATUS=""
+    efa_dkms_registered && fail "no efa module means nothing for dkms to rebuild"
     ;;
 
   *)

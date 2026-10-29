@@ -40,12 +40,8 @@ CURRENT_KERNEL_VERSION=$(uname -r)
 downgrade_kernel() {
   # Deterministic selection: construct the exact kernel flavor to install
   full_kernel_ver="$(resolve_full_kernel "${KERNEL_VERSION}")"
-  local kernel_packages=(
-    "linux-image-${full_kernel_ver}"
-    "linux-headers-${full_kernel_ver}"
-    "linux-modules-${full_kernel_ver}"
-    "linux-modules-extra-${full_kernel_ver}"
-  )
+  local kernel_packages
+  mapfile -t kernel_packages < <(target_kernel_packages "${full_kernel_ver}")
 
   # Booted on the exact target (flavor included) with every package in place
   # leaves apt nothing to do, and running it anyway makes this step depend on the
@@ -57,6 +53,19 @@ downgrade_kernel() {
     echo "Kernel ${full_kernel_ver} is running and installed; skipping apt"
   else
     apt_with_dpkg_heal apt-get update
+    # Installing the kernel makes dkms build every efa module it has for it, and
+    # a build failure leaves the kernel packages half-configured, which every
+    # later apt call then trips over (aicr#2870: efa 3.0.0 against 7.0). So
+    # bring EFA to the configured installer first, while the running kernel can
+    # still build it. A node with no efa module has nothing to rebuild; the full
+    # setup installs EFA after the reboot.
+    if [ -n "${EFA:-}" ] && efa_dkms_registered && ! efa_driver_current "${EFA}"; then
+      echo "Upgrading EFA to installer ${EFA} before installing kernel ${full_kernel_ver}..."
+      "$(dirname "$0")/install-efa-driver.sh" "${EFA}"
+    fi
+    # The lists are current now, so ask again whether the target has a
+    # linux-modules-extra package.
+    mapfile -t kernel_packages < <(target_kernel_packages "${full_kernel_ver}")
     echo "Installing kernel ${full_kernel_ver}..."
     apt_with_dpkg_heal apt-get install -y "${kernel_packages[@]}"
   fi
@@ -75,23 +84,10 @@ downgrade_kernel() {
 
   if [ "${NVIDIA_PIN_KERNEL:-false}" = "true" ]; then
   # Pin the kernel packages to prevent them from being updated
-  cat << EOF > pin-kernel
-Package: linux-image-$full_kernel_ver
-Pin: version $KERNEL_VERSION*
-Pin-Priority: 1001
-
-Package: linux-headers-$full_kernel_ver
-Pin: version $KERNEL_VERSION*
-Pin-Priority: 1001
-
-Package: linux-modules-$full_kernel_ver
-Pin: version $KERNEL_VERSION*
-Pin-Priority: 1001
-
-Package: linux-modules-extra-$full_kernel_ver
-Pin: version $KERNEL_VERSION*
-Pin-Priority: 1001
-EOF
+  local pkg
+  for pkg in "${kernel_packages[@]}"; do
+    printf 'Package: %s\nPin: version %s*\nPin-Priority: 1001\n\n' "${pkg}" "${KERNEL_VERSION}"
+  done > pin-kernel
 
     # Move the pin file to the preferences.d directory
     mv pin-kernel /etc/apt/preferences.d/pin-kernel

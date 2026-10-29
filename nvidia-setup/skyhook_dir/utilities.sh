@@ -18,7 +18,7 @@
 
 # resolve_full_kernel for nvidia-setup (skyhook): no get_var; use KERNEL and architecture.
 # The conf (defaults/<service>-<accelerator>.conf) already specifies the exact kernel
-# flavor (e.g. 6.17.0-1019-aws), so the only thing left to resolve is the
+# flavor (e.g. 7.0.0-1014-aws), so the only thing left to resolve is the
 # architecture-specific page-size variant: arm64/aarch64 nodes (e.g. GB200/Grace) use
 # the -64k kernel, x86_64 nodes use the flavor as-is.
 # Usage: resolve_full_kernel <base_kernel_version>
@@ -265,6 +265,60 @@ efa_driver_installed() {
   return 0
 }
 
+# Where install-efa-driver.sh records the installer version it last ran. It
+# lives outside SKYHOOK_DIR because a new package version gets a fresh one.
+efa_installer_record() {
+  echo "${NVIDIA_SETUP_STATE_DIR:-/var/lib/nvidia-setup}/efa-installer-version"
+}
+
+# Usage: record_efa_installer_version <installer_version>
+record_efa_installer_version() {
+  local record
+  record="$(efa_installer_record)"
+  mkdir -p "$(dirname "${record}")"
+  printf '%s\n' "$1" > "${record}"
+}
+
+# Report whether EFA is installed (efa_driver_installed) and came from the
+# configured installer version. An installed EFA is not enough on its own: it
+# may be a driver too old for the target kernel. efa 3.0.0 (installer 1.48.0)
+# does not compile against the 7.0 aws kernels, and nothing upgrades it while
+# installed alone counts as done. A node with no record, such as one set up
+# before the record existed, is not current, so it runs the installer once; the
+# installer skips any package already at that version or newer.
+# Usage: efa_driver_current <installer_version>
+# Returns: 0 when current, 1 otherwise, with the reason on stderr.
+efa_driver_current() {
+  local want="$1"
+  local record
+  local have=""
+
+  efa_driver_installed || return 1
+
+  record="$(efa_installer_record)"
+  if [ -f "${record}" ]; then
+    have="$(cat "${record}")"
+  fi
+  if [ "${have}" != "${want}" ]; then
+    echo "EFA: installed from installer '${have:-unrecorded}', configured installer is '${want}'" >&2
+    return 1
+  fi
+
+  return 0
+}
+
+# Report whether dkms has any efa module, in any state. Installing a kernel
+# makes dkms build every such module for it, and one that fails to build leaves
+# the kernel packages half-configured.
+# Returns: 0 when dkms knows an efa module, 1 otherwise.
+efa_dkms_registered() {
+  local status
+
+  command -v dkms >/dev/null 2>&1 || return 1
+  status="$(dkms status efa 2>/dev/null || true)"
+  [ -n "${status}" ]
+}
+
 # Report whether every named package is fully installed. A package dpkg does not
 # know, or one parked half-configured or unpacked, does not count.
 # Usage: dpkg_packages_installed <package>...
@@ -281,4 +335,35 @@ dpkg_packages_installed() {
   done
 
   return 0
+}
+
+# Report whether apt's package lists carry a real package by this name. Reads
+# the local lists only, so it touches neither the network nor the dpkg lock; run
+# `apt-get update` first when the answer must reflect the archive as it is now.
+# The exit status of `apt-cache show` is not enough on its own: it is 0 for a
+# purely virtual package, which has no `Package:` stanza and cannot be installed
+# by that name.
+# Usage: apt_package_available <package>
+# Returns: 0 when the lists have a stanza for it, 1 otherwise.
+apt_package_available() {
+  local pkg="$1"
+  local stanzas
+
+  stanzas="$(apt-cache show "${pkg}" 2>/dev/null)" || return 1
+  grep -qx "Package: ${pkg}" <<< "${stanzas}"
+}
+
+# The packages that make up kernel <full_kernel_ver>. linux-modules-extra is
+# included only when apt's lists carry it: Ubuntu ships it for the 6.17 aws
+# kernels but folds those modules into linux-modules for the 7.0 aws kernels,
+# and naming a package the archive does not have fails the whole apt install.
+# Usage: target_kernel_packages <full_kernel_ver>
+# Prints: one package name per line.
+target_kernel_packages() {
+  local ver="$1"
+
+  printf '%s\n' "linux-image-${ver}" "linux-headers-${ver}" "linux-modules-${ver}"
+  if apt_package_available "linux-modules-extra-${ver}"; then
+    printf '%s\n' "linux-modules-extra-${ver}"
+  fi
 }
