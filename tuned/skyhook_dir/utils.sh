@@ -128,3 +128,67 @@ tuned_list_has_profile() {
 tuned_profile_exists() {
     tuned-adm list | tuned_list_has_profile "$1"
 }
+
+# How long, in total, one apt command waits on a lock another process holds:
+# apt-daily or unattended-upgrades, or another NodeWright package on the node
+# (nvidia-setup-kernel's apply runs alongside nvidia-tuned's). Whole seconds,
+# 0 to 999999.
+APT_LOCK_WAIT_SECONDS="${APT_LOCK_WAIT_SECONDS:-600}"
+# The pause between attempts when a run fails on a held lock. Whole seconds,
+# 1 to 999999.
+APT_LOCK_RETRY_INTERVAL_SECONDS="${APT_LOCK_RETRY_INTERVAL_SECONDS:-10}"
+
+# Run an apt command, waiting up to APT_LOCK_WAIT_SECONDS in total for locks
+# another process holds. nvidia-setup carries a copy (skyhook_dir/utilities.sh);
+# the packages ship as separate images, so it is copied rather than shared.
+# Two layers, because apt waits for only one lock itself:
+#   1. apt waits for the dpkg frontend lock when DPkg::Lock::Timeout is set. It
+#      is passed with -o, set to the time left in the budget. It has to be -o:
+#      `apt`, unlike `apt-get`, carries its own 120s default
+#      (Binary::apt::DPkg::Lock::Timeout), which outranks APT_CONFIG and the
+#      apt.conf.d files. nvidia-setup's copy uses APT_CONFIG, which reaches the
+#      apt-get and EFA installer runs it wraps.
+#   2. Nothing waits for the lists lock `apt update` takes. A run that fails on
+#      a held lock ("Could not get lock", "locked by another process") is
+#      retried until the budget is spent; the last pause is cut short at the
+#      deadline.
+# stderr is captured to recognise a lock failure and replayed when the attempt
+# ends; stdout still streams. apt runs with LC_ALL=C so its messages are the
+# English ones matched here whatever the node's locale.
+# Usage: apt_lock_retry apt|apt-get <args...>
+apt_lock_retry() {
+    local deadline remaining now pause status errfile
+
+    if [[ ! "${APT_LOCK_WAIT_SECONDS}" =~ ^[0-9]{1,6}$ ]]; then
+        echo "tuned: APT_LOCK_WAIT_SECONDS must be whole seconds from 0 to 999999, got '${APT_LOCK_WAIT_SECONDS}'" >&2
+        return 2
+    fi
+    if [[ ! "${APT_LOCK_RETRY_INTERVAL_SECONDS}" =~ ^[1-9][0-9]{0,5}$ ]]; then
+        echo "tuned: APT_LOCK_RETRY_INTERVAL_SECONDS must be whole seconds from 1 to 999999, got '${APT_LOCK_RETRY_INTERVAL_SECONDS}'" >&2
+        return 2
+    fi
+
+    # 10# so a leading zero is not read as octal.
+    deadline=$(( $(date +%s) + 10#${APT_LOCK_WAIT_SECONDS} ))
+    errfile="$(mktemp)"
+    while :; do
+        remaining=$(( deadline - $(date +%s) ))
+        [[ "${remaining}" -gt 0 ]] || remaining=1
+
+        status=0
+        LC_ALL=C "$1" -o "DPkg::Lock::Timeout=${remaining}" "${@:2}" 2> "${errfile}" || status=$?
+        cat "${errfile}" >&2
+
+        now="$(date +%s)"
+        if [[ "${status}" -eq 0 ]] \
+            || ! grep -qE 'Could not get lock|locked by another process' "${errfile}" \
+            || [[ "${now}" -ge "${deadline}" ]]; then
+            rm -f "${errfile}"
+            return "${status}"
+        fi
+        pause="${APT_LOCK_RETRY_INTERVAL_SECONDS}"
+        [[ $(( deadline - now )) -ge "${pause}" ]] || pause=$(( deadline - now ))
+        echo "tuned: '$*' found an apt or dpkg lock held by another process; retrying in ${pause}s" >&2
+        sleep "${pause}"
+    done
+}
