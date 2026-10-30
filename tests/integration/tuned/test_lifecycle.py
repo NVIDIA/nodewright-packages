@@ -287,7 +287,8 @@ def test_apt_lock_retry_stops_waiting_when_the_budget_is_spent(base_image):
 
         assert result.exit_code != 0, f"waited out a 60s lock on a 4s budget:\n{out}"
         assert "Unable to acquire the dpkg frontend lock" in out, out
-        assert waited < 15, f"gave up after {waited:.0f}s on a 4s budget:\n{out}"
+        # 3, not 4: the budget is counted in whole seconds, so apt can be handed 3.
+        assert 3 <= waited < 15, f"gave up after {waited:.1f}s on a 4s budget:\n{out}"
     finally:
         runner.cleanup()
 
