@@ -35,7 +35,7 @@ fi
 
 check_eks_h100() {
   "${STEPS_CHECK_DIR}/upgrade_check.sh"
-  "${STEPS_CHECK_DIR}/install_efa_driver_check.sh"
+  "${STEPS_CHECK_DIR}/install_efa_driver_check.sh" "${EFA_DRIVER}"
   "${STEPS_CHECK_DIR}/install_ofi_check.sh"
   # "${STEPS_CHECK_DIR}/install_lustre_check.sh" "${KERNEL}"
   "${STEPS_CHECK_DIR}/configure_chrony_check.sh"
@@ -44,7 +44,7 @@ check_eks_h100() {
 
 check_eks_gb200() {
   "${STEPS_CHECK_DIR}/upgrade_check.sh"
-  "${STEPS_CHECK_DIR}/install_efa_driver_check.sh"
+  "${STEPS_CHECK_DIR}/install_efa_driver_check.sh" "${EFA_DRIVER}"
   "${STEPS_CHECK_DIR}/install_ofi_check.sh"
   # "${STEPS_CHECK_DIR}/install_lustre_check.sh" "${KERNEL}"
   "${STEPS_CHECK_DIR}/configure_chrony_check.sh"
@@ -53,7 +53,7 @@ check_eks_gb200() {
 
 check_eks_gb300() {
   "${STEPS_CHECK_DIR}/upgrade_check.sh"
-  "${STEPS_CHECK_DIR}/install_efa_driver_check.sh"
+  "${STEPS_CHECK_DIR}/install_efa_driver_check.sh" "${EFA_DRIVER}"
   "${STEPS_CHECK_DIR}/install_ofi_check.sh"
   # "${STEPS_CHECK_DIR}/install_lustre_check.sh" "${KERNEL}"
   "${STEPS_CHECK_DIR}/configure_chrony_check.sh"

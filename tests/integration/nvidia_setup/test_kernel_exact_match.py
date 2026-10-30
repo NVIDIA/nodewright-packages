@@ -90,7 +90,44 @@ def test_grub_default_is_still_set_when_apt_is_skipped():
         "installs_when_abi_differs",
         # The pin is exact, so a newer kernel still gets the target installed.
         "installs_when_running_newer_kernel",
+        # Where the archive ships modules-extra, it is part of the target.
+        "installs_when_only_modules_extra_missing",
     ],
 )
 def test_kernel_is_installed_when_not_an_exact_match(scenario):
+    assert _run_scenario(scenario) == 0
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        # Naming a package the archive does not have fails the whole install.
+        "installs_target_without_modules_extra",
+        # Its absence must not defeat the short circuit on a node already on target.
+        "skips_apt_on_target_without_modules_extra",
+    ],
+)
+def test_kernel_without_modules_extra_package(scenario):
+    """The 7.0 aws kernels fold linux-modules-extra into linux-modules."""
+    assert _run_scenario(scenario) == 0
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        # aicr#2870: efa 3.0.0 does not compile against 7.0, so it moves first.
+        "upgrades_stale_efa_before_installing_kernel",
+        # eks-h100 takes the flavor as-is.
+        "upgrades_stale_efa_before_installing_kernel_x86",
+        "installs_kernel_without_reinstalling_current_efa",
+        # A fresh node has no efa module to rebuild.
+        "installs_kernel_without_efa_on_node_without_efa",
+        "skips_efa_and_apt_on_target",
+        "efa_upgrade_failure_stops_kernel_install",
+        # An OOM-killed EFA build leaves efa half-configured in the DKMS tree.
+        "recovers_from_an_interrupted_efa_install",
+    ],
+)
+def test_efa_is_brought_current_before_a_kernel_install(scenario):
+    """dkms rebuilds every efa module for a newly installed kernel, so a stale one must go first."""
     assert _run_scenario(scenario) == 0

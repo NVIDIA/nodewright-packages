@@ -16,9 +16,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Test harness for efa_driver_installed in utilities.sh. Set SCENARIO to pick a
-# case. dpkg-query, dkms and ldconfig are stubbed, so nothing here inspects the
-# real package database or the real filesystem.
+# Test harness for efa_driver_installed and efa_driver_current in utilities.sh.
+# Set SCENARIO to pick a case. dpkg-query, dkms and ldconfig are stubbed, so
+# nothing here inspects the real package database or the real filesystem.
 #
 # Exit code 0 = the scenario behaved as specified, 1 = it did not.
 
@@ -59,6 +59,12 @@ ldconfig() {
 . "${UTILITIES}"
 
 fail() { echo "FAIL (${SCENARIO}): $*" >&2; exit 1; }
+
+# A fully installed EFA, as efa_driver_installed sees it, at efa <version>.
+efa_present() {
+  FAKE_EFA_PKG_STATE="installed"
+  FAKE_DKMS_STATUS="efa/$1, 6.17.0-1019-aws-64k, aarch64: installed"
+}
 
 case "${SCENARIO}" in
   # The only state that should count as installed.
@@ -119,6 +125,56 @@ case "${SCENARIO}" in
     FAKE_EFA_PKG_STATE=""
     FAKE_DKMS_STATUS=""
     efa_driver_installed && fail "an unrelated libfabric must not count as installed"
+    ;;
+
+  efa_current_when_driver_matches)
+    efa_present 3.3.1
+    efa_driver_current "3.3.1" || fail "efa at the configured driver must be current"
+    ;;
+
+  # The installer does not downgrade, so a newer module is as good.
+  efa_current_when_driver_newer)
+    efa_present 3.4.0
+    efa_driver_current "3.3.1" || fail "efa newer than the configured driver must be current"
+    ;;
+
+  # Compared as versions: 3.10.0 sorts below 3.9.0 as a string.
+  efa_current_compares_versions_numerically)
+    efa_present 3.10.0
+    efa_driver_current "3.9.0" || fail "efa 3.10.0 is newer than 3.9.0"
+    ;;
+
+  # aicr#2870: installed alone is how efa 3.0.0 stayed in place under a kernel
+  # it cannot build for.
+  efa_not_current_when_driver_older)
+    efa_present 3.0.0
+    efa_driver_current "3.3.1" && fail "efa older than the configured driver must not be current"
+    ;;
+
+  # dkms builds every efa module it has for a new kernel, so an old one still
+  # registered next to the current one breaks the next kernel install.
+  efa_not_current_when_an_older_driver_is_also_registered)
+    FAKE_EFA_PKG_STATE="installed"
+    FAKE_DKMS_STATUS="efa/3.0.0, 6.17.0-1019-aws-64k, aarch64: installed
+efa/3.3.1, 6.17.0-1019-aws-64k, aarch64: installed"
+    efa_driver_current "3.3.1" && fail "an older efa module still registered must not be current"
+    ;;
+
+  # The version dkms reports is not enough without a configured package.
+  efa_not_current_when_not_installed)
+    FAKE_EFA_PKG_STATE="half-configured"
+    FAKE_DKMS_STATUS="efa/3.3.1, 6.17.0-1019-aws-64k, aarch64: installed"
+    efa_driver_current "3.3.1" && fail "a half-configured efa must not be current, whatever dkms reports"
+    ;;
+
+  efa_dkms_registered_in_any_state)
+    FAKE_DKMS_STATUS="efa/3.0.0: added"
+    efa_dkms_registered || fail "an efa module dkms only added is still one it will build"
+    ;;
+
+  efa_dkms_not_registered)
+    FAKE_DKMS_STATUS=""
+    efa_dkms_registered && fail "no efa module means nothing for dkms to rebuild"
     ;;
 
   *)

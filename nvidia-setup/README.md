@@ -18,9 +18,9 @@ See [VERSION_OVERVIEW.md](VERSION_OVERVIEW.md) for more information about what i
 
 | service | accelerator | default kernel      |  default efa |
 |---------|-------------|---------------------|--------------|
-| eks     | h100        | 6.17.0-1019-aws     |  1.48.0      |
-| eks     | gb200       | 6.17.0-1019-aws     |  1.48.0      |
-| eks     | gb300       | 6.17.0-1019-aws     |  1.48.0      |
+| eks     | h100        | 7.0.0-1014-aws      |  1.51.0      |
+| eks     | gb200       | 7.0.0-1014-aws      |  1.51.0      |
+| eks     | gb300       | 7.0.0-1014-aws      |  1.51.0      |
 | aks     | h100        | (AKS-managed)       |  n/a         |
 | bcm     | h100        | n/a                 |  n/a         |
 | bcm     | gb200       | n/a                 |  n/a         |
@@ -39,12 +39,14 @@ Defaults are defined in `skyhook_dir/defaults/eks-h100.conf`, `eks-gb200.conf`, 
 
 Set these on the package spec in the NodeWright Custom Resource (`spec.packages.<name>.env`):
 
-- `NVIDIA_SETUP_INSTALL_KERNEL` – `true` or `false` (default: `false`). If `true`, apply **only** installs the exact kernel from the defaults file (via `steps/install_kernel.sh`) and then exits; a reboot is required. When the node is already running that exact kernel (flavor included, so `-64k` on arm64) and its image, headers, modules and modules-extra packages are installed, apt is skipped; the GRUB default is still set to the target kernel. After reboot, the **post-interrupt-check** verifies the running kernel matches the expected version. If `false`, apply verifies the current kernel meets the requirement (see `NVIDIA_SETUP_KERNEL_ALLOW_NEWER`) and errors otherwise, then continues with the full apply.
+- `NVIDIA_SETUP_INSTALL_KERNEL` – `true` or `false` (default: `false`). If `true`, apply **only** installs the exact kernel from the defaults file (via `steps/install_kernel.sh`) and then exits; a reboot is required. When the node is already running that exact kernel (flavor included, so `-64k` on arm64) and its image, headers, modules and (where the archive ships one) modules-extra packages are installed, apt is skipped; the 7.0 aws kernels have no separate modules-extra package, so none is requested for them; the GRUB default is still set to the target kernel. After reboot, the **post-interrupt-check** verifies the running kernel matches the expected version. If `false`, apply verifies the current kernel meets the requirement (see `NVIDIA_SETUP_KERNEL_ALLOW_NEWER`) and errors otherwise, then continues with the full apply.
 - `NVIDIA_SETUP_KERNEL_ALLOW_NEWER` – `true` or `false` (default: `false`). When `NVIDIA_SETUP_INSTALL_KERNEL=false`, this controls the kernel check: if `false`, the running kernel must match the required upstream version exactly; if `true`, the running kernel may be newer (current >= required).
 - `NVIDIA_PIN_KERNEL` - `true` or `false` (defaults: `false`). If `true`, pin the kernel to the exact version in the package so that it will not upgrade in future.
+- `APT_LOCK_WAIT_SECONDS` – whole seconds from `0` to `999999` (default: `600`). How long, in total, each apt or dpkg call waits for a lock another process holds (another NodeWright package, `apt-daily`, `unattended-upgrades`) before failing. apt waits for the dpkg lock itself through `DPkg::Lock::Timeout`; a run that fails on a held lock is retried until the time is spent.
 - `NVIDIA_SETUP_APT_UPGRADE` – `true` or `false` (default: `false`). Controls the blanket `apt-get upgrade` in the **upgrade** step. Off by default because that upgrade installs whatever the distro has queued, which can include the container runtime: upgrading containerd restarts it and kills the pod running the step, taking the node NotReady mid-apply and interrupting dpkg partway through a transaction. The targeted `apt-get install` of `curl git wget gpg` in the same step is unaffected and always runs. Set to `true` on nodes where you do want the full distro upgrade.
 - `NVIDIA_KERNEL` – kernel version (overrides default from defaults file)
 - `NVIDIA_EFA` – EFA installer version
+- `NVIDIA_EFA_DRIVER` – the efa driver version that installer ships, as `dkms status efa` reports it (default: `EFA_DRIVER` from the defaults file). EFA counts as current when every efa module dkms has is at least this version. Required whenever `NVIDIA_EFA` is set, since the defaults file's `EFA_DRIVER` describes its own installer; `NVIDIA_EFA` alone fails the step. A node already at this driver or newer skips the installer.
 
 ## BCM Service
 
@@ -76,9 +78,9 @@ packages:
 
 For `service=eks` the apply step currently runs, in order:
 
-1. **ensure_kernel** – if `NVIDIA_SETUP_INSTALL_KERNEL=false`: verify running kernel meets requirement (exact match by default; allow newer if `NVIDIA_SETUP_KERNEL_ALLOW_NEWER=true`); if `true`: install exact kernel only (then exit; reboot required), skipping apt when that exact kernel is already running with its packages installed.
+1. **ensure_kernel** – if `NVIDIA_SETUP_INSTALL_KERNEL=false`: verify running kernel meets requirement (exact match by default; allow newer if `NVIDIA_SETUP_KERNEL_ALLOW_NEWER=true`); if `true`: install exact kernel only (then exit; reboot required), skipping apt when that exact kernel is already running with its packages installed. Before installing a kernel, if dkms has an efa module older than the configured `EFA_DRIVER`, it runs **install-efa-driver** first: installing a kernel makes dkms rebuild every efa module for it, and an efa driver too old for that kernel fails the build and leaves the kernel packages half-configured. A node with no efa module skips this, and the full setup installs EFA after the reboot.
 2. **upgrade** – `apt-get update && apt-get upgrade -y`
-3. **install-efa-driver** – download and run AWS EFA installer
+3. **install-efa-driver** – download and run the configured AWS EFA installer. Skipped only when EFA is installed (dpkg has the `efa` package configured and dkms reports the module installed) **and** every efa module `dkms status efa` lists is at least `EFA_DRIVER`, the efa driver version that installer ships. An older efa module is upgraded in place. Before running the installer it repairs any unfinished dpkg configuration, such as an efa left half-configured by an interrupted build, which would otherwise fail every installer run with `DKMS tree already contains`.
 
 The following steps exist in the codebase but are **commented out** in `apply.sh` for now: **install-lustre** Re-enable them in `apply.sh` when needed.
 
@@ -94,7 +96,7 @@ Kernel install/upgrade, EFA, Lustre, chrony, and local disks do not apply to AKS
 
 ## Apply-Check
 
-When `NVIDIA_SETUP_INSTALL_KERNEL=true` is set, apply-check (and **post-interrupt-check**) only verify that the running kernel matches the expected version from defaults/env. When the env var is false or unset, apply-check runs upgrade (apt update ok) and EFA present; Lustre are commented out in `apply_check.sh` to match `apply.sh`. Re-enable them in both when adding those steps back.
+When `NVIDIA_SETUP_INSTALL_KERNEL=true` is set, apply-check (and **post-interrupt-check**) only verify that the running kernel matches the expected version from defaults/env. When the env var is false or unset, apply-check runs upgrade (apt update ok) and EFA present at `EFA_DRIVER` or newer; Lustre are commented out in `apply_check.sh` to match `apply.sh`. Re-enable them in both when adding those steps back.
 
 ## Post-Interrupt-Check
 
@@ -156,6 +158,12 @@ spec:
 
 Flow: apply `nvidia-setup-kernel` → kernel install → reboot (interrupt) → post-interrupt-check verifies kernel → apply `nvidia-setup-full` (kernel check passes, then upgrade, EFA, and when uncommented: Lustre, chrony, local disks).
 
+## Upgrading to a new version
+
+Raising a package's `version` on a node that completed an earlier version does not run `apply`; the operator runs the `upgrade` stage, then `config` and the interrupt. `upgrade` runs `apply.sh` and `upgrade-check` runs `apply_check.sh`, so a version bump does everything a first apply does, with the same `NVIDIA_SETUP_INSTALL_KERNEL` routing. Before 0.9.0 the package declared no upgrade mode, so a version bump ran nothing and still reported complete.
+
+In the two-package layout above, bump both packages and the `dependsOn` that names the kernel package's version. The kernel package's reboot then runs again, so the full package's apply sees the new kernel. If the reboot comes from another package whose version does not change, that package does not run again, and the full package's apply runs on the old kernel and fails its kernel check.
+
 ## Usage Example
 
 ```yaml
@@ -182,7 +190,9 @@ spec:
       # Optional overrides:
       env:
         - name: NVIDIA_EFA
-          value: "1.31.0"
+          value: "1.51.0"
+        - name: NVIDIA_EFA_DRIVER
+          value: "3.3.1"
 ```
 
 ## AKS Usage Example
@@ -225,7 +235,7 @@ This replaces the equivalent privileged DaemonSet (`ib-node-config-aks.yaml`) th
 
 ## Adding a New (service, accelerator)
 
-1. Add `skyhook_dir/defaults/<service>-<accelerator>.conf` with `kernel=`, `lustre=`, `efa=`.
+1. Add `skyhook_dir/defaults/<service>-<accelerator>.conf` with `KERNEL=`, `LUSTRE=`, `EFA=`, and `EFA_DRIVER=` (the efa driver version the `EFA` installer ships, as `dkms status efa` reports it).
 2. In `apply.sh`, add a `run_<service>_<accelerator>()` function that runs the step scripts for that combination, and add a case branch: `<service>-<accelerator>) run_<service>_<accelerator> ;;`.
 3. In `apply_check.sh`, add `check_<service>_<accelerator>()` and the same case branch.
 4. Rebuild the image and update this README’s supported combinations table.

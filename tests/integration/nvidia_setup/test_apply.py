@@ -121,13 +121,32 @@ def test_apply_with_env_overrides(base_image):
             env_vars={
                 "NVIDIA_KERNEL": "6.8.0",
                 "NVIDIA_SETUP_KERNEL_ALLOW_NEWER": "true",  # container kernel may be newer than override
-                "NVIDIA_EFA": "1.31.0",
+                "NVIDIA_EFA": "1.48.0",
+                "NVIDIA_EFA_DRIVER": "3.0.0",
                 "NVIDIA_LUSTRE": "aws"
             },
             skip_system_operations=True
         )
         
         assert_exit_code(result, 0)
+    finally:
+        runner.cleanup()
+
+
+@pytest.mark.parametrize("script", ["apply.sh", "apply_check.sh"])
+def test_efa_override_without_driver_fails(script):
+    """NVIDIA_EFA alone fails: the defaults file's EFA_DRIVER describes its own installer, not the override's."""
+    runner = DockerTestRunner(package="nvidia-setup")
+    try:
+        result = runner.run_script(
+            script=script,
+            configmaps={"service": "eks", "accelerator": "h100"},
+            env_vars={"NVIDIA_EFA": "1.48.0"},
+            skip_system_operations=True
+        )
+
+        assert_exit_code(result, 1)
+        assert_output_contains(result.stdout, "NVIDIA_EFA=1.48.0 needs NVIDIA_EFA_DRIVER")
     finally:
         runner.cleanup()
 

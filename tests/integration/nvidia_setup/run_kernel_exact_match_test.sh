@@ -20,10 +20,13 @@
 #
 # install_kernel.sh runs as its own process, as ensure_kernel.sh runs it, so the
 # stubs are executables on PATH rather than shell functions. uname, apt-get,
-# dpkg, dpkg-query, update-grub and grub-set-default are stubbed; every call is
-# recorded and the scenario asserts on what was and was not run. dpkg state comes
-# from a scratch status file and DPKG_ADMINDIR points at a scratch tree, so the
-# real package database is never read. The one real write is /etc/default/grub,
+# apt-cache, dpkg, dpkg-query, dkms, curl, tar, update-grub and grub-set-default
+# are stubbed; every call is recorded and the scenario asserts on what was and
+# was not run. dpkg state comes from a scratch status file and DPKG_ADMINDIR
+# points at a scratch tree, so the real package database is never read. What the
+# archive offers, and what dkms knows, come from further scratch files. The
+# stubbed tar unpacks a fake EFA installer, so the real install-efa-driver.sh
+# runs without downloading anything. The one real write is /etc/default/grub,
 # which only exists inside the throwaway test container.
 #
 # Exit code 0 = the scenario behaved as specified, 1 = it did not.
@@ -40,7 +43,9 @@ fi
 INSTALL_KERNEL_SH="${SKYHOOK_DIR}/skyhook_dir/steps/install_kernel.sh"
 [ -f "${INSTALL_KERNEL_SH}" ] || { echo "install_kernel.sh not found at ${INSTALL_KERNEL_SH}" >&2; exit 1; }
 
-# The base kernel from the eks defaults; resolve_full_kernel adds -64k on arm64.
+# The base kernel; resolve_full_kernel adds -64k on arm64. No eks default names a
+# 6.17 kernel since 0.9.0, but NVIDIA_KERNEL still can, and its archive ships
+# modules-extra as its own package. The 7.0 scenarios set KERNEL themselves.
 KERNEL="6.17.0-1019-aws"
 
 WORK_DIR="$(mktemp -d)"
@@ -48,14 +53,20 @@ trap 'rm -rf "${WORK_DIR}"' EXIT
 STUB_BIN="${WORK_DIR}/bin"
 DPKG_ADMINDIR="${WORK_DIR}/dpkg"
 STATUS_FILE="${WORK_DIR}/status"
+ARCHIVE_FILE="${WORK_DIR}/archive"
+DKMS_FILE="${WORK_DIR}/dkms"
 CALL_LOG="${WORK_DIR}/calls.log"
 OUTPUT="${WORK_DIR}/output.log"
 mkdir -p "${STUB_BIN}" "${DPKG_ADMINDIR}/updates"
 : > "${STATUS_FILE}"
+: > "${ARCHIVE_FILE}"
+: > "${DKMS_FILE}"
 : > "${CALL_LOG}"
-export DPKG_ADMINDIR STATUS_FILE CALL_LOG
+export DPKG_ADMINDIR STATUS_FILE ARCHIVE_FILE DKMS_FILE CALL_LOG
 
 # STATUS_FILE holds one "<package> <dpkg status>" line per package dpkg knows.
+# ARCHIVE_FILE holds one package name per line for each package apt can install.
+# DKMS_FILE is what `dkms status efa` prints.
 
 cat > "${STUB_BIN}/uname" <<'EOF'
 #!/usr/bin/env bash
@@ -66,30 +77,79 @@ case "${1:-}" in
 esac
 EOF
 
-# Real apt refuses to run while any package is parked mid-transaction. A
-# successful install records its packages, so the `dpkg --list` that follows
-# sees them.
+# Exits 0 when any package's latest recorded state is mid-transaction. The
+# stubs below, and the fake EFA installer, share it.
+cat > "${STUB_BIN}/pending_packages" <<'EOF'
+#!/usr/bin/env bash
+awk '{ s[$1] = $2 } END { for (p in s) if (s[p] ~ /^(half-installed|unpacked|half-configured)$/) found = 1; exit !found }' "${STATUS_FILE}"
+EOF
+
+# Real apt refuses every command, update included, while dpkg's journal says a
+# transaction was interrupted. A package merely parked half-configured does not
+# stop `apt-get update`, but an install fails on it, because apt configures it
+# first and its postinst fails again. apt also installs nothing when one
+# requested package is not in the archive. A successful install records its
+# packages, so the `dpkg --list` that follows sees them.
 cat > "${STUB_BIN}/apt-get" <<'EOF'
 #!/usr/bin/env bash
 echo "apt-get $*" >> "${CALL_LOG}"
-if awk '$2 ~ /^(half-installed|unpacked|half-configured)$/ { found = 1 } END { exit !found }' "${STATUS_FILE}"; then
+if ls "${DPKG_ADMINDIR}/updates" 2>/dev/null | grep -qE '^[0-9]+$'; then
   echo "E: dpkg was interrupted, you must manually run 'dpkg --configure -a' to correct the problem." >&2
+  exit 100
+fi
+if [ "${1:-}" = "install" ] && pending_packages; then
+  echo "E: Sub-process /usr/bin/dpkg returned an error code (1)" >&2
   exit 100
 fi
 if [ "${1:-}" = "install" ]; then
   shift
+  pkgs=()
   for arg in "$@"; do
     case "${arg}" in
       -*) ;;
-      *) echo "${arg} installed" >> "${STATUS_FILE}" ;;
+      *)
+        if ! grep -qx "${arg}" "${ARCHIVE_FILE}"; then
+          echo "E: Unable to locate package ${arg}" >&2
+          exit 100
+        fi
+        pkgs+=("${arg}")
+        ;;
     esac
+  done
+  for pkg in "${pkgs[@]}"; do
+    echo "${pkg} installed" >> "${STATUS_FILE}"
   done
 fi
 exit 0
 EOF
 
+# Answers from ARCHIVE_FILE the way `apt-cache show` answers from apt's lists:
+# a stanza per known package, and exit 100 when it knows none of them.
+cat > "${STUB_BIN}/apt-cache" <<'EOF'
+#!/usr/bin/env bash
+echo "apt-cache $*" >> "${CALL_LOG}"
+[ "${1:-}" = "show" ] || exit 0
+shift
+found=false
+for pkg in "$@"; do
+  if grep -qx "${pkg}" "${ARCHIVE_FILE}"; then
+    printf 'Package: %s\nVersion: 0-stub\n\n' "${pkg}"
+    found=true
+  fi
+done
+if [ "${found}" != "true" ]; then
+  echo "E: No packages found" >&2
+  exit 100
+fi
+exit 0
+EOF
+
 # `dpkg --configure -a` fails the way it did on the aicr#2870 nodes: the EFA
-# DKMS build cannot compile against the half-configured 7.0.0 kernel.
+# DKMS build cannot compile against the half-configured 7.0.0 kernel. Before
+# that, a half-configured efa fails while its module is still in the DKMS tree:
+# its postinst adds the module before building it, so a configure killed after
+# the add (an OOM-killed build) leaves an entry the next postinst trips over.
+# With the entry gone, the postinst builds the module and efa is configured.
 cat > "${STUB_BIN}/dpkg" <<'EOF'
 #!/usr/bin/env bash
 echo "dpkg $*" >> "${CALL_LOG}"
@@ -98,7 +158,17 @@ case "${1:-}" in
     awk '$1 ~ /^linux-image-/ { print "ii  " $1 }' "${STATUS_FILE}"
     ;;
   --configure)
-    if awk '$2 ~ /^(half-installed|unpacked|half-configured)$/ { found = 1 } END { exit !found }' "${STATUS_FILE}"; then
+    if [ "$(awk '$1 == "efa" { s = $2 } END { print s }' "${STATUS_FILE}")" = "half-configured" ]; then
+      if grep -q '^efa/' "${DKMS_FILE}"; then
+        echo "Error! DKMS tree already contains: efa-$(sed -n 's#^efa/\([^,:]*\).*#\1#p' "${DKMS_FILE}" | head -n1)"
+        echo "You cannot add the same module/version combo more than once."
+        echo "dpkg: error processing package efa (--configure):"
+        exit 1
+      fi
+      echo "efa installed" >> "${STATUS_FILE}"
+      echo "efa/3.3.1, $(uname -r), $(uname -m): installed" > "${DKMS_FILE}"
+    fi
+    if pending_packages; then
       echo "kcompat.h:274: error: 'struct ib_umem' has no member named 'nmap'" >&2
       echo "dpkg: error processing package linux-image-7.0.0-1012-aws (--configure)" >&2
       exit 1
@@ -109,7 +179,8 @@ exit 0
 EOF
 
 # Handles both call shapes in utilities.sh: `-W -f FMT <pkg>...` for named
-# packages and `-f FMT -W` for every package.
+# packages and `-f FMT -W` for every package. A package recorded more than once
+# reports its latest state, as an upgrade leaves it.
 cat > "${STUB_BIN}/dpkg-query" <<'EOF'
 #!/usr/bin/env bash
 echo "dpkg-query $*" >> "${CALL_LOG}"
@@ -128,7 +199,7 @@ if [ "${#pkgs[@]}" -eq 0 ]; then
 fi
 rc=0
 for pkg in "${pkgs[@]}"; do
-  state="$(awk -v p="${pkg}" '$1 == p { print $2 }' "${STATUS_FILE}")"
+  state="$(awk -v p="${pkg}" '$1 == p { s = $2 } END { print s }' "${STATUS_FILE}")"
   if [ -z "${state}" ]; then
     echo "dpkg-query: no packages found matching ${pkg}" >&2
     rc=1
@@ -137,6 +208,52 @@ for pkg in "${pkgs[@]}"; do
   fi
 done
 exit "${rc}"
+EOF
+
+cat > "${STUB_BIN}/dkms" <<'EOF'
+#!/usr/bin/env bash
+echo "dkms $*" >> "${CALL_LOG}"
+case "${1:-}" in
+  status) cat "${DKMS_FILE}" ;;
+  remove)
+    grep -v "^${2}[,:]" "${DKMS_FILE}" > "${DKMS_FILE}.new" || true
+    mv "${DKMS_FILE}.new" "${DKMS_FILE}"
+    ;;
+esac
+exit 0
+EOF
+
+# Fetches nothing: the tar stub below supplies the installer.
+cat > "${STUB_BIN}/curl" <<'EOF'
+#!/usr/bin/env bash
+echo "curl $*" >> "${CALL_LOG}"
+exit 0
+EOF
+
+# Unpacks a fake EFA installer into the current directory. It upgrades efa the
+# way the real one does, or fails as a broken install would when
+# FAKE_EFA_INSTALLER_FAILS=true.
+cat > "${STUB_BIN}/tar" <<'EOF'
+#!/usr/bin/env bash
+echo "tar $*" >> "${CALL_LOG}"
+mkdir -p aws-efa-installer
+cat > aws-efa-installer/efa_installer.sh <<'INSTALLER'
+#!/usr/bin/env bash
+echo "efa_installer.sh $*" >> "${CALL_LOG}"
+if [ "${FAKE_EFA_INSTALLER_FAILS:-false}" = "true" ]; then
+  echo "Error: Failed to install packages." >&2
+  exit 1
+fi
+if [ "$(awk '$1 == "efa" { s = $2 } END { print s }' "${STATUS_FILE}")" = "half-configured" ]; then
+  echo "Error! DKMS tree already contains: efa-3.3.1" >&2
+  echo "Error: Failed to install packages." >&2
+  exit 1
+fi
+echo "efa installed" >> "${STATUS_FILE}"
+echo "efa/3.3.1, $(uname -r), $(uname -m): installed" > "${DKMS_FILE}"
+INSTALLER
+chmod +x aws-efa-installer/efa_installer.sh
+exit 0
 EOF
 
 for cmd in update-grub grub-set-default; do
@@ -175,24 +292,76 @@ package_state() {
   done
 }
 
+# archive <package>...
+archive() {
+  printf '%s\n' "$@" >> "${ARCHIVE_FILE}"
+}
+
+# The 6.17 aws kernels ship modules-extra as its own package.
 kernel_packages() {
   local ver="$1"
   echo "linux-image-${ver}" "linux-headers-${ver}" "linux-modules-${ver}" "linux-modules-extra-${ver}"
 }
 
-run_install_kernel() {
-  PATH="${STUB_BIN}:${PATH}" "${INSTALL_KERNEL_SH}" "${KERNEL}" > "${OUTPUT}" 2>&1
+# The 7.0 aws kernels fold modules-extra into linux-modules.
+folded_kernel_packages() {
+  local ver="$1"
+  echo "linux-image-${ver}" "linux-headers-${ver}" "linux-modules-${ver}"
 }
+
+# In the scratch tree, since the EFA step unpacks its installer into the
+# working directory.
+run_install_kernel() {
+  (cd "${WORK_DIR}" && PATH="${STUB_BIN}:${PATH}" "${INSTALL_KERNEL_SH}" "${KERNEL}") > "${OUTPUT}" 2>&1
+}
+
+# A GB node as nvidia-setup 0.8.x left it: on 6.17 with efa 3.0.0 from
+# installer 1.48.0.
+gb_node_with_efa_3_0() {
+  KERNEL="7.0.0-1014-aws"
+  export EFA="1.51.0" EFA_DRIVER="3.3.1"
+  node aarch64 "6.17.0-1019-aws-64k"
+  # shellcheck disable=SC2046
+  archive $(folded_kernel_packages "7.0.0-1014-aws-64k")
+  package_state installed efa
+  echo "efa/3.0.0, 6.17.0-1019-aws-64k, aarch64: installed" > "${DKMS_FILE}"
+}
+
+# The same for an H100 node, which installs the flavor as-is.
+h100_node_with_efa_3_0() {
+  KERNEL="7.0.0-1014-aws"
+  export EFA="1.51.0" EFA_DRIVER="3.3.1"
+  node x86_64 "6.17.0-1019-aws"
+  # shellcheck disable=SC2046
+  archive $(folded_kernel_packages "7.0.0-1014-aws")
+  package_state installed efa
+  echo "efa/3.0.0, 6.17.0-1019-aws, x86_64: installed" > "${DKMS_FILE}"
+}
+
+efa_installer_ran() { grep -q '^efa_installer.sh ' "${CALL_LOG}"; }
+
+# The line number of the first CALL_LOG entry matching <regex>, or nothing.
+first_call() { grep -nE "$1" "${CALL_LOG}" | head -n1 | cut -d: -f1; }
 
 apt_ran() { grep -q '^apt-get ' "${CALL_LOG}"; }
 
-installed_packages_for() {
-  local ver="$1" pkg
-  for pkg in $(kernel_packages "${ver}"); do
+# assert_install_requested <package>...
+assert_install_requested() {
+  local pkg
+  for pkg in "$@"; do
     grep -qE "^apt-get .*install .*\\b${pkg}( |$)" "${CALL_LOG}" \
       || fail "apt-get install should include ${pkg}"
   done
 }
+
+installed_packages_for() {
+  # shellcheck disable=SC2046
+  assert_install_requested $(kernel_packages "$1")
+}
+
+# Every scenario's archive carries the 6.17 targets; scenarios add the rest.
+# shellcheck disable=SC2046
+archive $(kernel_packages "6.17.0-1019-aws") $(kernel_packages "6.17.0-1019-aws-64k")
 
 case "${SCENARIO}" in
   # The node already booted the target and has every package apt would install,
@@ -285,6 +454,131 @@ case "${SCENARIO}" in
     package_state installed $(kernel_packages "6.17.0-1019-aws")
     run_install_kernel || fail "install_kernel.sh exited non-zero"
     installed_packages_for "6.17.0-1019-aws"
+    ;;
+
+  # The archive has no linux-modules-extra for the 7.0 aws kernels. Naming it
+  # anyway fails the whole install, so the target installs without it.
+  installs_target_without_modules_extra)
+    KERNEL="7.0.0-1014-aws"
+    node aarch64 "6.17.0-1019-aws-64k"
+    # shellcheck disable=SC2046
+    archive $(folded_kernel_packages "7.0.0-1014-aws-64k")
+    run_install_kernel || fail "install_kernel.sh exited non-zero"
+    # shellcheck disable=SC2046
+    assert_install_requested $(folded_kernel_packages "7.0.0-1014-aws-64k")
+    grep -qE '^apt-get .*install .*linux-modules-extra-' "${CALL_LOG}" \
+      && fail "apt-get must not be asked for a linux-modules-extra the archive does not have"
+    ;;
+
+  # A 7.0 node on its target has every package the archive offers for it, so the
+  # missing modules-extra must not count against the short circuit.
+  skips_apt_on_target_without_modules_extra)
+    KERNEL="7.0.0-1014-aws"
+    node aarch64 "7.0.0-1014-aws-64k"
+    # shellcheck disable=SC2046
+    archive $(folded_kernel_packages "7.0.0-1014-aws-64k")
+    # shellcheck disable=SC2046
+    package_state installed $(folded_kernel_packages "7.0.0-1014-aws-64k")
+    run_install_kernel || fail "install_kernel.sh exited non-zero"
+    apt_ran && fail "apt must not run when the target kernel is running and installed"
+    ;;
+
+  # Where the archive does ship modules-extra it is still part of the target, so
+  # a node missing only that package is not on target.
+  installs_when_only_modules_extra_missing)
+    node x86_64 "6.17.0-1019-aws"
+    package_state installed linux-image-6.17.0-1019-aws linux-headers-6.17.0-1019-aws \
+      linux-modules-6.17.0-1019-aws
+    run_install_kernel || fail "install_kernel.sh exited non-zero"
+    installed_packages_for "6.17.0-1019-aws"
+    ;;
+
+  # aicr#2870: dkms builds efa 3.0.0 for the new kernel and it does not compile
+  # against 7.0, leaving the kernel half-configured. EFA has to move first.
+  upgrades_stale_efa_before_installing_kernel)
+    gb_node_with_efa_3_0
+    run_install_kernel || fail "install_kernel.sh exited non-zero"
+    efa_installer_ran || fail "an efa module older than the configured driver must be upgraded"
+    efa_line="$(first_call '^efa_installer\.sh ')"
+    kernel_line="$(first_call '^apt-get .*install .*linux-image-7\.0\.0-1014-aws-64k')"
+    [ -n "${kernel_line}" ] || fail "the kernel must still be installed"
+    [ "${efa_line}" -lt "${kernel_line}" ] || fail "EFA must be upgraded before the kernel is installed"
+    ;;
+
+  # eks-h100 is on 7.0 too: the same order, the 4k flavor, no modules-extra.
+  upgrades_stale_efa_before_installing_kernel_x86)
+    h100_node_with_efa_3_0
+    run_install_kernel || fail "install_kernel.sh exited non-zero"
+    efa_installer_ran || fail "an efa module older than the configured driver must be upgraded"
+    efa_line="$(first_call '^efa_installer\.sh ')"
+    kernel_line="$(first_call '^apt-get .*install .*linux-image-7\.0\.0-1014-aws( |$)')"
+    [ -n "${kernel_line}" ] || fail "the kernel must still be installed"
+    [ "${efa_line}" -lt "${kernel_line}" ] || fail "EFA must be upgraded before the kernel is installed"
+    # shellcheck disable=SC2046
+    assert_install_requested $(folded_kernel_packages "7.0.0-1014-aws")
+    grep -qE '^apt-get .*install .*linux-modules-extra-' "${CALL_LOG}" \
+      && fail "apt-get must not be asked for a linux-modules-extra the archive does not have"
+    ;;
+
+  # A GB300 node on the 0.9.0 upgrade: the kernel step's EFA upgrade was
+  # OOM-killed inside efa's DKMS build, leaving efa half-configured with
+  # efa/3.3.1 added to the DKMS tree. `apt-get update` does not mind, so the
+  # retry reaches the EFA step, where the installer's apt fails on the entry
+  # every time. The step has to repair dpkg first, which finishes that install.
+  recovers_from_an_interrupted_efa_install)
+    gb_node_with_efa_3_0
+    package_state half-configured efa
+    echo "efa/3.3.1: added" > "${DKMS_FILE}"
+    run_install_kernel || fail "install_kernel.sh exited non-zero"
+    grep -q '^dkms remove efa/3.3.1 --all' "${CALL_LOG}" || fail "the stale DKMS entry must be removed"
+    efa_installer_ran && fail "the repair finishes the efa install, so the installer must not run"
+    # shellcheck disable=SC2046
+    assert_install_requested $(folded_kernel_packages "7.0.0-1014-aws-64k")
+    ;;
+
+  installs_kernel_without_reinstalling_current_efa)
+    gb_node_with_efa_3_0
+    echo "efa/3.3.1, 6.17.0-1019-aws-64k, aarch64: installed" > "${DKMS_FILE}"
+    run_install_kernel || fail "install_kernel.sh exited non-zero"
+    efa_installer_ran && fail "an efa module at the configured driver must not be reinstalled"
+    # shellcheck disable=SC2046
+    assert_install_requested $(folded_kernel_packages "7.0.0-1014-aws-64k")
+    ;;
+
+  # A fresh node: no efa module for dkms to rebuild, and the full setup installs
+  # EFA after the reboot.
+  installs_kernel_without_efa_on_node_without_efa)
+    KERNEL="7.0.0-1014-aws"
+    export EFA="1.51.0" EFA_DRIVER="3.3.1"
+    node aarch64 "6.17.0-1019-aws-64k"
+    # shellcheck disable=SC2046
+    archive $(folded_kernel_packages "7.0.0-1014-aws-64k")
+    run_install_kernel || fail "install_kernel.sh exited non-zero"
+    grep -qE '^(curl|efa_installer\.sh) ' "${CALL_LOG}" && fail "no efa module means no EFA step"
+    # shellcheck disable=SC2046
+    assert_install_requested $(folded_kernel_packages "7.0.0-1014-aws-64k")
+    ;;
+
+  # The short circuit stays free of network and package-manager work, EFA
+  # included.
+  skips_efa_and_apt_on_target)
+    gb_node_with_efa_3_0
+    node aarch64 "7.0.0-1014-aws-64k"
+    # shellcheck disable=SC2046
+    package_state installed $(folded_kernel_packages "7.0.0-1014-aws-64k")
+    run_install_kernel || fail "install_kernel.sh exited non-zero"
+    apt_ran && fail "apt must not run when the target kernel is running and installed"
+    grep -qE '^(curl|efa_installer\.sh) ' "${CALL_LOG}" && fail "EFA must not be touched on the target kernel"
+    ;;
+
+  # Installing the kernel over an EFA that cannot build for it is the failure
+  # the upgrade exists to prevent, so a failed upgrade stops the step there.
+  efa_upgrade_failure_stops_kernel_install)
+    gb_node_with_efa_3_0
+    export FAKE_EFA_INSTALLER_FAILS=true
+    run_install_kernel && fail "a failed EFA upgrade must fail the step"
+    grep -qE '^apt-get .*install .*linux-image-' "${CALL_LOG}" \
+      && fail "the kernel must not be installed after the EFA upgrade failed"
     ;;
 
   *)

@@ -18,7 +18,7 @@
 
 # resolve_full_kernel for nvidia-setup (skyhook): no get_var; use KERNEL and architecture.
 # The conf (defaults/<service>-<accelerator>.conf) already specifies the exact kernel
-# flavor (e.g. 6.17.0-1019-aws), so the only thing left to resolve is the
+# flavor (e.g. 7.0.0-1014-aws), so the only thing left to resolve is the
 # architecture-specific page-size variant: arm64/aarch64 nodes (e.g. GB200/Grace) use
 # the -64k kernel, x86_64 nodes use the flavor as-is.
 # Usage: resolve_full_kernel <base_kernel_version>
@@ -84,19 +84,91 @@ dpkg_needs_configure() {
   return 1
 }
 
+# How long, in total, one apt or dpkg command waits on a lock another process
+# holds: apt-daily or unattended-upgrades, or another NodeWright package on the
+# node (nvidia-tuned's apply runs alongside nvidia-setup-kernel). Whole
+# seconds, 0 to 999999.
+APT_LOCK_WAIT_SECONDS="${APT_LOCK_WAIT_SECONDS:-600}"
+# The pause between attempts when a run fails on a held lock. Whole seconds,
+# 1 to 999999.
+APT_LOCK_RETRY_INTERVAL_SECONDS="${APT_LOCK_RETRY_INTERVAL_SECONDS:-10}"
+
+# Run an apt or dpkg command, waiting up to APT_LOCK_WAIT_SECONDS in total for
+# locks another process holds. Two layers, because apt waits for only one of
+# them itself:
+#   1. apt waits for the dpkg frontend lock when DPkg::Lock::Timeout is set. It
+#      is passed through APT_CONFIG, set to the time left in the budget, so it
+#      also reaches apt run by a child such as the EFA installer. A caller's
+#      APT_CONFIG is copied in ahead of it, so its settings still apply but its
+#      own lock timeout cannot outlast the budget. tuned carries a copy of this
+#      helper (tuned/skyhook_dir/utils.sh) that passes -o instead, because it
+#      runs `apt`, whose built-in 120s timeout outranks APT_CONFIG.
+#   2. Nothing waits for the lists lock `apt-get update` takes, and dpkg run
+#      directly does not wait either. A run that fails on a held lock ("Could
+#      not get lock", "locked by another process") is retried until the budget
+#      is spent; the last pause is cut short at the deadline.
+# stderr is captured to recognise a lock failure and replayed when the attempt
+# ends; stdout still streams. The command runs with LC_ALL=C so apt's and
+# dpkg's messages are the English ones matched here whatever the node's locale.
+# Usage: apt_lock_retry <command> [args...]
+apt_lock_retry() {
+  local deadline remaining now pause status errfile conf caller_conf
+
+  if [[ ! "${APT_LOCK_WAIT_SECONDS}" =~ ^[0-9]{1,6}$ ]]; then
+    echo "nvidia-setup: APT_LOCK_WAIT_SECONDS must be whole seconds from 0 to 999999, got '${APT_LOCK_WAIT_SECONDS}'" >&2
+    return 2
+  fi
+  if [[ ! "${APT_LOCK_RETRY_INTERVAL_SECONDS}" =~ ^[1-9][0-9]{0,5}$ ]]; then
+    echo "nvidia-setup: APT_LOCK_RETRY_INTERVAL_SECONDS must be whole seconds from 1 to 999999, got '${APT_LOCK_RETRY_INTERVAL_SECONDS}'" >&2
+    return 2
+  fi
+
+  # 10# so a leading zero is not read as octal.
+  deadline=$(( $(date +%s) + 10#${APT_LOCK_WAIT_SECONDS} ))
+  caller_conf="${APT_CONFIG:-}"
+  errfile="$(mktemp)"
+  conf="$(mktemp)"
+  while :; do
+    remaining=$(( deadline - $(date +%s) ))
+    [ "${remaining}" -gt 0 ] || remaining=1
+    # apt keeps the last value a file sets, so the budget goes after the caller's.
+    {
+      [ -z "${caller_conf}" ] || cat "${caller_conf}"
+      printf 'DPkg::Lock::Timeout "%s";\n' "${remaining}"
+    } > "${conf}"
+
+    status=0
+    APT_CONFIG="${conf}" LC_ALL=C "$@" 2> "${errfile}" || status=$?
+    cat "${errfile}" >&2
+
+    now="$(date +%s)"
+    if [ "${status}" -eq 0 ] \
+      || ! grep -qE 'Could not get lock|locked by another process' "${errfile}" \
+      || [ "${now}" -ge "${deadline}" ]; then
+      rm -f "${errfile}" "${conf}"
+      return "${status}"
+    fi
+    pause="${APT_LOCK_RETRY_INTERVAL_SECONDS}"
+    [ $(( deadline - now )) -ge "${pause}" ] || pause=$(( deadline - now ))
+    echo "nvidia-setup: '$*' found an apt or dpkg lock held by another process; retrying in ${pause}s" >&2
+    sleep "${pause}"
+  done
+}
+
 # Run an apt (or dpkg) command, repairing an interrupted dpkg state and retrying
 # once when that is why it failed. Wrap every apt invocation with this: a node
 # that was interrupted mid-install fails the next step that touches apt, which
-# is rarely the step that caused it.
+# is rarely the step that caused it. Each attempt waits for locks another process
+# holds (apt_lock_retry).
 #
-# The retry decision comes from the dpkg database rather than from grepping
+# The repair decision comes from the dpkg database rather than from grepping
 # apt's output, so an unrelated failure that merely mentions dpkg is propagated
-# untouched, and output is left to stream instead of being captured, so a long
-# `apt-get upgrade` still reports progress as it runs.
+# untouched, and stdout is left to stream, so a long `apt-get upgrade` still
+# reports progress as it runs.
 # Usage: apt_with_dpkg_heal apt-get update
 apt_with_dpkg_heal() {
   local status=0
-  "$@" || status=$?
+  apt_lock_retry "$@" || status=$?
 
   if [ "${status}" -eq 0 ]; then
     return 0
@@ -108,7 +180,7 @@ apt_with_dpkg_heal() {
 
   echo "nvidia-setup: '$*' failed and dpkg is in an interrupted state; repairing and retrying once..." >&2
   dpkg_repair || return "${status}"
-  "$@"
+  apt_lock_retry "$@"
 }
 
 # Remove the DKMS tree entry that a postinst reported as already present.
@@ -200,7 +272,7 @@ dpkg_repair() {
   local output
   local status=0
 
-  output="$(dpkg --configure -a 2>&1)" || status=$?
+  output="$(apt_lock_retry dpkg --configure -a 2>&1)" || status=$?
   printf '%s\n' "${output}"
 
   if [ "${status}" -eq 0 ]; then
@@ -221,7 +293,7 @@ dpkg_repair() {
     dkms_remove_stale "${entry}" || return "${status}"
   done
 
-  dpkg --configure -a
+  apt_lock_retry dpkg --configure -a
 }
 
 # Report whether the EFA driver is genuinely installed.
@@ -265,6 +337,49 @@ efa_driver_installed() {
   return 0
 }
 
+# Report whether EFA is installed (efa_driver_installed) and every efa module
+# dkms has is at least <driver_version>, the efa driver the configured installer
+# ships. Installed alone is not enough: dkms builds every efa module it has for a
+# newly installed kernel, and efa 3.0.0 (installer 1.48.0) does not compile
+# against the 7.0 aws kernels. The versions come from dkms, so they describe what
+# is on the node, whoever installed it. A newer module counts, since the
+# installer does not downgrade one.
+# Usage: efa_driver_current <driver_version>
+# Returns: 0 when current, 1 otherwise, with the reason on stderr.
+efa_driver_current() {
+  local want="$1"
+  local status
+  local oldest
+
+  efa_driver_installed || return 1
+
+  # `efa/3.3.1, <kernel>, <arch>: installed`, or `efa/3.3.1: added`.
+  status="$(dkms status efa 2>/dev/null || true)"
+  oldest="$(sed -nE 's#^efa[/,] *([0-9][^,: ]*).*#\1#p' <<< "${status}" | sort -V | sed -n 1p)"
+  if [ -z "${oldest}" ]; then
+    echo "EFA: dkms reports no efa version" >&2
+    return 1
+  fi
+  if [ "$(printf '%s\n' "${want}" "${oldest}" | sort -V | sed -n 1p)" != "${want}" ]; then
+    echo "EFA: dkms has efa ${oldest}, the configured installer ships ${want}" >&2
+    return 1
+  fi
+
+  return 0
+}
+
+# Report whether dkms has any efa module, in any state. Installing a kernel
+# makes dkms build every such module for it, and one that fails to build leaves
+# the kernel packages half-configured.
+# Returns: 0 when dkms knows an efa module, 1 otherwise.
+efa_dkms_registered() {
+  local status
+
+  command -v dkms >/dev/null 2>&1 || return 1
+  status="$(dkms status efa 2>/dev/null || true)"
+  [ -n "${status}" ]
+}
+
 # Report whether every named package is fully installed. A package dpkg does not
 # know, or one parked half-configured or unpacked, does not count.
 # Usage: dpkg_packages_installed <package>...
@@ -281,4 +396,35 @@ dpkg_packages_installed() {
   done
 
   return 0
+}
+
+# Report whether apt's package lists carry a real package by this name. Reads
+# the local lists only, so it touches neither the network nor the dpkg lock; run
+# `apt-get update` first when the answer must reflect the archive as it is now.
+# The exit status of `apt-cache show` is not enough on its own: it is 0 for a
+# purely virtual package, which has no `Package:` stanza and cannot be installed
+# by that name.
+# Usage: apt_package_available <package>
+# Returns: 0 when the lists have a stanza for it, 1 otherwise.
+apt_package_available() {
+  local pkg="$1"
+  local stanzas
+
+  stanzas="$(apt-cache show "${pkg}" 2>/dev/null)" || return 1
+  grep -qx "Package: ${pkg}" <<< "${stanzas}"
+}
+
+# The packages that make up kernel <full_kernel_ver>. linux-modules-extra is
+# included only when apt's lists carry it: Ubuntu ships it for the 6.17 aws
+# kernels but folds those modules into linux-modules for the 7.0 aws kernels,
+# and naming a package the archive does not have fails the whole apt install.
+# Usage: target_kernel_packages <full_kernel_ver>
+# Prints: one package name per line.
+target_kernel_packages() {
+  local ver="$1"
+
+  printf '%s\n' "linux-image-${ver}" "linux-headers-${ver}" "linux-modules-${ver}"
+  if apt_package_available "linux-modules-extra-${ver}"; then
+    printf '%s\n' "linux-modules-extra-${ver}"
+  fi
 }
