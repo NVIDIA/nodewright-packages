@@ -220,18 +220,14 @@ def test_uninstall_fails_when_zypper_did_not_remove_tuned(base_image):
 RETRIED = "found an apt or dpkg lock held by another process"
 
 
-def rerun_under_held_lock(runner, lock, seconds, env):
-    """Hold <lock> for <seconds>, rerun install_tuned.sh with <env>, and return (exit code, output, seconds taken)."""
+def hold_lock(runner, lock, seconds):
+    """Hold <lock> for <seconds> in the background, returning once the holder has it."""
     assert sh(runner, "apt-get install -y -qq python3-minimal >/dev/null 2>&1") == 0
     runner.container.exec_run(
         ["/bin/bash", "-c", LOCK_HOLDER.format(lock=lock, seconds=seconds)], detach=True
     )
     held = f"for _ in $(seq 100); do [ -e {LOCK_HELD} ] && exit 0; sleep 0.1; done; exit 1"
     assert sh(runner, held) == 0, f"the lock holder did not take {lock} within 10s"
-
-    started = time.monotonic()
-    code, out = step(runner, "install_tuned.sh", env)
-    return code, out, time.monotonic() - started
 
 
 @pytest.mark.parametrize(
@@ -249,9 +245,10 @@ def test_install_waits_for_a_held_apt_lock(base_image, lock):
     runner, code, out = start(base_image, "install_tuned.sh")
     try:
         assert code == 0, out
-        code, out, waited = rerun_under_held_lock(
-            runner, lock, 15, {"APT_LOCK_RETRY_INTERVAL_SECONDS": "2"}
-        )
+        hold_lock(runner, lock, 15)
+        started = time.monotonic()
+        code, out = step(runner, "install_tuned.sh", {"APT_LOCK_RETRY_INTERVAL_SECONDS": "2"})
+        waited = time.monotonic() - started
         assert code == 0, out
         assert waited >= 10, f"finished in {waited:.0f}s, before the lock was released:\n{out}"
         if lock.endswith("lists/lock"):
@@ -266,27 +263,31 @@ def test_install_waits_for_a_held_apt_lock(base_image, lock):
         runner.cleanup()
 
 
-def test_install_stops_waiting_when_the_budget_is_spent(base_image):
+def test_apt_lock_retry_stops_waiting_when_the_budget_is_spent(base_image):
     """APT_LOCK_WAIT_SECONDS bounds apt's own wait for the dpkg lock.
 
     `apt` carries its own 120s default (Binary::apt::DPkg::Lock::Timeout), which outranks
-    APT_CONFIG and apt.conf.d; only -o on the command line overrides it.
+    APT_CONFIG and apt.conf.d; only -o on the command line overrides it. The helper is called
+    directly so the time measured is the `apt install` alone, without install_tuned.sh's
+    network-bound `apt update` before it.
     """
     require_apt(base_image)
     runner, code, out = start(base_image, "install_tuned.sh")
     try:
         assert code == 0, out
-        code, out, waited = rerun_under_held_lock(
-            runner,
-            "/var/lib/dpkg/lock-frontend",
-            60,
-            {"APT_LOCK_WAIT_SECONDS": "4", "APT_LOCK_RETRY_INTERVAL_SECONDS": "2"},
+        hold_lock(runner, "/var/lib/dpkg/lock-frontend", 60)
+        started = time.monotonic()
+        result = runner.container.exec_run(
+            ["/bin/bash", "-c", f"source {STEP_ROOT}/utils.sh && apt_lock_retry apt install -y tuned"],
+            workdir="/",
+            environment={**ENV, "APT_LOCK_WAIT_SECONDS": "4", "APT_LOCK_RETRY_INTERVAL_SECONDS": "2"},
         )
-        assert code != 0, f"waited out a 60s lock on a 4s budget:\n{out}"
+        waited = time.monotonic() - started
+        out = result.output.decode(errors="replace")
+
+        assert result.exit_code != 0, f"waited out a 60s lock on a 4s budget:\n{out}"
         assert "Unable to acquire the dpkg frontend lock" in out, out
-        # The rerun also refreshes the apt index over the network first, so this bound is
-        # loose: it catches a budget that is not applied, not a wait a few seconds long.
-        assert waited < 40, f"gave up after {waited:.0f}s on a 4s budget:\n{out}"
+        assert waited < 15, f"gave up after {waited:.0f}s on a 4s budget:\n{out}"
     finally:
         runner.cleanup()
 
