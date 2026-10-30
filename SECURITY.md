@@ -61,7 +61,7 @@ The operator and agent that execute these packages are versioned separately and 
 
 ## Verifying Release Artifacts
 
-Every published package image is signed with [Sigstore cosign](https://docs.sigstore.dev/) in keyless mode and carries [SLSA v1 build provenance](https://slsa.dev/). The build workflow verifies its own signature and attestation before finishing, pinning the signer to an exact tag with no wildcard.
+Every released package image, and every released package artifact (`<package>-artifact`, see [Package Image Locations](docs/artifact-locations.md#package-artifacts)), is signed with [Sigstore cosign](https://docs.sigstore.dev/) in keyless mode and carries [SLSA v1 build provenance](https://slsa.dev/). Pull request builds push unsigned `<version>-dev.sha<short>` tags to the same repositories; they carry no signature or provenance and are not for production use. The build workflow verifies its own signature and attestation before finishing, pinning the signer to an exact tag with no wildcard.
 
 Verify a package image before you run it:
 
@@ -87,6 +87,8 @@ cosign verify-attestation --certificate-identity "$IDENTITY" \
 ```
 
 Reference that same `$IMAGE` digest in the package `image` field of your NodeWright custom resource, so the artifact you verified is the artifact that runs.
+
+A package artifact verifies the same way, with `REPO=ghcr.io/nvidia/nodewright-packages/<package>-artifact` and the same identity: it is signed by the same workflow run as the image. It is a single manifest, so `crane digest` returns the digest the signature is bound to.
 
 Without `crane`, use:
 

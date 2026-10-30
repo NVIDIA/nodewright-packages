@@ -14,6 +14,16 @@ Release tags `<package>/<version>` publish here through `build_container.yaml`. 
 
 Releases are also staged to NGC at `nvcr.io/1070195845945670/nodewright-packages/<package>`, from where NVIDIA's internal release process promotes them to the public `nvcr.io/nvidia` catalog. Only the version tag is staged; `latest` is a GHCR tag. The staging location is not meant to be pulled from directly. This repository's workflows have never published package images to a public NGC path.
 
+### Package artifacts
+
+Every package is also published as a NodeWright package artifact, built from the image of the same version, except one whose `/skyhook-package` differs between amd64 and arm64 (today `kata-containers`), which a single artifact cannot represent:
+
+```text
+ghcr.io/nvidia/nodewright-packages/<package>-artifact:<version>
+```
+
+The artifact gets its own repository because an image and an artifact cannot share a tag, and a `-artifact` suffix rather than a nested path because NGC names are `<org>/<team>/<name>`: it is staged as `nvcr.io/1070195845945670/nodewright-packages/<package>-artifact`. Only version tags are published; the artifact never has a `latest`. Its metadata is the package's own `config.json`, with uninstall supported when that config has an `uninstall` mode. It is signed and carries SLSA provenance like the image. Pull request builds push `<version>-dev.sha<short>` artifacts the same way, unsigned.
+
 ## Versions by location
 
 | Package | `ghcr.io/nvidia/skyhook-packages` (frozen) | `ghcr.io/nvidia/nodewright-packages` (current) |
