@@ -28,7 +28,14 @@ case "${ID}" in
     ubuntu* | debian*)
         export DEBIAN_FRONTEND=noninteractive
 
-        apt_lock_retry apt remove -y tuned && apt_lock_retry apt autoremove -y
+        # Only when dpkg has tuned installed, so uninstall is a no-op on re-run:
+        # where the package lists do not know tuned, apt remove fails with
+        # "Unable to locate package". Two statements rather than &&, which
+        # would let set -e ignore a failed remove.
+        if dpkg-query -W -f='${Status}' tuned 2>/dev/null | grep -q ' installed$'; then
+            apt_lock_retry apt remove -y tuned
+            apt_lock_retry apt autoremove -y
+        fi
     ;;
     centos* | redhat* | amzn*)
         yum remove -y tuned

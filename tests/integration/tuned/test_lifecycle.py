@@ -312,3 +312,16 @@ def test_install_rejects_a_malformed_lock_wait(base_image):
         assert "APT_LOCK_WAIT_SECONDS must be whole seconds from 0 to 999999, got '10m'" in out, out
     finally:
         runner.cleanup()
+
+
+def test_uninstall_rejects_a_malformed_lock_wait(base_image):
+    """A bad APT_LOCK_WAIT_SECONDS fails the uninstall step too, rather than skipping the apt calls."""
+    require_apt(base_image)
+    runner, code, out = start(base_image, "install_tuned.sh")
+    try:
+        assert code == 0, out
+        code, out = step(runner, "uninstall_tuned.sh", {"APT_LOCK_WAIT_SECONDS": "10m"})
+        assert code != 0, out
+        assert "APT_LOCK_WAIT_SECONDS must be whole seconds from 0 to 999999, got '10m'" in out, out
+    finally:
+        runner.cleanup()
