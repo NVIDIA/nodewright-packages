@@ -150,6 +150,22 @@ env:
     value: "false"
 ```
 
+#### APT_LOCK_WAIT_SECONDS
+
+How long, in seconds, each apt call on Debian/Ubuntu waits in total for a lock another process holds (default `600`).
+
+- **Purpose**: Another NodeWright package on the node (for example `nvidia-setup-kernel`, which can run alongside `nvidia-tuned`), `apt-daily` or `unattended-upgrades` can hold the apt lists lock or the dpkg lock when `install_tuned.sh` or `uninstall_tuned.sh` runs. On its own, `apt update` fails at once on a held lists lock, and `apt` waits at most 120 seconds for the dpkg lock.
+- **Values**: Whole seconds from `0` to `999999`. Any other value fails the apt step with an error naming the setting.
+- **Behavior**: apt waits for the dpkg lock itself through `DPkg::Lock::Timeout`, passed with `-o`, which outranks `apt`'s own 120-second default as well as `APT_CONFIG` and the `apt.conf.d` files. Nothing waits for the lists lock `apt update` takes, so a run that fails on a held lock is retried every 10 seconds until the time is spent. A held lock is waited out before `APT_ALLOW_INDEX_FAILURE` decides whether an `apt update` failure is fatal.
+
+**Example configuration in SCR:**
+
+```yaml
+env:
+    name: APT_LOCK_WAIT_SECONDS
+    value: "300"
+```
+
 ### Configmaps
 
 The package expects configmaps to be available in `${SKYHOOK_DIR}/configmaps/`:
@@ -237,21 +253,6 @@ for node in /sys/devices/system/node/node*; do
 done
 
 echo "AI optimization setup complete"
-```
-
-
-#### APT_LOCK_WAIT_SECONDS
-
-How long, in seconds, each apt call on Debian/Ubuntu waits in total for a lock another process holds (default `600`).
-
-- **Purpose**: Another NodeWright package on the node (for example `nvidia-setup-kernel`, which can run alongside `nvidia-tuned`), `apt-daily` or `unattended-upgrades` can hold the apt lists lock or the dpkg lock when `install_tuned.sh` or `uninstall_tuned.sh` runs. apt fails at once on a held lock.
-- **Behavior**: apt waits for the dpkg lock itself through `DPkg::Lock::Timeout`, passed in `APT_CONFIG`. Nothing waits for the lists lock `apt update` takes, so a run that fails on a held lock is retried every 10 seconds until the time is spent. A held lock is waited out before `APT_ALLOW_INDEX_FAILURE` decides whether an `apt update` failure is fatal.
-
-**Example configuration in SCR:**
-```yaml
-env:
-    name: APT_LOCK_WAIT_SECONDS
-    value: "300"
 ```
 
 ## Usage Examples
