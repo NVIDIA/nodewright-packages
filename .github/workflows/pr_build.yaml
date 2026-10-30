@@ -383,6 +383,7 @@ jobs:
           echo "full_tag=${VERSION}-dev.${SHORT_SHA}" >> $GITHUB_OUTPUT
 
       - name: Build and push Docker image
+        id: build
         uses: ./.github/actions/build-package
         with:
           package_name: ${{ matrix.package }}
@@ -396,6 +397,21 @@ jobs:
           # (which for a new package also means creating an org package) is denied.
           # Build without publishing on forks; same-repo PRs still push a dev image.
           push: ${{ github.event.pull_request.head.repo.fork == false }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Each package also gets a dev package artifact, built from the dev image
+      # just pushed and checked against the spec, but not signed, matching the
+      # dev image. A fork's image is never pushed, so there is no
+      # image to read the payload from and the artifact is skipped too.
+      - name: Build and push the package artifact
+        if: github.event.pull_request.head.repo.fork == false
+        uses: ./.github/actions/build-package-artifact
+        with:
+          package_name: ${{ matrix.package }}
+          image_ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.package }}@${{ steps.build.outputs.image_digest }}
+          tag: ${{ steps.version.outputs.full_tag }}
+          registry: ${{ env.REGISTRY }}
+          image_name: ${{ env.IMAGE_NAME }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
   # Summary job to report status

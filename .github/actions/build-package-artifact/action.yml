@@ -1,0 +1,208 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: 'Build Package Artifact'
+description: 'Publish a package as a NodeWright package artifact (spec v1) next to its image, from the image just pushed'
+
+# A package artifact is a single OCI manifest: the config blob is the metadata
+# document ({uninstall, config}) and the one payload layer is a gzip tar of
+# exactly what the image carries under /skyhook-package. The payload is read
+# out of the pushed image rather than rebuilt from the package directory, so it
+# includes what an inherited base image or preprocess.sh contributed, and the
+# artifact cannot drift from the image of the same version. The metadata is the
+# payload's own config.json, hoisted, with uninstall implied by it: supported
+# when the package has an uninstall mode. Nothing per-package is configured.
+#
+# Every package goes through this, but not every package can be a v1 artifact:
+# the spec has one artifact for every node, so a package whose tree differs
+# between platforms (kata-containers ships a per-architecture installer root
+# filesystem) is skipped with a warning rather than failing its release.
+#
+# The artifact lives in its own repository, <package>-artifact, because an image
+# and an artifact cannot share a tag and the operator tells them apart by the
+# manifest it finds at the reference. NGC names are <org>/<team>/<name>, so the
+# suffix rather than a nested path keeps the name identical on both registries.
+
+inputs:
+  package_name:
+    required: true
+    description: 'Package directory name'
+  image_ref:
+    required: true
+    description: 'The pushed package image, by digest: <registry>/<path>/<package>@sha256:<hex>'
+  tag:
+    required: true
+    description: 'Tag for the artifact, the same version tag the image was pushed with'
+  registry:
+    required: false
+    default: 'ghcr.io'
+    description: 'Container registry domain'
+  image_name:
+    required: true
+    description: 'Base image name (repository name), as passed to build-package'
+  sign:
+    required: false
+    default: 'false'
+    description: 'Attest SLSA provenance and sign the artifact keylessly (release builds)'
+  github_token:
+    required: true
+    description: 'GitHub token for registry authentication (pass secrets.GITHUB_TOKEN from the calling workflow)'
+
+outputs:
+  subject_name:
+    description: 'The artifact repository, lowercased, without tag or digest; empty when the package was skipped'
+    value: ${{ steps.push.outputs.subject_name }}
+  digest:
+    description: 'The digest of the pushed artifact manifest; empty when the package was skipped'
+    value: ${{ steps.push.outputs.digest }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up oras
+      uses: ./.github/actions/setup-oras
+
+    # The spec has one artifact for every node, while the image is built per
+    # platform, so both trees are packed the same way and must come out
+    # byte-identical for the package to be published.
+    - name: Pack the payload from the image
+      id: payload
+      shell: bash
+      env:
+        IMAGE_REF: ${{ inputs.image_ref }}
+      run: |
+        set -euo pipefail
+        # Lowercase because docker rejects uppercase repository names, and
+        # callers build the path from github.repository (NVIDIA/...).
+        IMAGE_REF="${IMAGE_REF,,}"
+        work="${RUNNER_TEMP}/package-artifact"
+        rm -rf "${work}"
+        mkdir -p "${work}"
+
+        # The tagged commit's time stands in for every timestamp, so the same
+        # image always packs to the same bytes and a re-run pushes the same
+        # digest instead of moving the tag off what was signed.
+        epoch="$(git log -1 --format=%ct HEAD)"
+        echo "created=$(TZ=UTC git log -1 --date=format-local:%Y-%m-%dT%H:%M:%SZ --format=%cd HEAD)" >> "${GITHUB_OUTPUT}"
+
+        for platform in linux/amd64 linux/arm64; do
+          slug="${platform//\//-}"
+          container="$(docker create --platform "${platform}" "${IMAGE_REF}")"
+          mkdir -p "${work}/${slug}"
+          docker cp "${container}:/skyhook-package/." - | tar -x -p -C "${work}/${slug}"
+          docker rm "${container}" > /dev/null
+          # --hard-dereference stores a hard link as a regular file: the spec
+          # accepts only files, directories and symlinks, and the agent refuses
+          # a hard-link entry.
+          tar --sort=name --mtime="@${epoch}" --owner=0 --group=0 --numeric-owner --hard-dereference \
+            --format=posix --pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime \
+            -C "${work}/${slug}" -cf "${work}/${slug}.tar" .
+          echo "${platform}: $(sha256sum "${work}/${slug}.tar" | cut -d' ' -f1)"
+        done
+        # Compared before compressing, so a package that is skipped (a large
+        # per-architecture tree, in practice) never pays for gzip -9.
+        if ! cmp -s "${work}/linux-amd64.tar" "${work}/linux-arm64.tar"; then
+          echo "::warning::/skyhook-package differs between linux/amd64 and linux/arm64, and one package artifact cannot serve both; publishing the image only"
+          diff -rq --no-dereference "${work}/linux-amd64" "${work}/linux-arm64" | head -n 20 || true
+          echo "publish=false" >> "${GITHUB_OUTPUT}"
+          exit 0
+        fi
+        gzip -n -9 < "${work}/linux-amd64.tar" > "${work}/payload.tar.gz"
+
+        config="${work}/linux-amd64/config.json"
+        if [[ ! -f "${config}" ]]; then
+          echo "ERROR: the image has no /skyhook-package/config.json, which the metadata document embeds" >&2
+          exit 1
+        fi
+        jq '{uninstall: (if (.modes.uninstall // []) | length > 0 then "supported" else "unsupported" end), config: .}' \
+          "${config}" > "${work}/metadata.json"
+        echo "uninstall $(jq -r .uninstall "${work}/metadata.json"), from config.json"
+        echo "dir=${work}" >> "${GITHUB_OUTPUT}"
+        echo "publish=true" >> "${GITHUB_OUTPUT}"
+
+    - name: Push the artifact
+      id: push
+      if: steps.payload.outputs.publish == 'true'
+      shell: bash
+      env:
+        REGISTRY: ${{ inputs.registry }}
+        IMAGE_NAME: ${{ inputs.image_name }}
+        PACKAGE_NAME: ${{ inputs.package_name }}
+        TAG: ${{ inputs.tag }}
+        WORK: ${{ steps.payload.outputs.dir }}
+        CREATED: ${{ steps.payload.outputs.created }}
+      run: |
+        set -euo pipefail
+        # Lowercase because OCI repository names must be, and IMAGE_NAME comes
+        # from github.repository (NVIDIA/...).
+        subject_name="${REGISTRY}/${IMAGE_NAME}/${PACKAGE_NAME}-artifact"
+        subject_name="${subject_name,,}"
+        # oras stamps the manifest with the push time unless told otherwise;
+        # CREATED is the commit time, so the manifest is reproducible too.
+        digest="$(cd "${WORK}" && oras push \
+          --artifact-type application/vnd.nvidia.nodewright.package.v1 \
+          --config metadata.json:application/vnd.nvidia.nodewright.package.config.v1+json \
+          --annotation "org.opencontainers.image.created=${CREATED}" \
+          --annotation "org.opencontainers.image.version=${TAG}" \
+          --annotation "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+          --format go-template='{{.digest}}' \
+          "${subject_name}:${TAG}" \
+          payload.tar.gz:application/vnd.nvidia.nodewright.package.payload.v1.tar+gzip)"
+        echo "Pushed ${subject_name}:${TAG} as ${digest}"
+        echo "subject_name=${subject_name}" >> "${GITHUB_OUTPUT}"
+        echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
+
+    - name: Check the pushed artifact against the spec
+      if: steps.payload.outputs.publish == 'true'
+      shell: bash
+      env:
+        REFERENCE: ${{ steps.push.outputs.subject_name }}@${{ steps.push.outputs.digest }}
+      run: scripts/check-package-artifact.sh "${REFERENCE}"
+
+    - name: Attest artifact provenance
+      if: inputs.sign == 'true' && steps.payload.outputs.publish == 'true'
+      uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
+      with:
+        subject-name: ${{ steps.push.outputs.subject_name }}
+        subject-digest: ${{ steps.push.outputs.digest }}
+        push-to-registry: true
+        # Defaults to true when push-to-registry is true, but that needs
+        # artifact-metadata: write, which callers don't grant. We only need the
+        # attestation pushed to the registry, not a storage record.
+        create-storage-record: false
+
+    - name: Wait for provenance attestation to be readable
+      if: inputs.sign == 'true' && steps.payload.outputs.publish == 'true'
+      uses: ./.github/actions/wait-for-provenance
+      with:
+        registry: ${{ inputs.registry }}
+        repository: ${{ inputs.image_name }}/${{ inputs.package_name }}-artifact
+        digest: ${{ steps.push.outputs.digest }}
+        github_token: ${{ inputs.github_token }}
+
+    - name: Install cosign
+      if: inputs.sign == 'true' && steps.payload.outputs.publish == 'true'
+      uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+
+    # Keyless, via the GitHub Actions OIDC identity, recorded in Rekor. The
+    # artifact is a single manifest, so unlike the image there is nothing to
+    # sign recursively.
+    - name: Sign artifact (keyless)
+      if: inputs.sign == 'true' && steps.payload.outputs.publish == 'true'
+      shell: bash
+      env:
+        REFERENCE: ${{ steps.push.outputs.subject_name }}@${{ steps.push.outputs.digest }}
+      run: cosign sign --yes "${REFERENCE}"
