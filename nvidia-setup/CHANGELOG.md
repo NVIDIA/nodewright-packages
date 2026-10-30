@@ -5,12 +5,22 @@
 
 All notable changes to this package will be documented in this file.
 
+## [0.8.1] - 2026-10-30
+
+### Bug Fixes
+
+- *(nvidia-setup)* Skip apt when already running the exact target kernel 
+
+
 ## [0.8.0] - 2026-09-16
 
 ### New Features
 
 - *(nvidia-setup)* Add the eks-gb300 combination 
 
+### Other Tasks
+
+- *(nvidia-setup)* Eks-gb300 v0.8.0
 
 ## [0.7.0] - 2026-09-15
 
