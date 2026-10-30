@@ -95,7 +95,7 @@ downgrade_kernel() {
 
     if [[ $CURRENT_KERNEL_VERSION != "${full_kernel_ver}" ]]; then
       # Hold the Kernel packages
-      apt-mark hold "${kernel_packages[@]}"
+      apt_lock_retry apt-mark hold "${kernel_packages[@]}"
     fi
 
   fi

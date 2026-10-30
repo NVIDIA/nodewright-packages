@@ -86,9 +86,11 @@ dpkg_needs_configure() {
 
 # How long, in total, one apt or dpkg command waits on a lock another process
 # holds: apt-daily or unattended-upgrades, or another NodeWright package on the
-# node (nvidia-tuned's apply runs alongside nvidia-setup-kernel). Seconds.
+# node (nvidia-tuned's apply runs alongside nvidia-setup-kernel). Whole
+# seconds, 0 to 999999.
 APT_LOCK_WAIT_SECONDS="${APT_LOCK_WAIT_SECONDS:-600}"
-# The pause between attempts when a run fails on a held lock. Seconds.
+# The pause between attempts when a run fails on a held lock. Whole seconds,
+# 1 to 999999.
 APT_LOCK_RETRY_INTERVAL_SECONDS="${APT_LOCK_RETRY_INTERVAL_SECONDS:-10}"
 
 # Run an apt or dpkg command, waiting up to APT_LOCK_WAIT_SECONDS in total for
@@ -96,37 +98,60 @@ APT_LOCK_RETRY_INTERVAL_SECONDS="${APT_LOCK_RETRY_INTERVAL_SECONDS:-10}"
 # them itself:
 #   1. apt waits for the dpkg frontend lock when DPkg::Lock::Timeout is set. It
 #      is passed through APT_CONFIG, set to the time left in the budget, so it
-#      also reaches apt run by a child such as the EFA installer.
+#      also reaches apt run by a child such as the EFA installer. A caller's
+#      APT_CONFIG is copied in ahead of it, so its settings still apply but its
+#      own lock timeout cannot outlast the budget. tuned carries a copy of this
+#      helper (tuned/skyhook_dir/utils.sh) that passes -o instead, because it
+#      runs `apt`, whose built-in 120s timeout outranks APT_CONFIG.
 #   2. Nothing waits for the lists lock `apt-get update` takes, and dpkg run
 #      directly does not wait either. A run that fails on a held lock ("Could
 #      not get lock", "locked by another process") is retried until the budget
-#      is spent.
+#      is spent; the last pause is cut short at the deadline.
 # stderr is captured to recognise a lock failure and replayed when the attempt
-# ends; stdout still streams.
+# ends; stdout still streams. The command runs with LC_ALL=C so apt's and
+# dpkg's messages are the English ones matched here whatever the node's locale.
 # Usage: apt_lock_retry <command> [args...]
 apt_lock_retry() {
-  local deadline remaining status errfile conf
+  local deadline remaining now pause status errfile conf caller_conf
 
-  deadline=$(( $(date +%s) + APT_LOCK_WAIT_SECONDS ))
+  if [[ ! "${APT_LOCK_WAIT_SECONDS}" =~ ^[0-9]{1,6}$ ]]; then
+    echo "nvidia-setup: APT_LOCK_WAIT_SECONDS must be whole seconds from 0 to 999999, got '${APT_LOCK_WAIT_SECONDS}'" >&2
+    return 2
+  fi
+  if [[ ! "${APT_LOCK_RETRY_INTERVAL_SECONDS}" =~ ^[1-9][0-9]{0,5}$ ]]; then
+    echo "nvidia-setup: APT_LOCK_RETRY_INTERVAL_SECONDS must be whole seconds from 1 to 999999, got '${APT_LOCK_RETRY_INTERVAL_SECONDS}'" >&2
+    return 2
+  fi
+
+  # 10# so a leading zero is not read as octal.
+  deadline=$(( $(date +%s) + 10#${APT_LOCK_WAIT_SECONDS} ))
+  caller_conf="${APT_CONFIG:-}"
   errfile="$(mktemp)"
   conf="$(mktemp)"
   while :; do
     remaining=$(( deadline - $(date +%s) ))
     [ "${remaining}" -gt 0 ] || remaining=1
-    printf 'DPkg::Lock::Timeout "%s";\n' "${remaining}" > "${conf}"
+    # apt keeps the last value a file sets, so the budget goes after the caller's.
+    {
+      [ -z "${caller_conf}" ] || cat "${caller_conf}"
+      printf 'DPkg::Lock::Timeout "%s";\n' "${remaining}"
+    } > "${conf}"
 
     status=0
-    APT_CONFIG="${APT_CONFIG:-${conf}}" "$@" 2> "${errfile}" || status=$?
+    APT_CONFIG="${conf}" LC_ALL=C "$@" 2> "${errfile}" || status=$?
     cat "${errfile}" >&2
 
+    now="$(date +%s)"
     if [ "${status}" -eq 0 ] \
       || ! grep -qE 'Could not get lock|locked by another process' "${errfile}" \
-      || [ "$(date +%s)" -ge "${deadline}" ]; then
+      || [ "${now}" -ge "${deadline}" ]; then
       rm -f "${errfile}" "${conf}"
       return "${status}"
     fi
-    echo "nvidia-setup: '$*' found an apt or dpkg lock held by another process; retrying in ${APT_LOCK_RETRY_INTERVAL_SECONDS}s" >&2
-    sleep "${APT_LOCK_RETRY_INTERVAL_SECONDS}"
+    pause="${APT_LOCK_RETRY_INTERVAL_SECONDS}"
+    [ $(( deadline - now )) -ge "${pause}" ] || pause=$(( deadline - now ))
+    echo "nvidia-setup: '$*' found an apt or dpkg lock held by another process; retrying in ${pause}s" >&2
+    sleep "${pause}"
   done
 }
 

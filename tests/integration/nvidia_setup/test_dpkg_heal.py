@@ -156,6 +156,10 @@ def test_repair_propagates_failed_dkms_remove():
         # apt waits for the dpkg frontend lock itself, given DPkg::Lock::Timeout.
         "lock_retry_passes_the_remaining_budget_to_apt",
         "lock_retry_keeps_the_callers_apt_config",
+        "lock_retry_caps_the_callers_lock_timeout",
+        "lock_retry_runs_apt_in_the_c_locale",
+        "lock_retry_cuts_the_last_pause_short",
+        "lock_retry_rejects_a_malformed_budget",
         "lock_retry_does_not_retry_an_unrelated_failure",
         # dpkg run directly does not wait for its lock.
         "repair_waits_for_the_dpkg_lock",

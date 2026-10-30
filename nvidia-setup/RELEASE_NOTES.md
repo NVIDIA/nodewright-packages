@@ -102,7 +102,7 @@ apt waits for the dpkg frontend lock itself when given `DPkg::Lock::Timeout`, wh
 passes through `APT_CONFIG` set to the time left. Nothing waits for the lists lock `apt-get
 update` takes, and dpkg run directly does not wait either, so a run that fails on a held lock
 is retried every 10 seconds until the budget is spent. `APT_LOCK_WAIT_SECONDS` (default `600`)
-sets the budget.
+sets the budget, in whole seconds from `0` to `999999`; any other value fails the apt step.
 
 ### The EFA step now checks the efa driver version dkms reports
 
