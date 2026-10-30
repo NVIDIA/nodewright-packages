@@ -82,12 +82,20 @@ installer `1.51.0` (efa driver 3.3.1). The efa 3.0.0 driver in installer 1.48.0 
 against the 7.0 aws kernels. The 7.0 aws kernels ship no separate `linux-modules-extra` package,
 so the kernel step installs it only where the archive carries one.
 
-| service | accelerator | kernel              | efa         | chrony | raid0 | OFI | bcm headers alias | ib rdma memlock |
-|---------|-------------|---------------------|-------------|--------|-------|-----|-------------------|-----------------|
-| eks     | h100        | 7.0.0-1014-aws      | 1.51.0      |  Y     |  Y    |  Y  |  N                |  N              |
-| eks     | gb200       | 7.0.0-1014-aws-64k  | 1.51.0      |  Y     |  Y    |  Y  |  N                |  N              |
-| eks     | gb300       | 7.0.0-1014-aws-64k  | 1.51.0      |  Y     |  Y    |  Y  |  N                |  N              |
-| aks     | h100        | (AKS-managed)       | n/a         |  N     |  N    |  N  |  N                |  Y              |
-| bcm     | h100        | n/a                 | n/a         |  N     |  N    |  N  |  Y                |  N              |
-| bcm     | gb200       | n/a                 | n/a         |  N     |  N    |  N  |  Y                |  N              |
-| bcm     | vr200       | n/a                 | n/a         |  N     |  N    |  N  |  Y                |  N              |
+Adds the `configure_container_toolkit` step, which sets the NVIDIA container toolkit
+device-isolation keys (`accept-nvidia-visible-devices-envvar-when-unprivileged = false`,
+`accept-nvidia-visible-devices-as-volume-mounts = true`) when the node has its own
+toolkit config. `aks-h100` runs it after `configure_ib_rdma`. Adds the `aks-any` and
+`oci-any` combinations, which run only this step.
+
+| service | accelerator | kernel              | efa         | chrony | raid0 | OFI | bcm headers alias | ib rdma memlock | toolkit hardening |
+|---------|-------------|---------------------|-------------|--------|-------|-----|-------------------|-----------------|-------------------|
+| eks     | h100        | 7.0.0-1014-aws      | 1.51.0      |  Y     |  Y    |  Y  |  N                |  N              |  N                |
+| eks     | gb200       | 7.0.0-1014-aws-64k  | 1.51.0      |  Y     |  Y    |  Y  |  N                |  N              |  N                |
+| eks     | gb300       | 7.0.0-1014-aws-64k  | 1.51.0      |  Y     |  Y    |  Y  |  N                |  N              |  N                |
+| aks     | h100        | (AKS-managed)       | n/a         |  N     |  N    |  N  |  N                |  Y              |  Y                |
+| aks     | any         | (AKS-managed)       | n/a         |  N     |  N    |  N  |  N                |  N              |  Y                |
+| oci     | any         | (image kernel)      | n/a         |  N     |  N    |  N  |  N                |  N              |  Y                |
+| bcm     | h100        | n/a                 | n/a         |  N     |  N    |  N  |  Y                |  N              |  N                |
+| bcm     | gb200       | n/a                 | n/a         |  N     |  N    |  N  |  Y                |  N              |  N                |
+| bcm     | vr200       | n/a                 | n/a         |  N     |  N    |  N  |  Y                |  N              |  N                |

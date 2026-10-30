@@ -62,6 +62,11 @@ check_eks_gb300() {
 
 check_aks_h100() {
   "${STEPS_CHECK_DIR}/check_ib_rdma.sh"
+  "${STEPS_CHECK_DIR}/container_toolkit_check.sh"
+}
+
+check_toolkit_only() {
+  "${STEPS_CHECK_DIR}/container_toolkit_check.sh"
 }
 
 case "${COMBINATION}" in
@@ -69,6 +74,7 @@ case "${COMBINATION}" in
   eks-gb200) check_eks_gb200 ;;
   eks-gb300) check_eks_gb300 ;;
   aks-h100)  check_aks_h100 ;;
+  aks-any|oci-any) check_toolkit_only ;;
   *)
     echo "Unsupported combination: ${COMBINATION}" >&2
     echo "Supported: $(find "${DEFAULTS_DIR}" -maxdepth 1 -name '*.conf' -exec basename {} .conf \; 2>/dev/null | tr '\n' ' ')" >&2

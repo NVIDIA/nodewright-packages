@@ -22,11 +22,13 @@ See [VERSION_OVERVIEW.md](VERSION_OVERVIEW.md) for more information about what i
 | eks     | gb200       | 7.0.0-1014-aws      |  1.51.0      |
 | eks     | gb300       | 7.0.0-1014-aws      |  1.51.0      |
 | aks     | h100        | (AKS-managed)       |  n/a         |
+| aks     | any         | (AKS-managed)       |  n/a         |
+| oci     | any         | (image kernel)      |  n/a         |
 | bcm     | h100        | n/a                 |  n/a         |
 | bcm     | gb200       | n/a                 |  n/a         |
 | bcm     | vr200       | n/a                 |  n/a         |
 
-Defaults are defined in `skyhook_dir/defaults/eks-h100.conf`, `eks-gb200.conf`, `eks-gb300.conf`, and `aks-h100.conf`. The `bcm-*` defaults files are intentionally empty: the `bcm` service only runs the kernel-headers alias and does not bake in any kernel/EFA/lustre versions. Keep this table in sync when adding or changing defaults.
+Defaults are defined in `skyhook_dir/defaults/eks-h100.conf`, `eks-gb200.conf`, `eks-gb300.conf`, and `aks-h100.conf`. The `bcm-*`, `aks-any` and `oci-any` defaults files are intentionally empty: `bcm` only runs the kernel-headers alias, and `aks-any` and `oci-any` only run the container toolkit hardening, so none of them bake in kernel/EFA/lustre versions. `any` is the accelerator value for a service-wide combination; it does not change which nodes the package runs on (that is the NodeWright CR's node selector). Keep this table in sync when adding or changing defaults.
 
 ## Configuration
 
@@ -88,11 +90,38 @@ OFI, hardening, and system-node-settings are **not** included.
 
 ## Apply Steps (AKS)
 
-For `service=aks` the apply step currently runs:
+For `service=aks, accelerator=h100` the apply step currently runs:
 
 1. **configure_ib_rdma** – writes IB module-load config (`/etc/modules-load.d/ib-umad.conf`), memlock limits (`/etc/security/limits.d/99-ib-memlock.conf`), and containerd/kubelet systemd drop-ins setting `LimitMEMLOCK=infinity`. Loads the `ib_umad` kernel module (and best-effort `rdma_ucm`, `ib_ucm`). Does **not** run `systemctl daemon-reload` or restart any services; see the AKS usage example below for how Skyhook handles that via a service interrupt.
+2. **configure_container_toolkit** – see [Container toolkit hardening](#container-toolkit-hardening).
+
+For `service=aks, accelerator=any` the apply step runs only **configure_container_toolkit**.
 
 Kernel install/upgrade, EFA, Lustre, chrony, and local disks do not apply to AKS today (AKS ships its own Ubuntu kernel; IB/RDMA is handled by the step above).
+
+## Apply Steps (OCI)
+
+For `service=oci, accelerator=any` the apply step runs only **configure_container_toolkit**. The node image's kernel, driver and DOCA stack are left as they are.
+
+## Container toolkit hardening
+
+On nodes where the node's own NVIDIA container toolkit handles every container (AKS: containerd's default runtime is `nvidia-container-runtime`; OKE: the node bootstrap installs an always-on CRI-O OCI hook), the toolkit's default `accept-nvidia-visible-devices-envvar-when-unprivileged = true` gives any unprivileged pod that sets `NVIDIA_VISIBLE_DEVICES` every GPU on the node, without a Kubernetes allocation.
+
+**configure_container_toolkit** runs `nvidia-ctk config --in-place` on `/etc/nvidia-container-runtime/config.toml` to set:
+
+- `accept-nvidia-visible-devices-envvar-when-unprivileged = false`, which stops unprivileged containers from selecting GPUs through the environment variable;
+- `accept-nvidia-visible-devices-as-volume-mounts = true`, so device plugins that hand out GPUs as volume mounts keep working (OKE's `NvidiaGpuPlugin` add-on runs with `deviceListStrategy=volume-mounts`).
+
+The toolkit re-reads its config on every container start, so the step needs no interrupt. When the node has no `/etc/nvidia-container-runtime/config.toml` (a GPU Operator toolkit owns the runtime, as on driverless pools), there is nothing to harden and the step does nothing. When the file exists but `nvidia-ctk` does not, the host toolkit is incomplete (a GPU Operator toolkit keeps its own config under its install directory), so the step logs a warning and skips rather than blocking the node.
+
+Things to know before enabling it:
+
+- **Device plugin strategy.** GPUs a device plugin allocates must reach containers through CDI or volume mounts. A device plugin on the default `envvar` strategy hands allocations over through `NVIDIA_VISIBLE_DEVICES`, which unprivileged containers can no longer use, so their allocated GPUs would disappear.
+- **Timing.** Pods that start before the step runs are not covered. Use `runtimeRequired: true` on the NodeWright CR so workloads wait until the package has run.
+- **Upgrades.** The package's `upgrade` stage runs `apply.sh`, so nodes moving to this version from an earlier one get the keys without a re-apply. The step itself needs no interrupt, but NodeWright runs whatever interrupt the CR declares after any version change: on `aks-h100` that restarts containerd and kubelet, as every previous version bump did.
+- **One-time write.** The package sets the keys when it applies or upgrades and does not re-assert them. If something later rewrites `config.toml` on the same node, the keys stay changed until the package runs again. Downgrading or removing the package leaves the keys set: it has no uninstall stage.
+- **Running next to a DaemonSet that sets the same keys** (aicr's `nvidia-toolkit-hardening`): both write the same values with `nvidia-ctk`, so running both during a migration changes nothing; remove the DaemonSet once nodes run this version.
+- **No `nvidia-ctk`.** A node whose `config.toml` has no `nvidia-ctk` next to it is not hardened; look for the step's `WARNING` line if such a node runs workloads through the host toolkit.
 
 ## Apply-Check
 
@@ -231,11 +260,26 @@ spec:
           - kubelet
 ```
 
-This replaces the equivalent privileged DaemonSet (`ib-node-config-aks.yaml`) that aicr currently ships under `recipes/components/network-operator/manifests/`.
+This replaces the equivalent privileged DaemonSet (`ib-node-config-aks.yaml`) that aicr currently ships under `recipes/components/network-operator/manifests/`. From 0.9.0 it also sets the container toolkit device-isolation keys that aicr's `nvidia-toolkit-hardening` DaemonSet sets today ([NVIDIA/aicr#1839](https://github.com/NVIDIA/aicr/issues/1839)).
+
+For OCI (OKE), the toolkit hardening needs no interrupt. Set `runtimeRequired: true` so workloads wait for it:
+
+```yaml
+spec:
+  runtimeRequired: true
+  packages:
+    nvidia-setup:
+      image: ghcr.io/nvidia/nodewright-packages/nvidia-setup
+      version: 0.9.0
+      configMap:
+        service: oci
+        accelerator: any
+```
 
 ## Adding a New (service, accelerator)
 
 1. Add `skyhook_dir/defaults/<service>-<accelerator>.conf` with `KERNEL=`, `LUSTRE=`, `EFA=`, and `EFA_DRIVER=` (the efa driver version the `EFA` installer ships, as `dkms status efa` reports it).
 2. In `apply.sh`, add a `run_<service>_<accelerator>()` function that runs the step scripts for that combination, and add a case branch: `<service>-<accelerator>) run_<service>_<accelerator> ;;`.
 3. In `apply_check.sh`, add `check_<service>_<accelerator>()` and the same case branch.
-4. Rebuild the image and update this README’s supported combinations table.
+4. In `post_interrupt_check.sh`, add the combination to a case branch (it rejects unknown combinations).
+5. Rebuild the image and update this README’s supported combinations table.
