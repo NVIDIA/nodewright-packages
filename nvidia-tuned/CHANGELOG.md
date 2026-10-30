@@ -5,6 +5,11 @@
 
 All notable changes to this package will be documented in this file.
 
+## [0.11.1] - 2026-10-30
+
+Bump to collect tuned 1.4.1 which has better apt support
+
+
 ## [0.11.0] - 2026-10-23
 
 ### Bug Fixes
@@ -15,6 +20,9 @@ All notable changes to this package will be documented in this file.
 
 - *(nvidia-tuned)* Support SLES and openSUSE Leap in the bootloader step 
 
+### Other Tasks
+
+- *(nvidia-tuned)* Release notes and changelog for 0.11.0
 
 ## [0.10.1] - 2026-10-19
 
