@@ -37,6 +37,7 @@ STEP_ROOT = "/skyhook-package/skyhook_dir"
 EXTRA_FILES = [
     (TESTS_DIR.parent / "nvidia_tuned" / "fakes" / "systemctl", "test-bin/systemctl"),
     (TESTS_DIR / "fakes" / "zypper", "test-bin/zypper"),
+    (TESTS_DIR / "lock_holder.py", "test-lib/lock_holder.py"),
 ]
 ENV = {
     "PATH": "/skyhook-package/test-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
@@ -81,15 +82,11 @@ def require_apt(base_image):
         pytest.skip("apt lock waiting only applies to apt-based images")
 
 
-# Holds one of apt's locks with an fcntl lock, the kind apt and dpkg take, and creates
-# LOCK_HELD once it has the lock.
+# lock_holder.py creates LOCK_HELD once it has the lock, and APT_SEEN once the apt
+# command it was told to wait for is running.
+LOCK_HOLDER = "/skyhook-package/test-lib/lock_holder.py"
 LOCK_HELD = "/tmp/lock-held"
-LOCK_HOLDER = (
-    "python3 -c 'import fcntl, os, sys, time; "
-    "fd = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT, 0o640); "
-    "fcntl.lockf(fd, fcntl.LOCK_EX); open(sys.argv[3], \"w\").close(); "
-    "time.sleep(float(sys.argv[2]))' {lock} {seconds} " + LOCK_HELD
-)
+APT_SEEN = "/tmp/apt-seen"
 
 
 def test_install_and_uninstall(base_image):
@@ -220,12 +217,17 @@ def test_uninstall_fails_when_zypper_did_not_remove_tuned(base_image):
 RETRIED = "found an apt or dpkg lock held by another process"
 
 
-def hold_lock(runner, lock, seconds):
-    """Hold <lock> for <seconds> in the background, returning once the holder has it."""
+def hold_lock(runner, lock, seconds, until_apt=None):
+    """Hold <lock> in the background, returning once the holder has it.
+
+    The lock is released <seconds> after it is taken or, given <until_apt>, <seconds>
+    after an apt command with that word among its arguments starts.
+    """
     assert sh(runner, "apt-get install -y -qq python3-minimal >/dev/null 2>&1") == 0
-    runner.container.exec_run(
-        ["/bin/bash", "-c", LOCK_HOLDER.format(lock=lock, seconds=seconds)], detach=True
-    )
+    command = ["python3", LOCK_HOLDER, lock, str(seconds), LOCK_HELD]
+    if until_apt:
+        command += [until_apt, APT_SEEN]
+    runner.container.exec_run(command, detach=True)
     held = f"for _ in $(seq 100); do [ -e {LOCK_HELD} ] && exit 0; sleep 0.1; done; exit 1"
     assert sh(runner, held) == 0, f"the lock holder did not take {lock} within 10s"
 
@@ -245,7 +247,13 @@ def test_install_waits_for_a_held_apt_lock(base_image, lock):
     runner, code, out = start(base_image, "install_tuned.sh")
     try:
         assert code == 0, out
-        hold_lock(runner, lock, 15)
+        if lock.endswith("lists/lock"):
+            # `apt update` is the step's first apt command, so it meets the lock at once.
+            hold_lock(runner, lock, 15)
+        else:
+            # `apt update` runs first and can outlast any fixed hold, so the lock is kept
+            # until `apt install` has started.
+            hold_lock(runner, lock, 10, until_apt="install")
         started = time.monotonic()
         code, out = step(runner, "install_tuned.sh", {"APT_LOCK_RETRY_INTERVAL_SECONDS": "2"})
         waited = time.monotonic() - started
@@ -254,10 +262,12 @@ def test_install_waits_for_a_held_apt_lock(base_image, lock):
         if lock.endswith("lists/lock"):
             assert RETRIED in out, out
         else:
-            # `apt install` takes the dpkg lock even with nothing to install, so succeeding
-            # means it got the lock after the holder let go. With no retry logged, apt waited
-            # for it itself. (apt 2.8 also prints "Waiting for cache lock"; apt 2.6 does not
-            # without a terminal, so that line is not asserted.)
+            assert sh(runner, f"test -e {APT_SEEN}") == 0, f"`apt install` never ran:\n{out}"
+            # `apt install` takes the dpkg lock even with nothing to install, and it started
+            # while the lock was held, so succeeding means it got the lock after the holder
+            # let go. With no retry logged, apt waited for it itself. (apt 2.8 also prints
+            # "Waiting for cache lock"; apt 2.6 does not without a terminal, so that line is
+            # not asserted.)
             assert RETRIED not in out, f"apt did not wait for the dpkg lock itself:\n{out}"
     finally:
         runner.cleanup()
