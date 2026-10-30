@@ -20,6 +20,14 @@ example is not itself picked up as release notes):
     - Notable behavior change worth calling out.
 -->
 
+## 0.11.1
+
+Built on tuned 1.4.1. Each apt call in tuned's install and uninstall steps now waits up to 10
+minutes for an apt or dpkg lock another process holds, instead of failing at once
+(`APT_LOCK_WAIT_SECONDS`, default `600`). This matters where `nvidia-tuned` applies alongside
+`nvidia-setup-kernel`, which nvidia-setup 0.9.0 and the reordered AICR setup chain do on a
+fresh node.
+
 ## 0.11.0
 
 ### SUSE support
