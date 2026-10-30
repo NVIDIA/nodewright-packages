@@ -60,7 +60,8 @@ install_efa() {
   tar -xf "aws-efa-installer-${EFA_VERSION}.tar.gz"
   cd aws-efa-installer
 
-  ./efa_installer.sh -y
+  # The installer runs apt itself, so it waits on apt and dpkg locks the same way.
+  apt_lock_retry ./efa_installer.sh -y
   echo "EFA installation completed successfully"
 }
 

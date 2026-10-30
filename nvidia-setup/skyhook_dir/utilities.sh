@@ -84,19 +84,66 @@ dpkg_needs_configure() {
   return 1
 }
 
+# How long, in total, one apt or dpkg command waits on a lock another process
+# holds: apt-daily or unattended-upgrades, or another NodeWright package on the
+# node (nvidia-tuned's apply runs alongside nvidia-setup-kernel). Seconds.
+APT_LOCK_WAIT_SECONDS="${APT_LOCK_WAIT_SECONDS:-600}"
+# The pause between attempts when a run fails on a held lock. Seconds.
+APT_LOCK_RETRY_INTERVAL_SECONDS="${APT_LOCK_RETRY_INTERVAL_SECONDS:-10}"
+
+# Run an apt or dpkg command, waiting up to APT_LOCK_WAIT_SECONDS in total for
+# locks another process holds. Two layers, because apt waits for only one of
+# them itself:
+#   1. apt waits for the dpkg frontend lock when DPkg::Lock::Timeout is set. It
+#      is passed through APT_CONFIG, set to the time left in the budget, so it
+#      also reaches apt run by a child such as the EFA installer.
+#   2. Nothing waits for the lists lock `apt-get update` takes, and dpkg run
+#      directly does not wait either. A run that fails on a held lock ("Could
+#      not get lock", "locked by another process") is retried until the budget
+#      is spent.
+# stderr is captured to recognise a lock failure and replayed when the attempt
+# ends; stdout still streams.
+# Usage: apt_lock_retry <command> [args...]
+apt_lock_retry() {
+  local deadline remaining status errfile conf
+
+  deadline=$(( $(date +%s) + APT_LOCK_WAIT_SECONDS ))
+  errfile="$(mktemp)"
+  conf="$(mktemp)"
+  while :; do
+    remaining=$(( deadline - $(date +%s) ))
+    [ "${remaining}" -gt 0 ] || remaining=1
+    printf 'DPkg::Lock::Timeout "%s";\n' "${remaining}" > "${conf}"
+
+    status=0
+    APT_CONFIG="${APT_CONFIG:-${conf}}" "$@" 2> "${errfile}" || status=$?
+    cat "${errfile}" >&2
+
+    if [ "${status}" -eq 0 ] \
+      || ! grep -qE 'Could not get lock|locked by another process' "${errfile}" \
+      || [ "$(date +%s)" -ge "${deadline}" ]; then
+      rm -f "${errfile}" "${conf}"
+      return "${status}"
+    fi
+    echo "nvidia-setup: '$*' found an apt or dpkg lock held by another process; retrying in ${APT_LOCK_RETRY_INTERVAL_SECONDS}s" >&2
+    sleep "${APT_LOCK_RETRY_INTERVAL_SECONDS}"
+  done
+}
+
 # Run an apt (or dpkg) command, repairing an interrupted dpkg state and retrying
 # once when that is why it failed. Wrap every apt invocation with this: a node
 # that was interrupted mid-install fails the next step that touches apt, which
-# is rarely the step that caused it.
+# is rarely the step that caused it. Each attempt waits for locks another process
+# holds (apt_lock_retry).
 #
-# The retry decision comes from the dpkg database rather than from grepping
+# The repair decision comes from the dpkg database rather than from grepping
 # apt's output, so an unrelated failure that merely mentions dpkg is propagated
-# untouched, and output is left to stream instead of being captured, so a long
-# `apt-get upgrade` still reports progress as it runs.
+# untouched, and stdout is left to stream, so a long `apt-get upgrade` still
+# reports progress as it runs.
 # Usage: apt_with_dpkg_heal apt-get update
 apt_with_dpkg_heal() {
   local status=0
-  "$@" || status=$?
+  apt_lock_retry "$@" || status=$?
 
   if [ "${status}" -eq 0 ]; then
     return 0
@@ -108,7 +155,7 @@ apt_with_dpkg_heal() {
 
   echo "nvidia-setup: '$*' failed and dpkg is in an interrupted state; repairing and retrying once..." >&2
   dpkg_repair || return "${status}"
-  "$@"
+  apt_lock_retry "$@"
 }
 
 # Remove the DKMS tree entry that a postinst reported as already present.
@@ -200,7 +247,7 @@ dpkg_repair() {
   local output
   local status=0
 
-  output="$(dpkg --configure -a 2>&1)" || status=$?
+  output="$(apt_lock_retry dpkg --configure -a 2>&1)" || status=$?
   printf '%s\n' "${output}"
 
   if [ "${status}" -eq 0 ]; then
@@ -221,7 +268,7 @@ dpkg_repair() {
     dkms_remove_stale "${entry}" || return "${status}"
   done
 
-  dpkg --configure -a
+  apt_lock_retry dpkg --configure -a
 }
 
 # Report whether the EFA driver is genuinely installed.

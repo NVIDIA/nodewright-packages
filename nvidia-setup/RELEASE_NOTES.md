@@ -89,6 +89,21 @@ Not covered: a node already left with a half-configured 7.0 kernel by `unattende
 that path has not been exercised. Such a node may still need the half-configured kernel
 packages purged by hand.
 
+### apt and dpkg wait for locks another process holds
+
+Every apt and dpkg call in the package, and the EFA installer's own apt calls, now waits up to
+10 minutes in total for a lock another process holds, instead of failing at once. On a fresh
+node `nvidia-tuned` can run its apply alongside `nvidia-setup-kernel`, and both use apt; on an
+H100 test the kernel package failed on `Could not get lock` twice per node and only
+succeeded on its last Job retry. `apt-daily` and `unattended-upgrades` take the same locks at
+boot.
+
+apt waits for the dpkg frontend lock itself when given `DPkg::Lock::Timeout`, which the package
+passes through `APT_CONFIG` set to the time left. Nothing waits for the lists lock `apt-get
+update` takes, and dpkg run directly does not wait either, so a run that fails on a held lock
+is retried every 10 seconds until the budget is spent. `APT_LOCK_WAIT_SECONDS` (default `600`)
+sets the budget.
+
 ### The EFA step now checks the efa driver version dkms reports
 
 `install-efa-driver.sh` and `install_efa_driver_check.sh` used to accept any installed EFA,
