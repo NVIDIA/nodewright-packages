@@ -18,6 +18,7 @@
 
 set -e
 EFA_VERSION="${1:?EFA version required}"
+EFA_DRIVER_VERSION="${2:?EFA driver version required}"
 export DEBIAN_FRONTEND=noninteractive
 
 # Load helpers (nvidia-setup skyhook_dir layout)
@@ -32,11 +33,23 @@ else
   exit 1
 fi
 
-# Skip only when EFA is actually installed (same criteria as
-# install_efa_driver_check.sh). Anything short of that is a reason to install,
-# not a reason to skip.
-if efa_driver_installed; then
-  echo "EFA already installed, skipping."
+# A run that died partway, such as an OOM-killed DKMS build, leaves efa
+# half-configured with its module already added to the DKMS tree. The
+# installer's own apt calls then fail on `DKMS tree already contains` every
+# time, and apt_with_dpkg_heal never sees it because nothing it wraps has failed
+# yet. So repair first: dpkg_repair clears that entry and finishes the
+# interrupted configure, which can complete the efa install outright.
+if dpkg_needs_configure; then
+  echo "dpkg has unfinished package configuration; repairing it before the EFA install..."
+  dpkg_repair
+fi
+
+# Skip only when EFA is actually installed at the driver version this installer
+# ships or newer (same criteria as install_efa_driver_check.sh). Anything short
+# of that is a reason to install, not a reason to skip. Re-running over an older
+# install upgrades it in place.
+if efa_driver_current "${EFA_DRIVER_VERSION}"; then
+  echo "EFA driver ${EFA_DRIVER_VERSION} or newer already installed, skipping."
   exit 0
 fi
 
@@ -46,8 +59,9 @@ install_efa() {
   curl -sSfO "https://efa-installer.amazonaws.com/aws-efa-installer-${EFA_VERSION}.tar.gz"
   tar -xf "aws-efa-installer-${EFA_VERSION}.tar.gz"
   cd aws-efa-installer
-  
-  ./efa_installer.sh -y
+
+  # The installer runs apt itself, so it waits on apt and dpkg locks the same way.
+  apt_lock_retry ./efa_installer.sh -y
   echo "EFA installation completed successfully"
 }
 

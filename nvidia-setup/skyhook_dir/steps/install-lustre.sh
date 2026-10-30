@@ -79,7 +79,7 @@ build_from_source() {
     fi
   done
   if [ -z "${SKIP_SYSTEM_OPERATIONS:-}" ]; then
-  apt_with_dpkg_heal apt-get install -y -o DPkg::Lock::Timeout=60 --no-install-recommends \
+  apt_with_dpkg_heal apt-get install -y --no-install-recommends \
     -o "Dpkg::Options::=--force-confdef" -o "Dpkg::Options::=--force-confold" "${BUILD_DEPS[@]}"
   else
     echo "Skipping build dependencies install for test environment."

@@ -1,7 +1,7 @@
 {
   "schema_version": "v1",
   "package_name": "nvidia_setup",
-  "package_version": "0.8.1",
+  "package_version": "0.9.0",
   "expected_config_files": ["service", "accelerator"],
   "modes": {
     "apply": [
@@ -19,6 +19,30 @@
     "apply-check": [
       {
         "name": "apply-check",
+        "path": "apply_check.sh",
+        "arguments": [],
+        "returncodes": [0],
+        "on_host": true,
+        "env": {},
+        "idempotence": true,
+        "upgrade_step": false
+      }
+    ],
+    "upgrade": [
+      {
+        "name": "upgrade",
+        "path": "apply.sh",
+        "arguments": [],
+        "returncodes": [0],
+        "on_host": true,
+        "env": {},
+        "idempotence": true,
+        "upgrade_step": false
+      }
+    ],
+    "upgrade-check": [
+      {
+        "name": "upgrade-check",
         "path": "apply_check.sh",
         "arguments": [],
         "returncodes": [0],

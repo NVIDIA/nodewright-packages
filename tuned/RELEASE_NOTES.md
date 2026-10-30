@@ -20,6 +20,22 @@ example is not itself picked up as release notes):
     - Notable behavior change worth calling out.
 -->
 
+## 1.4.1
+
+On Debian and Ubuntu, each apt call in `install_tuned.sh` and `uninstall_tuned.sh` now waits up
+to 10 minutes for an apt or dpkg lock another process holds. Before, a held lock skipped or
+failed `apt update` at once and failed the other apt calls within two minutes.
+`nvidia-tuned`'s apply can run alongside `nvidia-setup-kernel` on a fresh node, and both use
+apt; `apt-daily` and `unattended-upgrades` take the same locks at boot.
+
+- `apt update` used to treat a held lists lock as an index failure: with the default
+  `APT_ALLOW_INDEX_FAILURE=true` it skipped the refresh and went on. It now waits for the lock
+  first. apt has no wait for this lock, so a run that fails on it is retried.
+- `apt install` used to wait 60 seconds for the dpkg lock. It now waits for the rest of the
+  budget, through `DPkg::Lock::Timeout` passed with `-o`.
+- `APT_LOCK_WAIT_SECONDS` (default `600`) sets each call's budget, in whole seconds from `0` to `999999`.
+  Any other value fails the apt step.
+
 ## 1.4.0
 
 Adds SUSE Linux Enterprise Server and openSUSE support.

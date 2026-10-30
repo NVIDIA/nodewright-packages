@@ -5,12 +5,22 @@
 
 All notable changes to this package will be documented in this file.
 
+## [0.9.0] - 2026-10-30
+
+### New Features
+
+- *(nvidia-setup)* Move EKS defaults to kernel 7.0.0-1014-aws and EFA 1.51.0 
+
+
 ## [0.8.1] - 2026-10-30
 
 ### Bug Fixes
 
 - *(nvidia-setup)* Skip apt when already running the exact target kernel 
 
+### Other Tasks
+
+- *(nvidia-setup)* 0.8.1 changelog
 
 ## [0.8.0] - 2026-09-16
 

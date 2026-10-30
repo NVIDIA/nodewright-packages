@@ -43,7 +43,7 @@ fi
 
 run_eks_h100() {
   "${STEPS_DIR}/upgrade.sh"
-  "${STEPS_DIR}/install-efa-driver.sh" "${EFA}"
+  "${STEPS_DIR}/install-efa-driver.sh" "${EFA}" "${EFA_DRIVER}"
   "${STEPS_DIR}/install_ofi.sh"
   # "${STEPS_DIR}/install-lustre.sh" "${KERNEL}" "${LUSTRE}"
   "${STEPS_DIR}/configure-chrony.sh"
@@ -52,7 +52,7 @@ run_eks_h100() {
 
 run_eks_gb200() {
   "${STEPS_DIR}/upgrade.sh"
-  "${STEPS_DIR}/install-efa-driver.sh" "${EFA}"
+  "${STEPS_DIR}/install-efa-driver.sh" "${EFA}" "${EFA_DRIVER}"
   "${STEPS_DIR}/install_ofi.sh"
   # "${STEPS_DIR}/install-lustre.sh" "${KERNEL}" "${LUSTRE}"
   "${STEPS_DIR}/configure-chrony.sh"
@@ -61,7 +61,7 @@ run_eks_gb200() {
 
 run_eks_gb300() {
   "${STEPS_DIR}/upgrade.sh"
-  "${STEPS_DIR}/install-efa-driver.sh" "${EFA}"
+  "${STEPS_DIR}/install-efa-driver.sh" "${EFA}" "${EFA_DRIVER}"
   "${STEPS_DIR}/install_ofi.sh"
   # "${STEPS_DIR}/install-lustre.sh" "${KERNEL}" "${LUSTRE}"
   "${STEPS_DIR}/configure-chrony.sh"

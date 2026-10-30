@@ -5,12 +5,22 @@
 
 All notable changes to this package will be documented in this file.
 
+## [1.4.1] - 2026-10-30
+
+### Bug Fixes
+
+- *(tuned)* Wait for apt and dpkg locks another process holds 
+
+
 ## [1.4.0] - 2026-10-19
 
 ### New Features
 
 - *(tuned)* Add SUSE Linux Enterprise and openSUSE support 
 
+### Other Tasks
+
+- *(tuned/1.4.0)* Add changelog for 1.4.0
 
 ## [1.3.2] - 2026-08-14
 
