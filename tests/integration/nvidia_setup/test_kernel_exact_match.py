@@ -124,6 +124,8 @@ def test_kernel_without_modules_extra_package(scenario):
         "installs_kernel_without_efa_on_node_without_efa",
         "skips_efa_and_apt_on_target",
         "efa_upgrade_failure_stops_kernel_install",
+        # An OOM-killed EFA build leaves efa half-configured in the DKMS tree.
+        "recovers_from_an_interrupted_efa_install",
     ],
 )
 def test_efa_is_brought_current_before_a_kernel_install(scenario):

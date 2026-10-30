@@ -72,6 +72,18 @@ installed kernel packages. Size the kernel package's resources for an EFA build.
 running the exact target kernel still skips apt entirely, EFA included, and a node with no efa
 module skips the EFA upgrade.
 
+Measured on a GB300 (`p6e-gb300r.36xlarge`) moving from 0.8.0: with the kernel package limited to
+4 CPU / 8Gi, the memory cgroup OOM-killed the compilers in efa 3.3.1's kernel-feature probes
+(they run one per host core, 140 here), efa misdetected the kernel API, and its build failed at
+`efa_main.c: 'ib_alloc_device' undeclared`. The same build passes in a full-setup package sized
+8 CPU / 16Gi. Give the kernel package at least the memory of the full-setup package.
+
+A build that dies partway leaves efa half-configured with its module already added to the DKMS
+tree, and the installer's own apt calls then fail on `DKMS tree already contains` on every retry.
+`install-efa-driver.sh` now repairs dpkg before it runs the installer, which removes that entry
+and finishes the interrupted install, so a retry with enough memory recovers on its own. Until
+then the node has no efa module loaded: the installer unloads the old one before building.
+
 Not covered: a node already left with a half-configured 7.0 kernel by `unattended-upgrades`
 (the aicr#2870 state). The EFA installer's own apt calls meet the same broken dpkg state, and
 that path has not been exercised. Such a node may still need the half-configured kernel

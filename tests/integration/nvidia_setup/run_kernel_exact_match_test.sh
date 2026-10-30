@@ -77,15 +77,28 @@ case "${1:-}" in
 esac
 EOF
 
-# Real apt refuses to run while any package is parked mid-transaction, and
-# installs nothing when one requested package is not in the archive. A
-# successful install records its packages, so the `dpkg --list` that follows
-# sees them.
+# Exits 0 when any package's latest recorded state is mid-transaction. The
+# stubs below, and the fake EFA installer, share it.
+cat > "${STUB_BIN}/pending_packages" <<'EOF'
+#!/usr/bin/env bash
+awk '{ s[$1] = $2 } END { for (p in s) if (s[p] ~ /^(half-installed|unpacked|half-configured)$/) found = 1; exit !found }' "${STATUS_FILE}"
+EOF
+
+# Real apt refuses every command, update included, while dpkg's journal says a
+# transaction was interrupted. A package merely parked half-configured does not
+# stop `apt-get update`, but an install fails on it, because apt configures it
+# first and its postinst fails again. apt also installs nothing when one
+# requested package is not in the archive. A successful install records its
+# packages, so the `dpkg --list` that follows sees them.
 cat > "${STUB_BIN}/apt-get" <<'EOF'
 #!/usr/bin/env bash
 echo "apt-get $*" >> "${CALL_LOG}"
-if awk '$2 ~ /^(half-installed|unpacked|half-configured)$/ { found = 1 } END { exit !found }' "${STATUS_FILE}"; then
+if ls "${DPKG_ADMINDIR}/updates" 2>/dev/null | grep -qE '^[0-9]+$'; then
   echo "E: dpkg was interrupted, you must manually run 'dpkg --configure -a' to correct the problem." >&2
+  exit 100
+fi
+if [ "${1:-}" = "install" ] && pending_packages; then
+  echo "E: Sub-process /usr/bin/dpkg returned an error code (1)" >&2
   exit 100
 fi
 if [ "${1:-}" = "install" ]; then
@@ -132,7 +145,11 @@ exit 0
 EOF
 
 # `dpkg --configure -a` fails the way it did on the aicr#2870 nodes: the EFA
-# DKMS build cannot compile against the half-configured 7.0.0 kernel.
+# DKMS build cannot compile against the half-configured 7.0.0 kernel. Before
+# that, a half-configured efa fails while its module is still in the DKMS tree:
+# its postinst adds the module before building it, so a configure killed after
+# the add (an OOM-killed build) leaves an entry the next postinst trips over.
+# With the entry gone, the postinst builds the module and efa is configured.
 cat > "${STUB_BIN}/dpkg" <<'EOF'
 #!/usr/bin/env bash
 echo "dpkg $*" >> "${CALL_LOG}"
@@ -141,7 +158,17 @@ case "${1:-}" in
     awk '$1 ~ /^linux-image-/ { print "ii  " $1 }' "${STATUS_FILE}"
     ;;
   --configure)
-    if awk '$2 ~ /^(half-installed|unpacked|half-configured)$/ { found = 1 } END { exit !found }' "${STATUS_FILE}"; then
+    if [ "$(awk '$1 == "efa" { s = $2 } END { print s }' "${STATUS_FILE}")" = "half-configured" ]; then
+      if grep -q '^efa/' "${DKMS_FILE}"; then
+        echo "Error! DKMS tree already contains: efa-$(sed -n 's#^efa/\([^,:]*\).*#\1#p' "${DKMS_FILE}" | head -n1)"
+        echo "You cannot add the same module/version combo more than once."
+        echo "dpkg: error processing package efa (--configure):"
+        exit 1
+      fi
+      echo "efa installed" >> "${STATUS_FILE}"
+      echo "efa/3.3.1, $(uname -r), $(uname -m): installed" > "${DKMS_FILE}"
+    fi
+    if pending_packages; then
       echo "kcompat.h:274: error: 'struct ib_umem' has no member named 'nmap'" >&2
       echo "dpkg: error processing package linux-image-7.0.0-1012-aws (--configure)" >&2
       exit 1
@@ -186,7 +213,13 @@ EOF
 cat > "${STUB_BIN}/dkms" <<'EOF'
 #!/usr/bin/env bash
 echo "dkms $*" >> "${CALL_LOG}"
-[ "${1:-}" = "status" ] && cat "${DKMS_FILE}"
+case "${1:-}" in
+  status) cat "${DKMS_FILE}" ;;
+  remove)
+    grep -v "^${2}[,:]" "${DKMS_FILE}" > "${DKMS_FILE}.new" || true
+    mv "${DKMS_FILE}.new" "${DKMS_FILE}"
+    ;;
+esac
 exit 0
 EOF
 
@@ -208,6 +241,11 @@ cat > aws-efa-installer/efa_installer.sh <<'INSTALLER'
 #!/usr/bin/env bash
 echo "efa_installer.sh $*" >> "${CALL_LOG}"
 if [ "${FAKE_EFA_INSTALLER_FAILS:-false}" = "true" ]; then
+  echo "Error: Failed to install packages." >&2
+  exit 1
+fi
+if [ "$(awk '$1 == "efa" { s = $2 } END { print s }' "${STATUS_FILE}")" = "half-configured" ]; then
+  echo "Error! DKMS tree already contains: efa-3.3.1" >&2
   echo "Error: Failed to install packages." >&2
   exit 1
 fi
@@ -480,6 +518,22 @@ case "${SCENARIO}" in
     assert_install_requested $(folded_kernel_packages "7.0.0-1014-aws")
     grep -qE '^apt-get .*install .*linux-modules-extra-' "${CALL_LOG}" \
       && fail "apt-get must not be asked for a linux-modules-extra the archive does not have"
+    ;;
+
+  # A GB300 node on the 0.9.0 upgrade: the kernel step's EFA upgrade was
+  # OOM-killed inside efa's DKMS build, leaving efa half-configured with
+  # efa/3.3.1 added to the DKMS tree. `apt-get update` does not mind, so the
+  # retry reaches the EFA step, where the installer's apt fails on the entry
+  # every time. The step has to repair dpkg first, which finishes that install.
+  recovers_from_an_interrupted_efa_install)
+    gb_node_with_efa_3_0
+    package_state half-configured efa
+    echo "efa/3.3.1: added" > "${DKMS_FILE}"
+    run_install_kernel || fail "install_kernel.sh exited non-zero"
+    grep -q '^dkms remove efa/3.3.1 --all' "${CALL_LOG}" || fail "the stale DKMS entry must be removed"
+    efa_installer_ran && fail "the repair finishes the efa install, so the installer must not run"
+    # shellcheck disable=SC2046
+    assert_install_requested $(folded_kernel_packages "7.0.0-1014-aws-64k")
     ;;
 
   installs_kernel_without_reinstalling_current_efa)

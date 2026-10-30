@@ -33,6 +33,17 @@ else
   exit 1
 fi
 
+# A run that died partway, such as an OOM-killed DKMS build, leaves efa
+# half-configured with its module already added to the DKMS tree. The
+# installer's own apt calls then fail on `DKMS tree already contains` every
+# time, and apt_with_dpkg_heal never sees it because nothing it wraps has failed
+# yet. So repair first: dpkg_repair clears that entry and finishes the
+# interrupted configure, which can complete the efa install outright.
+if dpkg_needs_configure; then
+  echo "dpkg has unfinished package configuration; repairing it before the EFA install..."
+  dpkg_repair
+fi
+
 # Skip only when EFA is actually installed at the driver version this installer
 # ships or newer (same criteria as install_efa_driver_check.sh). Anything short
 # of that is a reason to install, not a reason to skip. Re-running over an older
