@@ -81,11 +81,14 @@ def require_apt(base_image):
         pytest.skip("apt lock waiting only applies to apt-based images")
 
 
-# Holds one of apt's locks with an fcntl lock, the kind apt and dpkg take.
+# Holds one of apt's locks with an fcntl lock, the kind apt and dpkg take, and creates
+# LOCK_HELD once it has the lock.
+LOCK_HELD = "/tmp/lock-held"
 LOCK_HOLDER = (
     "python3 -c 'import fcntl, os, sys, time; "
     "fd = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT, 0o640); "
-    "fcntl.lockf(fd, fcntl.LOCK_EX); time.sleep(float(sys.argv[2]))' {lock} {seconds}"
+    "fcntl.lockf(fd, fcntl.LOCK_EX); open(sys.argv[3], \"w\").close(); "
+    "time.sleep(float(sys.argv[2]))' {lock} {seconds} " + LOCK_HELD
 )
 
 
@@ -223,7 +226,8 @@ def rerun_under_held_lock(runner, lock, seconds, env):
     runner.container.exec_run(
         ["/bin/bash", "-c", LOCK_HOLDER.format(lock=lock, seconds=seconds)], detach=True
     )
-    assert sh(runner, "sleep 1") == 0
+    held = f"for _ in $(seq 100); do [ -e {LOCK_HELD} ] && exit 0; sleep 0.1; done; exit 1"
+    assert sh(runner, held) == 0, f"the lock holder did not take {lock} within 10s"
 
     started = time.monotonic()
     code, out = step(runner, "install_tuned.sh", env)
@@ -253,6 +257,10 @@ def test_install_waits_for_a_held_apt_lock(base_image, lock):
         if lock.endswith("lists/lock"):
             assert RETRIED in out, out
         else:
+            # `apt install` takes the dpkg lock even with nothing to install, so succeeding
+            # means it got the lock after the holder let go. With no retry logged, apt waited
+            # for it itself. (apt 2.8 also prints "Waiting for cache lock"; apt 2.6 does not
+            # without a terminal, so that line is not asserted.)
             assert RETRIED not in out, f"apt did not wait for the dpkg lock itself:\n{out}"
     finally:
         runner.cleanup()
@@ -268,14 +276,17 @@ def test_install_stops_waiting_when_the_budget_is_spent(base_image):
     runner, code, out = start(base_image, "install_tuned.sh")
     try:
         assert code == 0, out
-        code, out, _ = rerun_under_held_lock(
+        code, out, waited = rerun_under_held_lock(
             runner,
             "/var/lib/dpkg/lock-frontend",
-            40,
+            60,
             {"APT_LOCK_WAIT_SECONDS": "4", "APT_LOCK_RETRY_INTERVAL_SECONDS": "2"},
         )
-        assert code != 0, f"waited out a 40s lock on a 4s budget:\n{out}"
+        assert code != 0, f"waited out a 60s lock on a 4s budget:\n{out}"
         assert "Unable to acquire the dpkg frontend lock" in out, out
+        # The rerun also refreshes the apt index over the network first, so this bound is
+        # loose: it catches a budget that is not applied, not a wait a few seconds long.
+        assert waited < 40, f"gave up after {waited:.0f}s on a 4s budget:\n{out}"
     finally:
         runner.cleanup()
 

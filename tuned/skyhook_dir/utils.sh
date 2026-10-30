@@ -150,12 +150,14 @@ APT_LOCK_RETRY_INTERVAL_SECONDS="${APT_LOCK_RETRY_INTERVAL_SECONDS:-10}"
 #      apt-get and EFA installer runs it wraps.
 #   2. Nothing waits for the lists lock `apt update` takes. A run that fails on
 #      a held lock ("Could not get lock", "locked by another process") is
-#      retried until the budget is spent.
+#      retried until the budget is spent; the last pause is cut short at the
+#      deadline.
 # stderr is captured to recognise a lock failure and replayed when the attempt
-# ends; stdout still streams.
+# ends; stdout still streams. apt runs with LC_ALL=C so its messages are the
+# English ones matched here whatever the node's locale.
 # Usage: apt_lock_retry apt|apt-get <args...>
 apt_lock_retry() {
-    local deadline remaining status errfile
+    local deadline remaining now pause status errfile
 
     if [[ ! "${APT_LOCK_WAIT_SECONDS}" =~ ^[0-9]{1,6}$ ]]; then
         echo "tuned: APT_LOCK_WAIT_SECONDS must be whole seconds from 0 to 999999, got '${APT_LOCK_WAIT_SECONDS}'" >&2
@@ -174,16 +176,19 @@ apt_lock_retry() {
         [[ "${remaining}" -gt 0 ]] || remaining=1
 
         status=0
-        "$1" -o "DPkg::Lock::Timeout=${remaining}" "${@:2}" 2> "${errfile}" || status=$?
+        LC_ALL=C "$1" -o "DPkg::Lock::Timeout=${remaining}" "${@:2}" 2> "${errfile}" || status=$?
         cat "${errfile}" >&2
 
+        now="$(date +%s)"
         if [[ "${status}" -eq 0 ]] \
             || ! grep -qE 'Could not get lock|locked by another process' "${errfile}" \
-            || [[ "$(date +%s)" -ge "${deadline}" ]]; then
+            || [[ "${now}" -ge "${deadline}" ]]; then
             rm -f "${errfile}"
             return "${status}"
         fi
-        echo "tuned: '$*' found an apt or dpkg lock held by another process; retrying in ${APT_LOCK_RETRY_INTERVAL_SECONDS}s" >&2
-        sleep "${APT_LOCK_RETRY_INTERVAL_SECONDS}"
+        pause="${APT_LOCK_RETRY_INTERVAL_SECONDS}"
+        [[ $(( deadline - now )) -ge "${pause}" ]] || pause=$(( deadline - now ))
+        echo "tuned: '$*' found an apt or dpkg lock held by another process; retrying in ${pause}s" >&2
+        sleep "${pause}"
     done
 }
