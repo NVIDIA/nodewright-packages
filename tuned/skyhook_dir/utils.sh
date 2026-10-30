@@ -128,3 +128,50 @@ tuned_list_has_profile() {
 tuned_profile_exists() {
     tuned-adm list | tuned_list_has_profile "$1"
 }
+
+# How long, in total, one apt or dpkg command waits on a lock another process
+# holds: apt-daily or unattended-upgrades, or another NodeWright package on the
+# node (nvidia-setup-kernel's apply runs alongside nvidia-tuned's). Seconds.
+APT_LOCK_WAIT_SECONDS="${APT_LOCK_WAIT_SECONDS:-600}"
+# The pause between attempts when a run fails on a held lock. Seconds.
+APT_LOCK_RETRY_INTERVAL_SECONDS="${APT_LOCK_RETRY_INTERVAL_SECONDS:-10}"
+
+# Run an apt or dpkg command, waiting up to APT_LOCK_WAIT_SECONDS in total for
+# locks another process holds. The same helper as nvidia-setup's
+# (skyhook_dir/utilities.sh); the packages ship as separate images, so it is
+# copied rather than shared. Two layers, because apt waits for only one lock
+# itself:
+#   1. apt waits for the dpkg frontend lock when DPkg::Lock::Timeout is set. It
+#      is passed through APT_CONFIG, set to the time left in the budget.
+#   2. Nothing waits for the lists lock `apt update` takes, and dpkg run
+#      directly does not wait either. A run that fails on a held lock ("Could
+#      not get lock", "locked by another process") is retried until the budget
+#      is spent.
+# stderr is captured to recognise a lock failure and replayed when the attempt
+# ends; stdout still streams.
+# Usage: apt_lock_retry <command> [args...]
+apt_lock_retry() {
+    local deadline remaining status errfile conf
+
+    deadline=$(( $(date +%s) + APT_LOCK_WAIT_SECONDS ))
+    errfile="$(mktemp)"
+    conf="$(mktemp)"
+    while :; do
+        remaining=$(( deadline - $(date +%s) ))
+        [ "${remaining}" -gt 0 ] || remaining=1
+        printf 'DPkg::Lock::Timeout "%s";\n' "${remaining}" > "${conf}"
+
+        status=0
+        APT_CONFIG="${APT_CONFIG:-${conf}}" "$@" 2> "${errfile}" || status=$?
+        cat "${errfile}" >&2
+
+        if [ "${status}" -eq 0 ] \
+            || ! grep -qE 'Could not get lock|locked by another process' "${errfile}" \
+            || [ "$(date +%s)" -ge "${deadline}" ]; then
+            rm -f "${errfile}" "${conf}"
+            return "${status}"
+        fi
+        echo "tuned: '$*' found an apt or dpkg lock held by another process; retrying in ${APT_LOCK_RETRY_INTERVAL_SECONDS}s" >&2
+        sleep "${APT_LOCK_RETRY_INTERVAL_SECONDS}"
+    done
+}

@@ -19,6 +19,10 @@
 
 set -euxo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=utils.sh
+source "${SCRIPT_DIR}/utils.sh"
+
 source /etc/os-release
 case "${ID}" in
     ubuntu* | debian*)
@@ -30,13 +34,15 @@ case "${ID}" in
         # Tolerating that is safe because the `apt install` below is
         # unconditional and still fails loudly if tuned is genuinely
         # unavailable. Set APT_ALLOW_INDEX_FAILURE=false on the Skyhook custom
-        # resource's package env to restore strict behavior.
+        # resource's package env to restore strict behavior. A lock another
+        # process holds is waited out first (apt_lock_retry), so it is not
+        # mistaken for an index failure.
         if [[ "${APT_ALLOW_INDEX_FAILURE:-true}" == "true" ]]; then
-            apt update -y || echo "WARN: apt update reported errors; continuing (APT_ALLOW_INDEX_FAILURE=true)" >&2
+            apt_lock_retry apt update -y || echo "WARN: apt update reported errors; continuing (APT_ALLOW_INDEX_FAILURE=true)" >&2
         else
-            apt update -y
+            apt_lock_retry apt update -y
         fi
-        apt install -o DPKG::Lock::Timeout=60 -y tuned
+        apt_lock_retry apt install -y tuned
     ;;
     centos* | redhat* | amzn*)
         yum update -y

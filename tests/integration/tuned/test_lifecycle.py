@@ -25,6 +25,7 @@ script. systemctl is replaced by the nvidia_tuned suite's test double, because
 containers have no systemd.
 """
 
+import time
 from pathlib import Path
 
 import pytest
@@ -73,6 +74,19 @@ def sh(runner, command):
 def require_zypper(base_image):
     if "suse" not in base_image:
         pytest.skip("zypper exit-code handling only applies to SUSE images")
+
+
+def require_apt(base_image):
+    if not base_image.startswith(("ubuntu", "debian")):
+        pytest.skip("apt lock waiting only applies to apt-based images")
+
+
+# Holds one of apt's locks for 15s with an fcntl lock, the kind apt and dpkg take.
+LOCK_HOLDER = (
+    "python3 -c 'import fcntl, os, sys, time; "
+    "fd = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT, 0o640); "
+    "fcntl.lockf(fd, fcntl.LOCK_EX); time.sleep(15)' {lock}"
+)
 
 
 def test_install_and_uninstall(base_image):
@@ -196,5 +210,37 @@ def test_uninstall_fails_when_zypper_did_not_remove_tuned(base_image):
             {"FAKE_ZYPPER_EXIT": "106", "FAKE_ZYPPER_SKIP_REAL": "1"},
         )
         assert code == 106, out
+    finally:
+        runner.cleanup()
+
+
+
+@pytest.mark.parametrize(
+    "lock",
+    [
+        # Taken by `apt update`; apt has no wait for it, so the run is retried.
+        "/var/lib/apt/lists/lock",
+        # Taken by `apt install`; apt waits for it itself, given DPkg::Lock::Timeout.
+        "/var/lib/dpkg/lock-frontend",
+    ],
+)
+def test_install_waits_for_a_held_apt_lock(base_image, lock):
+    """A lock another process holds (apt-daily, nvidia-setup's apply) is waited out, not a failure."""
+    require_apt(base_image)
+    runner, code, out = start(base_image, "install_tuned.sh")
+    try:
+        assert code == 0, out
+        assert sh(runner, "apt-get install -y -qq python3-minimal >/dev/null 2>&1") == 0
+        runner.container.exec_run(["/bin/bash", "-c", LOCK_HOLDER.format(lock=lock)], detach=True)
+        assert sh(runner, "sleep 1") == 0
+
+        started = time.monotonic()
+        code, out = step(runner, "install_tuned.sh", {"APT_LOCK_RETRY_INTERVAL_SECONDS": "2"})
+        waited = time.monotonic() - started
+
+        assert code == 0, out
+        assert waited >= 10, f"finished in {waited:.0f}s, before the lock was released:\n{out}"
+        if lock.endswith("lists/lock"):
+            assert "found an apt or dpkg lock held by another process" in out, out
     finally:
         runner.cleanup()

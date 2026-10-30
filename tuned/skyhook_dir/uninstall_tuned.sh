@@ -19,12 +19,16 @@
 
 set -euxo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=utils.sh
+source "${SCRIPT_DIR}/utils.sh"
+
 source /etc/os-release
 case "${ID}" in
     ubuntu* | debian*)
         export DEBIAN_FRONTEND=noninteractive
 
-        apt remove -y tuned && apt autoremove -y
+        apt_lock_retry apt remove -y tuned && apt_lock_retry apt autoremove -y
     ;;
     centos* | redhat* | amzn*)
         yum remove -y tuned
