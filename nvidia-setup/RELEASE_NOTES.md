@@ -115,8 +115,11 @@ registered next to a current one does not, because dkms builds every efa module 
 newly installed kernel.
 
 The `eks-*` defaults pair `EFA=1.51.0` with `EFA_DRIVER=3.3.1`. `NVIDIA_EFA_DRIVER` overrides
-`EFA_DRIVER` the way `NVIDIA_EFA` overrides `EFA`; set both together when changing the installer,
-since a node already at the configured driver or newer skips the installer.
+`EFA_DRIVER` the way `NVIDIA_EFA` overrides `EFA`, and is now required with it: the defaults
+file's `EFA_DRIVER` belongs to its own installer, and pairing it with another installer would
+rerun that installer on every apply and fail apply-check for good. A CR that sets `NVIDIA_EFA`
+alone now fails apply, upgrade and their checks at once, naming `NVIDIA_EFA_DRIVER`. Before
+upgrading, add `NVIDIA_EFA_DRIVER` next to any `NVIDIA_EFA`.
 
 Expect every EKS node set up before 0.9.0, which has efa 3.0.0, to run the EFA installer on its
 next apply. Until it does, apply-check's EFA check fails on such a node.

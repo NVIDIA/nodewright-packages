@@ -93,7 +93,8 @@ def test_apply_check_with_env_overrides(base_image):
             configmaps={"service": "eks", "accelerator": "h100"},
             env_vars={
                 "NVIDIA_KERNEL": "5.15.0-1025-aws",
-                "NVIDIA_EFA": "1.31.0",
+                "NVIDIA_EFA": "1.48.0",
+                "NVIDIA_EFA_DRIVER": "3.0.0",
                 "NVIDIA_LUSTRE": "aws"
             }
         )

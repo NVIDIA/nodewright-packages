@@ -46,7 +46,13 @@ fi
 [ -n "${NVIDIA_EFA_DRIVER:-}" ] && EFA_DRIVER="${NVIDIA_EFA_DRIVER}"
 
 # EFA names the installer; EFA_DRIVER is the efa driver version it ships, which
-# is what dkms reports and what decides whether EFA is current.
+# is what dkms reports and what decides whether EFA is current. The defaults
+# file's EFA_DRIVER belongs to its own installer, so an installer override has
+# to bring the driver version with it.
+if [ -n "${NVIDIA_EFA:-}" ] && [ -z "${NVIDIA_EFA_DRIVER:-}" ]; then
+  echo "NVIDIA_EFA=${NVIDIA_EFA} needs NVIDIA_EFA_DRIVER, the efa driver version that installer ships" >&2
+  exit 1
+fi
 if [ -n "${EFA:-}" ] && [ -z "${EFA_DRIVER:-}" ]; then
   echo "EFA=${EFA} needs EFA_DRIVER, the efa driver version that installer ships (set NVIDIA_EFA_DRIVER)" >&2
   exit 1

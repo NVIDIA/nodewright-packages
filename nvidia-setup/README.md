@@ -46,7 +46,7 @@ Set these on the package spec in the NodeWright Custom Resource (`spec.packages.
 - `NVIDIA_SETUP_APT_UPGRADE` – `true` or `false` (default: `false`). Controls the blanket `apt-get upgrade` in the **upgrade** step. Off by default because that upgrade installs whatever the distro has queued, which can include the container runtime: upgrading containerd restarts it and kills the pod running the step, taking the node NotReady mid-apply and interrupting dpkg partway through a transaction. The targeted `apt-get install` of `curl git wget gpg` in the same step is unaffected and always runs. Set to `true` on nodes where you do want the full distro upgrade.
 - `NVIDIA_KERNEL` – kernel version (overrides default from defaults file)
 - `NVIDIA_EFA` – EFA installer version
-- `NVIDIA_EFA_DRIVER` – the efa driver version that installer ships, as `dkms status efa` reports it (default: `EFA_DRIVER` from the defaults file). EFA counts as current when every efa module dkms has is at least this version. Set it together with `NVIDIA_EFA`: a node already at this driver or newer skips the installer.
+- `NVIDIA_EFA_DRIVER` – the efa driver version that installer ships, as `dkms status efa` reports it (default: `EFA_DRIVER` from the defaults file). EFA counts as current when every efa module dkms has is at least this version. Required whenever `NVIDIA_EFA` is set, since the defaults file's `EFA_DRIVER` describes its own installer; `NVIDIA_EFA` alone fails the step. A node already at this driver or newer skips the installer.
 
 ## BCM Service
 
@@ -190,7 +190,9 @@ spec:
       # Optional overrides:
       env:
         - name: NVIDIA_EFA
-          value: "1.31.0"
+          value: "1.51.0"
+        - name: NVIDIA_EFA_DRIVER
+          value: "3.3.1"
 ```
 
 ## AKS Usage Example
@@ -233,7 +235,7 @@ This replaces the equivalent privileged DaemonSet (`ib-node-config-aks.yaml`) th
 
 ## Adding a New (service, accelerator)
 
-1. Add `skyhook_dir/defaults/<service>-<accelerator>.conf` with `kernel=`, `lustre=`, `efa=`.
+1. Add `skyhook_dir/defaults/<service>-<accelerator>.conf` with `KERNEL=`, `LUSTRE=`, `EFA=`, and `EFA_DRIVER=` (the efa driver version the `EFA` installer ships, as `dkms status efa` reports it).
 2. In `apply.sh`, add a `run_<service>_<accelerator>()` function that runs the step scripts for that combination, and add a case branch: `<service>-<accelerator>) run_<service>_<accelerator> ;;`.
 3. In `apply_check.sh`, add `check_<service>_<accelerator>()` and the same case branch.
 4. Rebuild the image and update this README’s supported combinations table.
