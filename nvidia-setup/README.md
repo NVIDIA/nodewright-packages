@@ -260,7 +260,7 @@ spec:
           - kubelet
 ```
 
-This replaces the equivalent privileged DaemonSet (`ib-node-config-aks.yaml`) that aicr currently ships under `recipes/components/network-operator/manifests/`. From 0.9.0 it also sets the container toolkit device-isolation keys that aicr's `nvidia-toolkit-hardening` DaemonSet sets today ([NVIDIA/aicr#1839](https://github.com/NVIDIA/aicr/issues/1839)).
+This replaces the equivalent privileged DaemonSet (`ib-node-config-aks.yaml`) that aicr currently ships under `recipes/components/network-operator/manifests/`. From 0.10.0 it also sets the container toolkit device-isolation keys that aicr's `nvidia-toolkit-hardening` DaemonSet sets today ([NVIDIA/aicr#1839](https://github.com/NVIDIA/aicr/issues/1839)).
 
 For OCI (OKE), the toolkit hardening needs no interrupt. Set `runtimeRequired: true` so workloads wait for it:
 
@@ -270,7 +270,7 @@ spec:
   packages:
     nvidia-setup:
       image: ghcr.io/nvidia/nodewright-packages/nvidia-setup
-      version: 0.9.0
+      version: 0.10.0
       configMap:
         service: oci
         accelerator: any
