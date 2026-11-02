@@ -34,6 +34,9 @@ case "${COMBINATION}" in
   aks-h100)
     "${STEPS_CHECK_DIR}/check_memlock.sh"
     ;;
+  aks-any|oci-any)
+    echo "post_interrupt_check: ${COMBINATION} declares no interrupt, nothing to check"
+    ;;
   *)
     echo "Unsupported combination: ${COMBINATION}" >&2
     echo "Supported: $(find "${DEFAULTS_DIR}" -maxdepth 1 -name '*.conf' -exec basename {} .conf \; 2>/dev/null | tr '\n' ' ')" >&2
