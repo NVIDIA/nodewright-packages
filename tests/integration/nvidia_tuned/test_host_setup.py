@@ -38,6 +38,7 @@ exit codes reliably but its streamed output is occasionally empty for a short-li
 exec under parallel load, which otherwise shows up as a flaky text assertion.
 """
 
+import re
 import shutil
 import tempfile
 import time
@@ -367,9 +368,12 @@ def stage_netdevs(node: DockerTestRunner, vfs: int, plain: int = 2):
     for i in range(plain):
         cmds.append(f"mkdir -p /tmp/netdevs/eth{i}/device")
     for i in range(vfs):
-        # A VF netdev is identified by a physfn link back to its physical function.
+        # A VF netdev is identified by a physfn link back to its physical function;
+        # it counts once its driver is bound.
         cmds.append(f"mkdir -p /tmp/netdevs/rdma{i}/device")
         cmds.append(f"ln -sfn /tmp/netdevs/eth0/device /tmp/netdevs/rdma{i}/device/physfn")
+        cmds.append(f"ln -sfn /tmp/netdevs/eth0/device /tmp/netdevs/rdma{i}/device/driver")
+        cmds.append(f"echo {100 + i} > /tmp/netdevs/rdma{i}/ifindex")
     assert sh(node, " && ".join(cmds)) == 0
 
 
@@ -395,6 +399,33 @@ def test_wait_rdma_vfs_releases_early_when_a_partial_count_settles(node):
     assert said(node, "settled at 3"), output(node)
 
 
+def test_wait_rdma_vfs_ignores_vfs_without_a_bound_driver(node):
+    """A VF mid-rebind has no driver; it must not count toward the expected total."""
+    stage_netdevs(node, vfs=4)
+    assert sh(node, "rm /tmp/netdevs/rdma3/device/driver") == 0
+
+    rc = wait_helper(node, EXPECTED_VFS=4, TIMEOUT_SECS=60, STABLE_POLLS=3)
+    assert rc == 0, output(node)
+    assert said(node, "settled at 3"), output(node)
+
+
+def test_wait_rdma_vfs_waits_out_a_rebind(node):
+    """A rebind recreates the netdev with a new ifindex, restarting the settle window."""
+    stage_netdevs(node, vfs=4)
+
+    rc = sh(
+        node,
+        f"( sleep 2; echo 200 > /tmp/netdevs/rdma3/ifindex ) & "
+        f"{BUNDLED_HELPER} > {OUTPUT_FILE} 2>&1; wait",
+        env={"SYS_CLASS_NET": "/tmp/netdevs", "POLL_INTERVAL_SECS": "1",
+             "EXPECTED_VFS": "4", "TIMEOUT_SECS": "30", "STABLE_POLLS": "4"},
+    )
+    assert rc == 0, output(node)
+    # Without the rebind the gate releases after 4s; the change at 2s pushes it past 5s.
+    released = re.search(r"Found 4 RDMA VFs after (\d+)s", output(node))
+    assert released and int(released.group(1)) >= 5, output(node)
+
+
 def test_wait_rdma_vfs_exits_zero_when_no_vfs_ever_appear(node):
     """The helper must never block a node from joining the cluster."""
     stage_netdevs(node, vfs=0)
@@ -416,7 +447,7 @@ def test_wait_rdma_vfs_aborts_on_error_but_still_releases_kubelet(node):
 
     Bash suppresses errexit throughout a function invoked as a condition, so calling
     main via `if ! main` would let it run past a failed command instead of aborting.
-    Pointing SYS_CLASS_NET at a path that cannot be globbed makes count_vfs fail.
+    Pointing SYS_CLASS_NET at a path that cannot be globbed makes list_vfs fail.
     """
     stage_netdevs(node, vfs=0)
     assert sh(node, "rm -rf /tmp/netdevs") == 0
