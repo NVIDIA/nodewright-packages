@@ -38,7 +38,6 @@ exit codes reliably but its streamed output is occasionally empty for a short-li
 exec under parallel load, which otherwise shows up as a flaky text assertion.
 """
 
-import re
 import shutil
 import tempfile
 import time
@@ -422,8 +421,8 @@ def test_wait_rdma_vfs_waits_out_a_rebind(node):
     )
     assert rc == 0, output(node)
     # Without the rebind the gate releases after 4s; the change at 2s pushes it past 5s.
-    released = re.search(r"Found 4 RDMA VFs after (\d+)s", output(node))
-    assert released and int(released.group(1)) >= 5, output(node)
+    released_late = f"grep -Eq 'Found 4 RDMA VFs after ([5-9]|[1-9][0-9]+)s' {OUTPUT_FILE}"
+    assert sh(node, released_late) == 0, output(node)
 
 
 def test_wait_rdma_vfs_exits_zero_when_no_vfs_ever_appear(node):
