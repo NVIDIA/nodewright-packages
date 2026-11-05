@@ -1,0 +1,88 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: 'Wait for provenance'
+description: 'Block until a SLSA provenance attestation reads back from the referrers fallback tag, so a following cosign sign appends to the index instead of replacing it.'
+
+# actions/attest-build-provenance and cosign sign both attach to the same OCI
+# referrers fallback tag (sha256-<digest>), because GHCR does not implement the
+# referrers API. Each attach is a read-modify-write of that tag, so when cosign
+# reads it before the attestation is visible it rewrites the index with only its
+# own signature and the provenance referrer is dropped (this is what failed the
+# nvidia-tuned/0.9.0 release build). Call this between the two, so cosign
+# appends to the index instead of replacing it.
+
+inputs:
+  registry:
+    required: true
+    description: 'Registry host, e.g. ghcr.io'
+  repository:
+    required: true
+    description: 'Repository path under the registry; lowercased here, since OCI names must be lowercase'
+  digest:
+    required: true
+    description: 'Digest the provenance attestation was attached to, in sha256:<hex> form'
+  github_token:
+    required: true
+    description: 'Token used to request a registry pull token'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Wait for provenance attestation to be readable
+      shell: bash
+      env:
+        REGISTRY: ${{ inputs.registry }}
+        REPOSITORY: ${{ inputs.repository }}
+        DIGEST: ${{ inputs.digest }}
+        REGISTRY_TOKEN: ${{ inputs.github_token }}
+      run: |
+        set -euo pipefail
+
+        # OCI repository names must be lowercase; image_name carries the
+        # uppercase org from github.repository (NVIDIA/...).
+        repository="${REPOSITORY,,}"
+        fallback_tag="sha256-${DIGEST#sha256:}"
+        manifest_url="https://${REGISTRY}/v2/${repository}/manifests/${fallback_tag}"
+
+        # Standard registry token exchange: the unauthenticated request answers
+        # with the realm and service to ask a pull token for.
+        challenge="$(curl -sSI "${manifest_url}" | grep -i '^www-authenticate:' || true)"
+        token=""
+        if [[ -n "${challenge}" ]]; then
+          realm="$(sed -n 's/.*realm="\([^"]*\)".*/\1/p' <<<"${challenge}")"
+          service="$(sed -n 's/.*service="\([^"]*\)".*/\1/p' <<<"${challenge}")"
+          token="$(curl -sS -u "${GITHUB_ACTOR}:${REGISTRY_TOKEN}" --get \
+            --data-urlencode "service=${service}" \
+            --data-urlencode "scope=repository:${repository}:pull" \
+            "${realm}" | jq -r '.token // .access_token // empty')"
+        fi
+
+        for attempt in $(seq 1 30); do
+          if curl -sS -H "Authorization: Bearer ${token}" \
+              -H 'Accept: application/vnd.oci.image.index.v1+json' \
+              "${manifest_url}" \
+            | jq -e '[.manifests[]?.annotations."dev.sigstore.bundle.predicateType"]
+                     | index("https://slsa.dev/provenance/v1")' > /dev/null 2>&1; then
+            echo "Provenance referrer visible on ${fallback_tag} after ${attempt} attempt(s)."
+            exit 0
+          fi
+          sleep 2
+        done
+
+        echo "ERROR: the provenance attestation for ${DIGEST} was not readable from ${REGISTRY}/${repository} after 60s." >&2
+        echo "Signing now would drop it from the referrers index, so failing instead." >&2
+        exit 1
