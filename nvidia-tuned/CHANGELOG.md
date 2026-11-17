@@ -5,10 +5,19 @@
 
 All notable changes to this package will be documented in this file.
 
+## [0.11.2] - 2026-11-17
+
+### Bug Fixes
+
+- *(nvidia-tuned)* Wait for OCI GB300 RDMA VFs to settle before releasing kubelet 
+
+
 ## [0.11.1] - 2026-10-30
 
-Bump to collect tuned 1.4.1 which has better apt support
+### Other Tasks
 
+- *(nvidia-tuned)* Changelog for 0.11.1
+- *(nvidia-tuned)* Build on tuned 1.4.1
 
 ## [0.11.0] - 2026-10-23
 
