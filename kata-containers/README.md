@@ -11,9 +11,12 @@ The node needs Linux amd64/arm64, systemd, KVM, containerd >= 2.3 and
 `erofs-utils >= 1.8.2`. GPU Operator, NFD, kata-device-provisioner,
 kata-device-plugin, and nydus are not dependencies of this CPU package.
 End-to-end validation covers Ubuntu 26.04 arm64 with kubeadm, K3s, RKE2 and
-k0s. MicroK8s 1.36.2 was tested but its bundled containerd 2.2.3 and erofs-utils
+k0s. On Ubuntu 26.04.1 amd64 with nested KVM, kubeadm and standalone
+containerd 2.4.2, NodeWright validation covers the 4.3.1 to 4.4.0 upgrade,
+configuration reconciliation, uninstall and a fresh 4.4.0 installation.
+MicroK8s 1.36.2 was tested but its bundled containerd 2.2.3 and erofs-utils
 1.4 cannot run this profile. The package rejects containerd < 2.3 before changing
-CRI configuration. amd64 CPU guest execution is not yet validated.
+CRI configuration.
 
 Stock Ubuntu 24.04 is insufficient: its
 [erofs-utils 1.7.1 package](https://packages.ubuntu.com/noble/erofs-utils)
@@ -26,8 +29,8 @@ host-check stage; it does not upgrade the host's erofs-utils or containerd.
 
 ```bash
 docker build kata-containers \
-  -t <your-registry>/nodewright-packages/kata-containers:4.3.1
-docker push <your-registry>/nodewright-packages/kata-containers:4.3.1
+  -t <your-registry>/nodewright-packages/kata-containers:4.4.0
+docker push <your-registry>/nodewright-packages/kata-containers:4.4.0
 ```
 
 The checked-in `config.json` uses the Kata release as `package_version`, so
@@ -36,11 +39,11 @@ checks this version against `/opt/kata-artifacts/VERSION` from the pinned Kata
 image. A mismatch fails the build. There is no independent adapter version.
 
 For a new Kata release, update `config.json` and the pinned Kata image together.
-Release tags follow the repository convention: `kata-containers/4.3.1`. Released
+Release tags follow the repository convention: `kata-containers/4.4.0`. Released
 images use `ghcr.io/nvidia/nodewright-packages/kata-containers:<kata-version>`.
 The deployment manifests below use this official repository.
-The initial package has not been released yet. For a POC before publication,
-build and publish to your own registry and set `image` in the NodeWright manifest.
+For a POC using an unreleased version, build and publish to your own registry
+and set `image` in the NodeWright manifest.
 
 Use the Kata version for the published image tag and NodeWright package
 `version`. Rebuilds of the same release can retain that version and use
@@ -98,7 +101,8 @@ so pausing the NodeWright or beginning a rollout does not remove already
 installed nodes from its scheduling pool. The runtime-required taint gates new
 installations. Provision only supported architectures in that pool; an
 unsupported node must stay tainted and will not be configured by this package.
-Only arm64 has been validated end to end.
+The amd64 tests cover standalone containerd; the distribution coverage
+above was validated on arm64.
 
 `autoTaintNewNodes` is a fallback with a scheduling race before reconciliation.
 It does not re-taint nodes already handled by NodeWright, including after a
