@@ -6,7 +6,15 @@
 Each package in this repo is versioned independently. A release is a git tag of
 the form `<package>/<version>` with no `v` prefix, for example
 `nvidia-setup/0.3.0`. Pushing such a tag triggers `.github/workflows/release.yml`,
-which builds the release notes and creates the GitHub Release.
+which builds the release notes and creates the GitHub Release, and
+`.github/workflows/build_container.yaml`, which publishes the signed image and
+the signed package artifact `<package>-artifact` (see
+[Package Image Locations](artifact-locations.md#package-artifacts)).
+
+GHCR creates a package private on its first push, so the first push of a new
+`<package>-artifact` repository, from a pull request build or a release, leaves
+it private until an organization package admin makes it public. Do that before
+releasing a package's first artifact, or its users cannot pull it.
 
 Package names (the `<package>` component of a tag) must match `[a-z][a-z0-9-]*`:
 lowercase ASCII letters, digits, and hyphens only, starting with a letter. The
