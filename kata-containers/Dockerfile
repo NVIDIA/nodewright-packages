@@ -17,10 +17,10 @@
 
 # Pin the multi-platform index, not an individual architecture manifest.
 # Keep the Kata payload independent of the operator-managed agent.
-ARG KATA_DEPLOY_IMAGE=ghcr.io/kata-containers/kata-deploy:4.3.1@sha256:9f6bbd0972e6fa8c99f5a86b24503032cb87be602d22e830d1c917ba31b4db9f
+ARG KATA_DEPLOY_IMAGE=ghcr.io/kata-containers/kata-deploy:4.4.0@sha256:5d7f2d576b407c1ad1271a160da9c1de49c58fa15c435a4b5c7bc0005e67e0d8
 FROM ${KATA_DEPLOY_IMAGE} AS kata
 
-FROM alpine:3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f AS package-config
+FROM alpine:3.24.4@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS package-config
 RUN apk add --no-cache python3
 ARG TARGETARCH
 COPY --from=kata /usr/bin/kata-deploy /tmp/kata-deploy
@@ -41,7 +41,7 @@ RUN if [ -n "$KATA_VERSION" ]; then \
             --output /package/config.json; \
     fi
 
-FROM alpine:3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f AS installer
+FROM alpine:3.24.4@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS installer
 ARG TARGETARCH
 RUN case "${TARGETARCH}" in amd64|arm64) ;; *) exit 1 ;; esac
 RUN apk add --no-cache bash util-linux curl jq
@@ -60,7 +60,7 @@ RUN help="$(/usr/bin/kata-deploy --help)" && \
         echo "$help" | grep -q "$action" || exit 1; \
     done
 
-FROM alpine:3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f
+FROM alpine:3.24.4@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
 COPY --from=installer / /skyhook-package/skyhook_dir/installer-rootfs/
 COPY --from=package-config /package/config.json /skyhook-package/config.json
 COPY skyhook_dir /skyhook-package/skyhook_dir
