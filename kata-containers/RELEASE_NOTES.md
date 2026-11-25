@@ -20,6 +20,61 @@ example is not itself picked up as release notes):
     - Notable behavior change worth calling out.
 -->
 
+## 4.4.0
+
+Upgrades Kata Containers from 4.3.1 to 4.4.0. See the
+[upstream release notes](https://github.com/kata-containers/kata-containers/blob/4.4.0/docs/releases/4.4.0.md)
+and [full comparison](https://github.com/kata-containers/kata-containers/compare/4.3.1...4.4.0).
+The notes below concern this package's `qemu-nvidia-cpu-runtime-rs` profile.
+Its bundled QEMU moves from 11.0.1 to 11.1.3 and its NVIDIA guest kernel from
+6.18.56 to 6.18.62. These replace package artifacts, not the host kernel.
+
+### Upgrade and configuration
+
+- Keep the existing RuntimeClass
+  `kata-containers-qemu-nvidia-cpu-runtime-rs` and containerd handler
+  `kata-qemu-nvidia-cpu-runtime-rs`. Set the NodeWright package version to
+  `4.4.0`; NodeWright drains each node and runs the upgrade, configuration and
+  post-interrupt guest smoke check before completing it. Budget for workload
+  interruption and recreation of Kata pods.
+- The NVIDIA CPU runtime configuration template is unchanged. This profile
+  already uses an EROFS guest image with virtio-blk and dm-verity, so the
+  upstream switch of standard guest disks from ext4 to EROFS requires no
+  configuration migration here. Retain `containerd-user-dropin.toml` and
+  runtime overrides in `dropin-qemu-nvidia-cpu-runtime-rs.toml`. Host
+  fs-verity remains disabled by the example; guest dm-verity remains enabled.
+- Containerd >= 2.3 and `erofs-utils` >= 1.8.2 remain prerequisites. The new
+  upstream containerd minimum matches the requirement already enforced by
+  this package. The package does not upgrade these host tools.
+- **Requested core scheduling must succeed.** If containerd passes a nonempty
+  `SCHED_CORE`, the Rust shim now refuses to start a sandbox when core
+  scheduling setup fails; 4.3.1 logged a warning and continued. Check kernel
+  support and the shim's reported error before upgrading nodes that enable
+  core scheduling. An unset or empty `SCHED_CORE` still leaves it disabled
+  ([Kata #14204](https://github.com/kata-containers/kata-containers/pull/14204)).
+- Custom guest disks on the Rust QEMU virtio-blk path now select their root
+  partition by `PARTUUID`. Keep root data in partition 1 and verity hashes
+  in partition 2; DOS partition tables need a nonzero disk signature, and
+  rootfs and extension disks need distinct partition identities. The bundled
+  images supply these settings
+  ([Kata #14161](https://github.com/kata-containers/kata-containers/pull/14161)).
+
+### Workload-visible changes
+
+- OCI directory `maskedPaths`, including `/sys/firmware`, are now hidden as
+  requested. Review workloads that depended on their previous visibility
+  ([Kata #14189](https://github.com/kata-containers/kata-containers/pull/14189)).
+- PID limits now reach guest container cgroups, and approved environment
+  variable whitespace, including trailing newlines, is preserved. Workloads
+  may observe limits or exact values that 4.3.1 lost
+  ([Kata #14141](https://github.com/kata-containers/kata-containers/pull/14141),
+  [#13933](https://github.com/kata-containers/kata-containers/pull/13933)).
+- Exclusive-CPU sandboxes with a negative CPU quota use CPU shares for initial
+  vCPU sizing. Guaranteed pods using the static CPU manager can therefore
+  receive more than the single vCPU selected previously; zero or absent quota
+  does not trigger this fallback
+  ([Kata #14244](https://github.com/kata-containers/kata-containers/pull/14244)).
+
 ## 4.3.1
 
 Initial release. The package installs Kata Containers 4.3.1's `qemu-nvidia-cpu-runtime-rs`,
