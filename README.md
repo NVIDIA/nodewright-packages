@@ -86,14 +86,14 @@ A package for automated installation and configuration of kdump crash dump colle
 A package that applies the same node setup steps as the dgxcloud_aws_eks VMI for selected (service, accelerator) combinations. Runs after the machine is up (NodeWright on a live node).
 
 **Capabilities:**
-- Opinionated defaults per (service, accelerator) with optional env overrides (EIDOS_KERNEL, EIDOS_EFA, EIDOS_LUSTRE)
-- Apply: upgrade, EFA driver, Lustre client, chrony, setup-local-disks (install and run); reboot may be required after apply
+- Opinionated defaults per (service, accelerator) with optional env overrides (NVIDIA_KERNEL_TRACK, NVIDIA_EFA, NVIDIA_EFA_DRIVER)
+- Apply on EKS: kernel check or install, upgrade, EFA driver, OFI paths, chrony, setup-local-disks (raid0); the Lustre client step is present but commented out. AKS and OCI run the container toolkit hardening (plus IB/RDMA on aks-h100). Reboot may be required after apply
 - Apply-check: validate all steps for the selected combination are complete
-- Supported combinations: eks-h100, eks-gb200 (extensible via case + functions in apply.sh / apply_check.sh)
+- Supported combinations: eks-h100, eks-gb200, eks-gb300, aks-h100, aks-any, oci-any, bcm-h100, bcm-gb200, bcm-vr200 (extensible via case + functions in apply.sh / apply_check.sh)
 
 **Key features:**
-- ConfigMap: `service` and `accelerator` only; versions baked in `defaults/*.conf`
-- No OFI, hardening, or system-node-settings; see [nvidia-setup README](./nvidia-setup/README.md)
+- ConfigMap: `service` and `accelerator`, plus an optional `kernel_track` (`lts` or `hwe`); EFA and Lustre versions are baked in `defaults/*.conf`, and kernel versions in the kernel catalog `skyhook_dir/kernels.conf`
+- No system-node-settings; see [nvidia-setup README](./nvidia-setup/README.md)
 
 ### 6. NVIDIA Tuning GKE Package (`nvidia-tuning-gke/`)
 Extends the **tuning** package with baked-in H100 and GB200 configs for GKE Container Optimized OS. You supply only `accelerator` and `intent`; the package selects the matching sysctl (and optional containerd drop-in) and runs the base tuning apply. No grub—GKE nodes do not use grub. Note: this is a limited set from nvidia-tuned due to the limitations of the mainly read-only OS. For non COS GKE setups consider updating nvidia-tuned to support gke and use the base profiles.
@@ -295,7 +295,7 @@ This validation step is crucial as the agent uses JSON schema validation to ensu
 - [Tuning Package](./tuning/README.md) - Usage guide for the tuning package
 - [Tuned Package](./tuned/README.md) - Usage guide for the tuned package
 - [Kdump Package](./kdump/README.md) - Usage guide for the kdump package
-- [NVIDIA Setup Package](./nvidia-setup/README.md) - Node setup (EFA, Lustre, chrony, local disks) per service/accelerator
+- [NVIDIA Setup Package](./nvidia-setup/README.md) - Node setup (kernel, EFA, chrony, local disks, container toolkit hardening) per service/accelerator
 - [Copy-Fail Package](./copy-fail/README.md) - CVE-2026-31431 modprobe-blacklist mitigation
 - [Bind Mount Package](./bind-mount/README.md) - Persistent, fail-closed bind mounts for existing host storage
 - [NVIDIA NodeWright Documentation](https://github.com/NVIDIA/skyhook) - Main NodeWright operator documentation

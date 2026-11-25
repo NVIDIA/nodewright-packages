@@ -20,6 +20,29 @@ example is not itself picked up as release notes):
     - Notable behavior change worth calling out.
 -->
 
+## 0.11.0
+
+Kernel versions now live in one catalog, `skyhook_dir/kernels.conf`. Each combination says,
+per Ubuntu release, whether it runs the `lts` or the `hwe` kernel, and the catalog maps that
+to an exact kernel. The `eks-*` combinations run `hwe` on noble, which is the same
+`7.0.0-1014-aws` (`-64k` on arm64) as 0.10.0, so a node that changes nothing sees no
+difference. A CR can pick another track with the `kernel_track` configmap key or
+`NVIDIA_KERNEL_TRACK`, but only one the catalog has for the node's release: 0.11.0 ships
+only `aws hwe noble`, so `kernel_track: lts` fails apply until an `lts` line is added.
+
+The kernel now depends on the node's Ubuntu release, read from `/etc/os-release`. The `eks-*`
+combinations name a track for noble (24.04) only, so an `eks-*` node on another release now
+fails apply instead of installing a noble kernel. That includes Ubuntu 26.04 (resolute): 0.10.0
+happened to install the same kernel there, since `7.0.0-1014-aws` is also published for
+resolute, but EKS on 26.04 has never been validated. Declaring which releases each combination
+supports is tracked in #196. Until then, a 26.04 node that needs the 0.10.0 behavior can set
+`NVIDIA_KERNEL=7.0.0-1014-aws`, which skips track selection and the release check. It is
+deprecated and goes away in 0.12.0, so treat it as a stopgap.
+
+Deprecation: `NVIDIA_KERNEL` still works in 0.11.x but logs a warning, and will be removed
+in 0.12.0. If you set it, move to `NVIDIA_KERNEL_TRACK` before upgrading to 0.12.0. If the
+kernel you need is not in the catalog, ask for a line to be added.
+
 ## 0.10.0
 
 `aks-h100` now also sets two keys in the node's NVIDIA container toolkit config
