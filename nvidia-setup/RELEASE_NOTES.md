@@ -20,6 +20,27 @@ example is not itself picked up as release notes):
     - Notable behavior change worth calling out.
 -->
 
+## 0.10.0
+
+`aks-h100` now also sets two keys in the node's NVIDIA container toolkit config
+(`/etc/nvidia-container-runtime/config.toml`):
+`accept-nvidia-visible-devices-envvar-when-unprivileged = false` and
+`accept-nvidia-visible-devices-as-volume-mounts = true`. Unprivileged pods can no longer
+select GPUs by setting `NVIDIA_VISIBLE_DEVICES` without a Kubernetes allocation. This is
+the same change aicr's `nvidia-toolkit-hardening` DaemonSet makes today, so a cluster
+running both sees no difference. Nodes without that config file (a GPU Operator toolkit
+owns the runtime) are left alone.
+
+Before upgrading, check how your device plugin hands GPUs to containers: it must use CDI
+or volume mounts. With the `envvar` strategy, unprivileged pods would lose the GPUs they
+were allocated.
+
+Nodes upgraded in place from an earlier version get the keys too, since the `upgrade` stage
+runs apply (from 0.9.0). As with any version bump, NodeWright then runs the interrupt the CR
+declares: on `aks-h100` that restarts containerd and kubelet.
+
+New combinations: `aks-any` and `oci-any`, which run only this hardening.
+
 ## 0.9.0
 
 Every EKS combination moves to kernel `7.0.0-1014-aws` and EFA installer `1.51.0` (efa driver

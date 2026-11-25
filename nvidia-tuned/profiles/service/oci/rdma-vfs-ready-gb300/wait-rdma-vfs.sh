@@ -60,43 +60,45 @@ require_positive_int TIMEOUT_SECS 300
 require_positive_int POLL_INTERVAL_SECS 2
 require_positive_int STABLE_POLLS 5
 
-count_vfs() {
-    local netdev total=0
-    # A VF netdev has a physfn symlink back to its physical function.
+# One "name:ifindex" entry per VF netdev with its driver bound. A VF netdev has a physfn
+# symlink back to its physical function. OCA rebinds each VF seconds after creating it,
+# which recreates the netdev with a new ifindex, so an unchanged list means settled.
+list_vfs() {
+    local netdev
     for netdev in "${SYS_CLASS_NET}"/*; do
-        [[ -e "${netdev}/device/physfn" ]] || continue
-        total=$((total + 1))
+        [[ -e "${netdev}/device/physfn" && -e "${netdev}/device/driver" ]] || continue
+        printf '%s:%s ' "${netdev##*/}" "$(cat "${netdev}/ifindex")"
     done
-    echo "${total}"
 }
 
 main() {
-    local elapsed=0 count last_count=-1 stable=0
+    local elapsed=0 vfs count last_vfs="" stable=0
 
     while [[ "${elapsed}" -lt "${TIMEOUT_SECS}" ]]; do
-        count="$(count_vfs)"
+        vfs="$(list_vfs)"
+        count="$(wc -w <<<"${vfs}")"
 
-        if [[ "${count}" -ge "${EXPECTED_VFS}" ]]; then
-            echo "Found ${count} RDMA VFs after ${elapsed}s; releasing kubelet"
-            return 0
-        fi
-
-        if [[ "${count}" -gt 0 && "${count}" -eq "${last_count}" ]]; then
+        if [[ -n "${vfs}" && "${vfs}" == "${last_vfs}" ]]; then
             stable=$((stable + 1))
-            if [[ "${stable}" -ge "${STABLE_POLLS}" ]]; then
-                echo "VF count settled at ${count} (expected ${EXPECTED_VFS}) after ${elapsed}s; releasing kubelet"
-                return 0
-            fi
         else
             stable=0
         fi
 
-        last_count="${count}"
+        if [[ "${count}" -ge "${EXPECTED_VFS}" && "${stable}" -ge "${STABLE_POLLS}" ]]; then
+            echo "Found ${count} RDMA VFs after ${elapsed}s; releasing kubelet"
+            return 0
+        fi
+        if [[ "${stable}" -ge "${STABLE_POLLS}" ]]; then
+            echo "VF count settled at ${count} (expected ${EXPECTED_VFS}) after ${elapsed}s; releasing kubelet"
+            return 0
+        fi
+
+        last_vfs="${vfs}"
         sleep "${POLL_INTERVAL_SECS}"
         elapsed=$((elapsed + POLL_INTERVAL_SECS))
     done
 
-    echo "Timed out after ${TIMEOUT_SECS}s with $(count_vfs) RDMA VFs (expected ${EXPECTED_VFS}); releasing kubelet anyway"
+    echo "Timed out after ${TIMEOUT_SECS}s with $(list_vfs | wc -w) RDMA VFs (expected ${EXPECTED_VFS}); releasing kubelet anyway"
     return 0
 }
 

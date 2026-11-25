@@ -36,7 +36,7 @@ spec:
   packages:
     kata-containers:
       image: ghcr.io/nvidia/nodewright-packages/kata-containers
-      version: 4.3.1
+      version: 4.4.0
       # Kata restarts the detected distro service during config; noop keeps
       # NodeWright's cordon/drain flow without restarting the service twice.
       interrupt:

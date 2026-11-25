@@ -5,12 +5,22 @@
 
 All notable changes to this package will be documented in this file.
 
+## [0.10.0] - 2026-11-02
+
+### New Features
+
+- *(nvidia-setup)* Set container toolkit device-isolation keys; add aks-any and oci-any 
+
+
 ## [0.9.0] - 2026-10-30
 
 ### New Features
 
 - *(nvidia-setup)* Move EKS defaults to kernel 7.0.0-1014-aws and EFA 1.51.0 
 
+### Other Tasks
+
+- *(nvidia-setup)* Changelog for 0.9.0
 
 ## [0.8.1] - 2026-10-30
 
