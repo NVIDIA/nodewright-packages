@@ -111,3 +111,22 @@ toolkit config. `aks-h100` runs it after `configure_ib_rdma`. Adds the `aks-any`
 | bcm     | h100        | n/a                 | n/a         |  N     |  N    |  N  |  Y                |  N              |  N                |
 | bcm     | gb200       | n/a                 | n/a         |  N     |  N    |  N  |  Y                |  N              |  N                |
 | bcm     | vr200       | n/a                 | n/a         |  N     |  N    |  N  |  Y                |  N              |  N                |
+
+# 0.11.x
+
+Moves every kernel version into one catalog, `skyhook_dir/kernels.conf`. Each combination
+names `lts` or `hwe` per Ubuntu release; the `eks-*` combinations run `hwe` on noble (same
+kernel as 0.10.x). The catalog has only `aws hwe noble`; a CR can pick another track with
+the `kernel_track` configmap key or `NVIDIA_KERNEL_TRACK` once the catalog has one. `NVIDIA_KERNEL` is deprecated. Kernel and EFA defaults are unchanged.
+
+| service | accelerator | kernel track (noble) | kernel              | efa         | chrony | raid0 | OFI | bcm headers alias | ib rdma memlock | toolkit hardening |
+|---------|-------------|----------------------|---------------------|-------------|--------|-------|-----|-------------------|-----------------|-------------------|
+| eks     | h100        | aws hwe              | 7.0.0-1014-aws      | 1.51.0      |  Y     |  Y    |  Y  |  N                |  N              |  N                |
+| eks     | gb200       | aws hwe              | 7.0.0-1014-aws-64k  | 1.51.0      |  Y     |  Y    |  Y  |  N                |  N              |  N                |
+| eks     | gb300       | aws hwe              | 7.0.0-1014-aws-64k  | 1.51.0      |  Y     |  Y    |  Y  |  N                |  N              |  N                |
+| aks     | h100        | none                 | (AKS-managed)       | n/a         |  N     |  N    |  N  |  N                |  Y              |  Y                |
+| aks     | any         | none                 | (AKS-managed)       | n/a         |  N     |  N    |  N  |  N                |  N              |  Y                |
+| oci     | any         | none                 | (image kernel)      | n/a         |  N     |  N    |  N  |  N                |  N              |  Y                |
+| bcm     | h100        | none                 | n/a                 | n/a         |  N     |  N    |  N  |  Y                |  N              |  N                |
+| bcm     | gb200       | none                 | n/a                 | n/a         |  N     |  N    |  N  |  Y                |  N              |  N                |
+| bcm     | vr200       | none                 | n/a                 | n/a         |  N     |  N    |  N  |  Y                |  N              |  N                |

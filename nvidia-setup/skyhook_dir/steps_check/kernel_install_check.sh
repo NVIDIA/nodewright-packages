@@ -16,7 +16,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Verify running kernel matches expected from defaults/env overrides.
+# Verify the running kernel matches the expected one: the selected kernel track's entry in
+# kernels.conf, or the deprecated NVIDIA_KERNEL.
 # Only runs when NVIDIA_SETUP_INSTALL_KERNEL=true (same env var that triggers kernel install).
 set -e
 
@@ -41,7 +42,7 @@ expected="$(resolve_full_kernel "${KERNEL}")"
 current=$(uname -r)
 
 if [ "${current}" != "${expected}" ]; then
-  echo "Error: running kernel ${current} does not match expected ${expected} (from defaults/env)." >&2
+  echo "Error: running kernel ${current} does not match expected ${expected} (kernel track ${KERNEL_TRACK:-none} in kernels.conf, or NVIDIA_KERNEL)." >&2
   exit 1
 fi
 

@@ -17,7 +17,7 @@
 # limitations under the License.
 
 # resolve_full_kernel for nvidia-setup (skyhook): no get_var; use KERNEL and architecture.
-# The conf (defaults/<service>-<accelerator>.conf) already specifies the exact kernel
+# The kernel catalog (kernels.conf, selected by track) already specifies the exact kernel
 # flavor (e.g. 7.0.0-1014-aws), so the only thing left to resolve is the
 # architecture-specific page-size variant: arm64/aarch64 nodes (e.g. GB200/Grace) use
 # the -64k kernel, x86_64 nodes use the flavor as-is.
