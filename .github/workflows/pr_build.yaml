@@ -340,6 +340,44 @@ jobs:
         run: |
           make test-harness
 
+  # nvidia-setup kernel catalog (#182). Renovate bumps kernels.conf from the
+  # amd64 index only, so before a catalog change merges, check that every
+  # kernel is also published for arm64 (-64k, what Grace nodes install).
+  # Also validates the Renovate config and unit-tests the check itself.
+  kernel-catalog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check if the catalog or its tooling changed
+        id: changed
+        shell: bash
+        run: |
+          CHANGED_FILES=$(git diff --name-only "origin/${GITHUB_BASE_REF}...HEAD")
+          if echo "$CHANGED_FILES" | grep -qxE 'nvidia-setup/skyhook_dir/kernels\.conf|scripts/check_kernel_catalog\.py|tests/unit/test_check_kernel_catalog\.py|\.github/renovate\.json5|\.github/workflows/renovate\.yaml|makefile'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Kernel catalog and its tooling unchanged; skipping"
+          fi
+
+      - name: Unit-test the catalog check
+        if: steps.changed.outputs.run == 'true'
+        run: make kernel-catalog-test
+
+      - name: Check every catalog kernel is published for amd64 and arm64
+        if: steps.changed.outputs.run == 'true'
+        run: make kernel-catalog-check
+
+      - name: Validate the Renovate config
+        if: steps.changed.outputs.run == 'true'
+        run: make renovate-config-check
+
   # Fourth job: build changed packages
   build:
     needs: [detect-changes, validate, test]
@@ -463,7 +501,7 @@ jobs:
   # runs and reports on its own.
   ci-gate:
     name: ci-gate
-    needs: [detect-changes, validate, test, test-harness, build]
+    needs: [detect-changes, validate, test, test-harness, kernel-catalog, build]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 1

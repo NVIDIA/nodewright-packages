@@ -182,3 +182,26 @@ validate-inherited: ## Validate an inherited package (inherits from skyhook-pack
 	echo "✓ Validation passed for $(PACKAGE)"; \
 	$$CONTAINER_CMD rmi $$VALIDATION_IMAGE || true; \
 	rm -rf $$EXTRACT_DIR
+
+##@ Kernel catalog (nvidia-setup)
+
+# Keep this digest in lockstep with renovate-version in .github/workflows/renovate.yaml
+# so local and CI validation run the same Renovate build that opens the catalog PRs.
+RENOVATE_IMAGE := ghcr.io/renovatebot/renovate:44@sha256:e6b93e709ca64495ab9307350b260064276ee02d15c6886387fd2d42c926623b
+
+.PHONY: renovate-config-check
+renovate-config-check: ## Validate .github/renovate.json5 with the pinned Renovate image.
+	@CONTAINER_CMD=$$(command -v podman >/dev/null 2>&1 && echo podman || echo docker); \
+	$$CONTAINER_CMD run --rm \
+		-v "$(CURDIR):/repo:ro" \
+		-w /repo \
+		$(RENOVATE_IMAGE) \
+		renovate-config-validator --no-global --strict .github/renovate.json5
+
+.PHONY: kernel-catalog-check
+kernel-catalog-check: ## Check every nvidia-setup catalog kernel is published for amd64 and arm64 (-64k).
+	python3 scripts/check_kernel_catalog.py
+
+.PHONY: kernel-catalog-test
+kernel-catalog-test: test-deps ## Unit tests for scripts/check_kernel_catalog.py (no network).
+	./venv/bin/pytest tests/unit/test_check_kernel_catalog.py -v
