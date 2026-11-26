@@ -1,0 +1,77 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Self-hosted Renovate for the nvidia-setup kernel catalog (#182), the same
+# pattern as the operator repo (NVIDIA/nodewright). The repository config is
+# .github/renovate.json5.
+name: Renovate
+
+on:
+  schedule:
+    # Ubuntu publishes a new ABI every few weeks; a weekday run keeps the
+    # catalog PR within a day of it.
+    - cron: "0 6 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      logLevel:
+        description: Renovate log level
+        default: info
+        type: choice
+        options:
+          - debug
+          - info
+          - warn
+      dryRun:
+        description: Run without creating branches or pull requests
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: renovate
+  cancel-in-progress: false
+
+jobs:
+  renovate:
+    name: Renovate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Configure dry-run mode
+        if: ${{ inputs.dryRun }}
+        run: echo "RENOVATE_DRY_RUN=full" >> "$GITHUB_ENV"
+
+      - name: Run Renovate
+        uses: renovatebot/github-action@acdd6bda8b035c99ce59d5675816af2aa65a1774  # v46.3.14
+        with:
+          # Keep this in lockstep with RENOVATE_IMAGE in the root makefile.
+          renovate-version: "44@sha256:e6b93e709ca64495ab9307350b260064276ee02d15c6886387fd2d42c926623b"
+        env:
+          RENOVATE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RENOVATE_REPOSITORIES: '["${{ github.repository }}"]'
+          RENOVATE_ONBOARDING: "false"
+          RENOVATE_REQUIRE_CONFIG: "required"
+          LOG_LEVEL: ${{ inputs.logLevel || 'info' }}

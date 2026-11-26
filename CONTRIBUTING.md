@@ -178,7 +178,7 @@ Every pull request starts with an issue that is assigned to its author. Open one
 Three exceptions:
 
 - **Trivial changes**, such as typo and formatting fixes, broken links, and comment corrections, can go straight to a pull request.
-- **Automated dependency updates** from Dependabot need no issue.
+- **Automated dependency updates** from Dependabot, and the nvidia-setup kernel catalog updates Renovate opens, need no issue.
 - **Security vulnerabilities never start with a public issue.** Report them through [SECURITY.md](SECURITY.md) instead. PSIRT owns triage and the disclosure date and will coordinate the fix with you, including the pull request itself, so that nothing reveals the issue before the embargo lifts.
 
 Reference the issue in your pull request description with `closes #1234` so it closes on merge. This applies only to public issues: a pull request that fixes a security report must never reference the non-public report, in its title, its description, or its commits.

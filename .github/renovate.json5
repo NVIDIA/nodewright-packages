@@ -1,0 +1,45 @@
+{
+  // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+  // SPDX-License-Identifier: Apache-2.0
+
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+
+  // Renovate owns only the nvidia-setup kernel catalog (#182). Dependabot keeps
+  // GitHub Actions, Dockerfiles and Python test dependencies, so no other
+  // manager is enabled here.
+  enabledManagers: ["custom.regex"],
+  dependencyDashboard: false,
+  semanticCommits: "enabled",
+  rebaseWhen: "behind-base-branch",
+
+  customManagers: [
+    {
+      // One line per kernel in nvidia-setup/skyhook_dir/kernels.conf:
+      //   # renovate: datasource=deb depName=linux-image-aws-7.0 registryUrl=...
+      //   aws hwe noble 7.0.0-1014-aws
+      // depName is a series-scoped meta package (linux-image-<flavor>-<series>),
+      // so an update only moves the ABI within the series, never to a new one.
+      customType: "regex",
+      managerFilePatterns: ["/^nvidia-setup/skyhook_dir/kernels\\.conf$/"],
+      matchStrings: [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+) registryUrl=(?<registryUrl>\\S+)\\n\\S+ \\S+ \\S+ (?<currentValue>\\d+\\.\\d+\\.\\d+-\\d+)-",
+      ],
+      // The meta's version is 7.0.0-1018.19~24.04.1; the catalog stores 7.0.0-1018.
+      extractVersionTemplate: "^(?<version>\\d+\\.\\d+\\.\\d+-\\d+)",
+      versioningTemplate: "regex:^(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)-(?<build>\\d+)$",
+    },
+  ],
+
+  packageRules: [
+    {
+      // Every catalog bump in one PR: feat(nvidia-setup): update kernel catalog.
+      // The amd64 index drives the bump; the kernel-catalog job in pr_build.yaml
+      // fails the PR until the arm64 -64k packages are published too.
+      matchManagers: ["custom.regex"],
+      matchFileNames: ["nvidia-setup/skyhook_dir/kernels.conf"],
+      groupName: "kernel catalog",
+      semanticCommitType: "feat",
+      semanticCommitScope: "nvidia-setup",
+    },
+  ],
+}
